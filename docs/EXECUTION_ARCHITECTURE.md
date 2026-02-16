@@ -1,12 +1,13 @@
-# Internal Execution Architecture
+# Execution Architecture - Local Windows Desktop
 
-**Status**: Critical architectural decision - Response 5 validation  
-**Topic**: What "fully internal" actually means at system level  
+**Status**: Critical architectural specification - Local-only Windows desktop deployment  
+**Scope**: All execution on user's PC (no cloud services)  
+**UI Framework**: WinUI 3 (Windows App SDK, .NET 8, MSIX deployment)  
 **Audience**: Architecture team, platform engineers  
 
 ---
 
-## Core Principle: The Autonomous Construction Environment
+## Part 1: Core Principle - The Autonomous Construction Environment
 
 > "Fully internal" does NOT mean "no tools exist"
 > 
@@ -14,9 +15,7 @@
 > Users never open an IDE, run CLI commands, or manage build systems.
 > The builder acts as a self-contained **Autonomous Software Construction Environment**.
 
----
-
-## The Lovable Model (Reference)
+### The Lovable Model (Reference)
 
 Lovable feels completely "internal" and seamless.
 
@@ -39,12 +38,105 @@ Your Windows builder must do the same:
 
 ---
 
-## 1️⃣ Filesystem Sandbox Subsystem
+## Part 2: Local-Only Model Architecture
 
-### Purpose
+### Core Architecture Shift: Local-Only Model
+
+#### Previous Assumption (Cloud-Based)
+Similar to Lovable, Budibase, or other web builders:
+- UI in browser or web app
+- Execution in cloud container
+- Build infrastructure centralized
+- Infra complexity hidden
+
+#### New Reality (Local-Only Model with WinUI 3)
+All execution on user's PC:
+- WinUI 3 desktop application (modern Windows UI)
+- All build operations local (MSBuild, .NET SDK embedded)
+- User controls infrastructure
+- Complexity is visible and managed by orchestrator
+
+### Two-Layer Architecture (Single WinUI 3 App)
+
+```
+┌─────────────────────────────────────────┐
+│          WinUI 3 Builder UI             │
+│      (Fluent Design System)             │
+├──────────────────────────────┬──────────┤
+│ Prompt Console               │          │
+│ Real-time Progress Monitor   │ Thin     │
+│ Project File Explorer        │ XAML UI  │
+│ Build Output Viewer          │          │
+│ Code Preview                 │          │
+└──────────────────────────────┴──────────┘
+                   ↓ (Direct C# Call)
+┌─────────────────────────────────────────┐
+│       Orchestrator Engine               │
+│   (Deterministic State Machine)         │
+├─────────────────────────────────────────┤
+│ • Task Graph Management                 │
+│ • State Machine (10 states)             │
+│ • Retry Control (strict budget)         │
+│ • Event Log (replayable)                │
+│ • Error Classification                  │
+└────────────────┬────────────────────────┘
+                 │
+         ┌───────┼────────┐
+         │       │        │
+    ┌────▼───┐ ┌─▼────┐ ┌▼──────────┐
+    │ Roslyn │ │Patch │ │Execution  │
+    │Indexer │ │Engine│ │ Kernel    │
+    ├────────┤ ├──────┤ ├───────────┤
+    │ AST    │ │ Tx   │ │MSBuild    │
+    │Symbol  │ │Write │ │NuGet      │
+    │Graph   │ │Conflict│ │Sandbox    │
+    └────┬───┘ └──┬───┘ └─┬────────┘
+         │        │       │
+         └────────┼───────┘
+                  │
+         ┌────────▼────────┐
+         │ File Sandbox    │
+         │ (Snapshots,     │
+         │  Rollback,      │
+         │  Versioning)    │
+         └────────┬────────┘
+                  │
+         ┌────────▼────────┐
+         │ SQLite DB       │
+         │ (Graph +        │
+         │  Memory)        │
+         └─────────────────┘
+
+Run entirely on user's PC. Zero cloud.
+```
+
+### Critical Difference: Local vs. Cloud
+
+| Factor | Cloud Model (Lovable) | Local-Only (Your Builder) |
+|--------|----------------------|-------------------------|
+| **Execution Location** | Cloud container | User's PC |
+| **Infrastructure** | Fixed, managed | Variable, on user machine |
+| **Isolation** | Container-level | Filesystem + process-level |
+| **SDK Version** | Fixed in container | User's installed version |
+| **Error Handling** | Retry in cloud | Must retry locally |
+| **Resource Limits** | Infinite (cloud scale) | Limited (PC RAM, disk) |
+| **Logging** | Centralized | Local persistence |
+| **Antivirus** | Managed | User's settings apply |
+| **Disk Requirements** | Server managed | User's available space |
+| **Network** | Internal to datacenter | User's connection (if using cloud AI Engine) |
+| **Code Execution** | Trusted (we control) | Untrusted (user generated) |
+| **Determinism** | Can hide infra issues | Must handle all variability |
+
+---
+
+## Part 3: The 6 Embedded Subsystems
+
+### 3.1 Filesystem Sandbox Subsystem
+
+#### Purpose
 Prevent cross-project contamination, enable snapshots, support rollback.
 
-### Architecture
+#### Architecture
 ```
 Builder Workspace Root
 ├── Projects/
@@ -73,14 +165,14 @@ Builder Workspace Root
     └── dependency_graph/
 ```
 
-### Key Properties
+#### Key Properties
 1. **Isolation**: Each project in separate directory tree
 2. **Snapshots**: ZIP archives of known-good states
 3. **Diffs**: Patch files for version control
 4. **Temp Workspace**: Isolated build environment per operation
 5. **Cleanup**: Automatic cleanup after build completes
 
-### Implementation Requirements
+#### Implementation (Core)
 
 ```csharp
 public class FileSystemSandbox
@@ -136,210 +228,302 @@ public class FileSystemSandbox
 }
 ```
 
+#### Local-Only Enhancements
+
+##### Disk Space Validation
+```csharp
+public class DiskSpaceValidator
+{
+    public bool HasSufficientSpace(string projectPath, long requiredBytes)
+    {
+        var drive = new DriveInfo(Path.GetPathRoot(projectPath));
+        return drive.AvailableFreeSpace > requiredBytes;
+    }
+    
+    public async Task<bool> ValidateBeforeSnapshotAsync(string projectPath)
+    {
+        var projectSize = GetDirectorySize(projectPath);
+        var requiredSpace = projectSize * 2; // Need 2x for compression
+        
+        return HasSufficientSpace(projectPath, requiredSpace);
+    }
+}
+```
+
+##### Snapshot Compression Strategies
+```csharp
+// For local-only: Optimize snapshot size
+public async Task<string> CreateCompressedSnapshotAsync(string projectId)
+{
+    // Exclude bin/, obj/, .vs/ from snapshots
+    var excludePatterns = new[] { "bin", "obj", ".vs", "node_modules" };
+    
+    // Create selective ZIP
+    using var archive = ZipFile.Open(snapshotPath, ZipArchiveMode.Create);
+    foreach (var file in GetProjectFiles(projectId, excludePatterns))
+    {
+        archive.CreateEntryFromFile(file, GetRelativePath(file));
+    }
+}
+```
+
+##### Path Validation Security
+```csharp
+public class PathValidator
+{
+    private readonly string _sandboxRoot;
+    
+    public bool IsPathSafe(string requestedPath)
+    {
+        var fullPath = Path.GetFullPath(requestedPath);
+        var rootPath = Path.GetFullPath(_sandboxRoot);
+        
+        // Prevent directory traversal attacks
+        return fullPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase);
+    }
+}
+```
+
 ---
 
-## 2️⃣ Internal .NET Execution Kernel
+### 3.2 Execution Kernel Subsystem
 
-### Purpose
-Managed abstraction layer for .NET SDK, MSBuild, NuGet.
-Users never interact with CLI or build system — all hidden.
+#### Purpose
+Manage isolated .NET execution (MSBuild, NuGet, dotnet CLI) without exposing complexity to users.
 
-### Architecture
-```
-┌─────────────────────────────────────┐
-│   Orchestrator (Task Engine)        │
-└──────────────────┬──────────────────┘
-                   │
-┌──────────────────▼──────────────────┐
-│  Execution Kernel (Managed API)     │
-├─────────────────────────────────────┤
-│ • RunNuGetRestore()                 │
-│ • RunDotNetBuild()                  │
-│ • RunMigrations()                   │
-│ • RunTests()                        │
-│ • KillRunawayProcess()              │
-└──────────────────┬──────────────────┘
-                   │
-┌──────────────────▼──────────────────┐
-│  Embedded Runtimes (Hidden)         │
-├─────────────────────────────────────┤
-│ • .NET SDK 8.0                      │
-│ • MSBuild                           │
-│ • NuGet CLI                         │
-│ • dotnet CLI                        │
-└─────────────────────────────────────┘
-```
-
-### Implementation
+#### Core Architecture
 
 ```csharp
 public class ExecutionKernel
 {
-    private readonly string _dotnetExePath;
-    private readonly string _projectPath;
-    private readonly IsolatedBuildEnvironment _environment;
-    private readonly ProcessPoolManager _processPool;
+    private readonly ILogger _logger;
+    private readonly FileSystemSandbox _sandbox;
+    
+    /// Build a .NET project in isolation
+    public async Task<BuildResult> BuildAsync(
+        string projectPath,
+        string configuration = "Debug",
+        string? additionalArgs = null)
+    {
+        // Create isolated workspace
+        var workspace = await _sandbox.CreateIsolatedWorkspaceAsync();
+        
+        try
+        {
+            // Run MSBuild in isolated process
+            var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "dotnet",
+                    Arguments = $"build \"{projectPath}\" -c {configuration} {additionalArgs}",
+                    WorkingDirectory = workspace.WorkspacePath,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+            
+            var output = new StringBuilder();
+            var errors = new StringBuilder();
+            
+            process.OutputDataReceived += (s, e) => output.AppendLine(e.Data);
+            process.ErrorDataReceived += (s, e) => errors.AppendLine(e.Data);
+            
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            
+            await process.WaitForExitAsync();
+            
+            return new BuildResult
+            {
+                Success = process.ExitCode == 0,
+                Output = output.ToString(),
+                Errors = errors.ToString(),
+                ExitCode = process.ExitCode
+            };
+        }
+        finally
+        {
+            _sandbox.CleanupWorkspace(workspace);
+        }
+    }
     
     /// Restore NuGet packages
-    public async Task<ExecutionResult> RestoreNuGetAsync()
-    {
-        var process = _processPool.GetProcess();
-        
-        var result = await RunManagedProcessAsync(
-            _dotnetExePath,
-            "restore",
-            workingDirectory: _projectPath,
-            timeout: TimeSpan.FromMinutes(5),
-            captureOutput: true);
-        
-        // Check for NuGet-specific errors
-        if (result.ExitCode != 0)
-        {
-            var errorClassification = ClassifyNuGetError(result.StdErr);
-            return new ExecutionResult
-            {
-                Success = false,
-                ErrorType = errorClassification.Type,
-                ErrorMessage = result.StdErr,
-                IsRetryable = errorClassification.IsRetryable
-            };
-        }
-        
-        return new ExecutionResult { Success = true };
-    }
-    
-    /// Build project
-    public async Task<ExecutionResult> BuildAsync()
-    {
-        var result = await RunManagedProcessAsync(
-            _dotnetExePath,
-            "build --configuration Release",
-            workingDirectory: _projectPath,
-            timeout: TimeSpan.FromMinutes(10),
-            captureOutput: true);
-        
-        if (result.ExitCode != 0)
-        {
-            // Parse MSBuild errors
-            var errors = ParseMSBuildErrors(result.StdErr);
-            
-            return new ExecutionResult
-            {
-                Success = false,
-                Errors = errors,
-                IsRetryable = errors.Any(e => e.IsRetryable)
-            };
-        }
-        
-        return new ExecutionResult
-        {
-            Success = true,
-            ArtifactPath = Path.Combine(_projectPath, "bin", "Release")
-        };
-    }
-    
-    /// Run migrations (database setup)
-    public async Task<ExecutionResult> RunMigrationsAsync()
-    {
-        return await RunManagedProcessAsync(
-            _dotnetExePath,
-            "ef database update",
-            workingDirectory: _projectPath,
-            timeout: TimeSpan.FromMinutes(5));
-    }
-    
-    /// Private: Managed process execution with resource limits
-    private async Task<ProcessOutput> RunManagedProcessAsync(
-        string executable,
-        string arguments,
-        string workingDirectory,
-        TimeSpan timeout,
-        bool captureOutput = false)
+    public async Task<RestoreResult> RestoreAsync(string projectPath)
     {
         var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = executable,
-                Arguments = arguments,
-                WorkingDirectory = workingDirectory,
-                UseShellExecute = false,
-                RedirectStandardOutput = captureOutput,
-                RedirectStandardError = captureOutput,
-                CreateNoWindow = true
+                FileName = "dotnet",
+                Arguments = $"restore \"{projectPath}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            }
+        };
+        
+        process.Start();
+        var output = await process.StandardOutput.ReadToEndAsync();
+        var errors = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        
+        return new RestoreResult
+        {
+            Success = process.ExitCode == 0,
+            Output = output,
+            Errors = errors
+        };
+    }
+    
+    /// Run the application
+    public async Task<ExecutionResult> RunAsync(string projectPath)
+    {
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = $"run --project \"{projectPath}\"",
+                RedirectStandardOutput = true,
+                UseShellExecute = false
+            }
+        };
+        
+        process.Start();
+        
+        return new ExecutionResult
+        {
+            ProcessId = process.Id,
+            IsRunning = !process.HasExited
+        };
+    }
+}
+```
+
+#### Local-Only Enhancements
+
+##### Pre-Build SDK Detection
+```csharp
+public class SdkValidator
+{
+    public async Task<SdkValidationResult> ValidateEnvironmentAsync()
+    {
+        // Check if .NET SDK is installed
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = "--version",
+                RedirectStandardOutput = true,
+                UseShellExecute = false
             }
         };
         
         try
         {
             process.Start();
+            var version = await process.StandardOutput.ReadToEndAsync();
+            await process.WaitForExitAsync();
             
-            // Set resource limits
-            SetProcessResourceLimits(process, timeout);
-            
-            // Wait with timeout
-            var completed = process.WaitForExit((int)timeout.TotalMilliseconds);
-            
-            if (!completed)
+            if (process.ExitCode == 0)
             {
-                process.Kill();
-                return new ProcessOutput
+                return new SdkValidationResult
                 {
-                    ExitCode = -1,
-                    StdErr = "Process exceeded timeout"
+                    IsInstalled = true,
+                    Version = version.Trim(),
+                    IsCompatible = version.StartsWith("8.") // Require .NET 8
                 };
             }
-            
-            return new ProcessOutput
+        }
+        catch (Exception ex)
+        {
+            return new SdkValidationResult
             {
-                ExitCode = process.ExitCode,
-                StdOut = captureOutput ? process.StandardOutput.ReadToEnd() : "",
-                StdErr = captureOutput ? process.StandardError.ReadToEnd() : ""
+                IsInstalled = false,
+                Error = ".NET SDK not found. Please install .NET 8 SDK."
             };
         }
-        finally
-        {
-            process.Dispose();
-        }
-    }
-    
-    private void SetProcessResourceLimits(Process process, TimeSpan timeout)
-    {
-        // Windows: Set job object limits if needed
-        // Prevent runaway processes from consuming system resources
         
-        // Example: Limit memory (Windows-specific)
-        // JobObjectManager.SetMemoryLimit(process, 2_000_000_000); // 2GB max
+        return new SdkValidationResult { IsInstalled = false };
     }
-}
-
-public class ExecutionResult
-{
-    public bool Success { get; set; }
-    public string? ErrorMessage { get; set; }
-    public List<BuildError>? Errors { get; set; }
-    public bool IsRetryable { get; set; }
-    public string? ArtifactPath { get; set; }
 }
 ```
 
-### Key Features
-- **Managed execution**: No user interaction with CLI
-- **Process isolation**: Each build in separate process
-- **Resource limits**: Prevent runaway processes
-- **Error capture**: Full stdout/stderr for analysis
-- **Timeout handling**: Kill long-running builds
-- **Artifact tracking**: Know where outputs are
+##### Timeout Handling with Cancellation
+```csharp
+public async Task<BuildResult> BuildWithTimeoutAsync(
+    string projectPath,
+    TimeSpan timeout,
+    CancellationToken cancellationToken = default)
+{
+    using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    cts.CancelAfter(timeout);
+    
+    try
+    {
+        var buildTask = BuildAsync(projectPath);
+        await buildTask.WaitAsync(cts.Token);
+        return await buildTask;
+    }
+    catch (OperationCanceledException)
+    {
+        return new BuildResult
+        {
+            Success = false,
+            Errors = $"Build timed out after {timeout.TotalSeconds} seconds",
+            TimedOut = true
+        };
+    }
+}
+```
+
+##### Real-Time Progress Reporting
+```csharp
+public async Task<BuildResult> BuildWithProgressAsync(
+    string projectPath,
+    IProgress<BuildPhase>? progress = null)
+{
+    progress?.Report(new BuildPhase { Phase = "Restoring packages", Percentage = 10 });
+    await RestoreAsync(projectPath);
+    
+    progress?.Report(new BuildPhase { Phase = "Compiling", Percentage = 50 });
+    var result = await BuildAsync(projectPath);
+    
+    progress?.Report(new BuildPhase { Phase = "Complete", Percentage = 100 });
+    return result;
+}
+```
+
+##### Resource Throttling
+```csharp
+private async Task<BuildResult> BuildWithThrottlingAsync(string projectPath)
+{
+    // Respect user's machine
+    var processorCount = Environment.ProcessorCount;
+    var maxParallelism = Math.Max(1, processorCount - 1);  // Leave one core free
+    
+    var result = await BuildAsync(
+        projectPath,
+        additionalArgs: $"/m:{maxParallelism}");
+    
+    return result;
+}
+```
 
 ---
 
-## 3️⃣ Roslyn Code Intelligence Service
+### 3.3 Roslyn Code Intelligence Service
 
-### Purpose
+#### Purpose
 AST parsing, symbol resolution, safe patching, impact analysis.
 All internal — not in frontend.
 
-### Architecture
+#### Architecture
 ```
 Code Intelligence Service
 ├─ Symbol Graph Builder
@@ -360,7 +544,7 @@ Code Intelligence Service
    └─ GetDependencies()
 ```
 
-### Implementation
+#### Core Implementation
 
 ```csharp
 public class RoslynCodeIntelligenceService
@@ -452,18 +636,6 @@ public class RoslynCodeIntelligenceService
         };
     }
     
-    /// Get safe patch suggestions for file
-    public async Task<List<PatchSuggestion>> GetPatchSuggestionsAsync(
-        string filePath,
-        string intent)
-    {
-        // Parse intent
-        // Find relevant symbols
-        // Suggest specific AST modifications
-        
-        return new List<PatchSuggestion>();
-    }
-    
     private void IndexSymbolsRecursive(INamespaceSymbol namespaceSymbol)
     {
         foreach (var member in namespaceSymbol.GetMembers())
@@ -487,7 +659,44 @@ public class FileImpactAnalysis
 public enum ImpactLevel { Isolated, Low, Medium, High }
 ```
 
-### Use Cases
+#### Local-Only Allocation Strategies
+
+**Option A**: Single shared instance (recommended)
+- One Roslyn service for entire builder app
+- Caches compiled symbols
+- Thread-safe (uses lock or async queue)
+
+**Option B**: Per-project instance
+- Separate Roslyn service per project
+- Higher memory usage
+- Better isolation (if one crashes, others continue)
+
+**Option C**: Background worker thread
+- Dedicated thread pool for Roslyn operations
+- UI thread never blocked
+- Queue-based task dispatch
+
+**Recommended**: Option A with async queue dispatch.
+
+#### Key Constraint: UI Thread Safety
+
+**Never call Roslyn synchronously** on UI thread:
+
+```csharp
+// BAD: Freezes UI
+var graph = _roslynService.IndexProject(path); // Blocks!
+
+// GOOD: Async, doesn't block
+var graph = await _roslynService.IndexProjectAsync(path);
+
+// GOOD: Background dispatch
+_dispatcher.Dispatch(() => 
+{
+    _ = _roslynService.IndexProjectAsync(path); // Fire and forget
+});
+```
+
+#### Use Cases
 - **Smart Retrieval**: Know exactly which files to send to AI Engine
 - **Impact Analysis**: Warn if change affects many files
 - **Safe Patching**: AST-aware modifications
@@ -495,12 +704,12 @@ public enum ImpactLevel { Isolated, Low, Medium, High }
 
 ---
 
-## 4️⃣ Patch Engine (Transaction-Based)
+### 3.4 Patch Engine (Transaction-Based)
 
-### Purpose
+#### Purpose
 No raw file writes. All mutations through structured patching.
 
-### Architecture
+#### Architecture
 ```
 Patch Engine
 ├─ C# Syntax Tree Diffing
@@ -513,7 +722,7 @@ Patch Engine
 │  └─ AddChild()
 │
 ├─ Conflict Detection
-│  ├─ DetectOverlapPing Changes()
+│  ├─ DetectOverlapping Changes()
 │  └─ ResolveConflicts()
 │
 └─ Transaction Manager
@@ -523,7 +732,7 @@ Patch Engine
    └─ Commit()
 ```
 
-### Implementation Pattern
+#### Implementation Pattern
 
 ```csharp
 public class TransactionalPatchEngine
@@ -620,7 +829,7 @@ public class PatchTransaction : IPatchTransaction
 }
 ```
 
-### Guarantees
+#### Guarantees
 - **Atomic**: Entire patch succeeds or fails
 - **Reversible**: Snapshot available for rollback
 - **Conflict-Free**: Detect overlapping changes
@@ -628,9 +837,9 @@ public class PatchTransaction : IPatchTransaction
 
 ---
 
-## 5️⃣ Orchestrator Engine
+### 3.5 Orchestrator Engine
 
-### Purpose
+#### Purpose
 Task graph, deterministic state machine, retry limits, error classification.
 The brain of the system.
 
@@ -638,9 +847,9 @@ The brain of the system.
 
 ---
 
-## 6️⃣ Memory + Project Graph (SQLite)
+### 3.6 Memory + Project Graph (SQLite)
 
-### Purpose
+#### Purpose
 Persistent storage of:
 - Files
 - Symbols  
@@ -649,7 +858,7 @@ Persistent storage of:
 - Architectural decisions
 - User constraints
 
-### Schema
+#### Schema
 
 ```sql
 -- Core project data
@@ -748,7 +957,7 @@ CREATE TABLE execution_log (
 );
 ```
 
-### Usage Pattern
+#### Usage Pattern
 
 ```csharp
 public class ProjectGraphService
@@ -799,7 +1008,312 @@ public class ProjectGraphService
 
 ---
 
-## System-Level Architecture
+## Part 4: Security & Isolation (Executing Untrusted Code)
+
+### Challenge: Generated Code Is Untrusted
+
+Your builder generates code that runs on the user's PC. You must prevent:
+
+❌ **Arbitrary Shell Execution**
+```csharp
+// BAD: Never allow this
+Process.Start("cmd.exe", "/c whatever");
+```
+
+✅ **Whitelisted Operations**
+```csharp
+// GOOD: Only controlled builds
+await kernel.BuildAsync();
+await kernel.RunProjectAsync();
+```
+
+❌ **Registry Writes**
+```csharp
+// BAD: Don't allow registry manipulation
+RegistryKey.SetValue(...);
+```
+
+✅ **Isolated File Access**
+```csharp
+// GOOD: Only project directory
+var srcPath = workspacePath + "/src/";
+```
+
+❌ **Elevated Privileges**
+```csharp
+// BAD: Don't run as admin
+ProcessStartInfo.UseShellExecute = true;
+```
+
+✅ **Standard User Context**
+```csharp
+// GOOD: User's normal permissions
+ProcessStartInfo.UseShellExecute = false;
+```
+
+### Implementation
+
+```csharp
+public class SecurityBoundary
+{
+    private readonly string _projectRootPath;
+    
+    /// Validate path is within project (prevent directory traversal)
+    public bool IsPathAllowed(string filePath)
+    {
+        var fullPath = Path.GetFullPath(filePath);
+        var rootPath = Path.GetFullPath(_projectRootPath);
+        
+        // Must be within project directory
+        return fullPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase)
+            && !fullPath.Contains("..");  // No directory traversal
+    }
+    
+    /// Only allow these dotnet commands
+    private static readonly HashSet<string> AllowedCommands = new()
+    {
+        "restore",
+        "build",
+        "run",
+        "publish",
+        "test",
+        "clean"
+    };
+    
+    public bool IsCommandAllowed(string command)
+    {
+        return AllowedCommands.Contains(command);
+    }
+}
+```
+
+### Explicit Security Constraints
+
+#### ❌ NO Arbitrary Shell Execution
+```csharp
+// FORBIDDEN: Cmd.exe, PowerShell.exe
+Process.Start("cmd.exe", "/c " + userInput);
+Process.Start("powershell.exe", "-Command " + userInput);
+```
+
+#### ❌ NO Elevated Privileges
+```csharp
+// FORBIDDEN: Running as admin
+var info = new ProcessStartInfo { UseShellExecute = true, Verb = "runas" };
+```
+
+#### ❌ NO Registry Writes
+```csharp
+// FORBIDDEN: Modifying Windows registry
+RegistryKey.SetValue("HKEY_LOCAL_MACHINE\\Software\\...", value);
+```
+
+#### ❌ NO Unsafe File Traversal
+```csharp
+// FORBIDDEN: Accessing outside project
+var path = "/../../sensitive_file.txt";
+new FileInfo(path).Open(FileMode.Read);
+```
+
+#### ✅ Whitelist-Only Command Execution
+```csharp
+private static readonly HashSet<string> AllowedCommands = new()
+{
+    "dotnet restore",
+    "dotnet build",
+    "dotnet run",
+    "dotnet publish",
+    "dotnet test",
+    "dotnet clean"
+};
+
+/// Validate before execution
+public bool CanExecute(string command)
+{
+    return AllowedCommands.Any(allowed => 
+        command.StartsWith(allowed, StringComparison.OrdinalIgnoreCase));
+}
+```
+
+---
+
+## Part 5: Machine Variability Handling
+
+### The Local-Only Challenge
+
+Unlike cloud environments with fixed infrastructure, local execution must handle:
+
+| Issue | Solution |
+|-------|----------|
+| .NET SDK not installed | Show download link, fail gracefully |
+| Wrong .NET version | Check version, suggest upgrade |
+| Missing XAML workload | Provide install instructions |
+| Low disk space | Check before build, warn user |
+| Antivirus blocking dotnet | Suggest whitelist, fallback to safe mode |
+| Broken NuGet cache | Clear cache, retry restore |
+| Limited RAM | Use incremental builds, limit parallelism |
+| Slow disk | Use smaller snapshots, avoid full ZIP |
+| Power loss during build | Snapshot before = safe recovery |
+
+### Error Handling Architecture
+
+```csharp
+public class MachineVariabilityHandler
+{
+    /// Detect and handle common local issues
+    public async Task<BuildResult> BuildWithFallbacksAsync(
+        string projectPath,
+        IProgress<BuildPhase>? progress = null)
+    {
+        // Phase 1: Validate environment
+        var validation = await ValidateEnvironmentAsync(projectPath);
+        if (validation.HasFatalIssues)
+        {
+            return BuildResult.FailedValidation(validation);
+        }
+        
+        // Phase 2: Attempt restore
+        var restoreResult = await RestoreWithRetryAsync(projectPath);
+        if (!restoreResult.Success)
+        {
+            // Try clearing cache + retry
+            if (restoreResult.ErrorType == ErrorType.NuGetCacheCorrupted)
+            {
+                _logger.LogInformation("Clearing NuGet cache...");
+                await ClearNuGetCacheAsync();
+                
+                restoreResult = await RestoreWithRetryAsync(projectPath);
+                if (!restoreResult.Success)
+                    return BuildResult.Failed(restoreResult);
+            }
+        }
+        
+        // Phase 3: Build with throttling
+        var buildResult = await BuildWithThrottlingAsync(projectPath);
+        
+        return buildResult;
+    }
+    
+    private async Task<bool> ClearNuGetCacheAsync()
+    {
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var nugetCache = Path.Combine(localAppData, "NuGet", "v3-cache");
+        
+        try
+        {
+            if (Directory.Exists(nugetCache))
+            {
+                Directory.Delete(nugetCache, recursive: true);
+                _logger.LogInformation("NuGet cache cleared");
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning($"Failed to clear NuGet cache: {ex.Message}");
+            return false;
+        }
+    }
+}
+```
+
+---
+
+## Part 6: UI Framework - WinUI 3
+
+### Selected: WinUI 3
+
+**Modern, Fluent Design System**:
+- Native Windows 11 feel
+- Performance optimized
+- Active Microsoft development
+- Professional 2026 builder expectations
+- Async/await threading (cleaner code)
+- MVVM Toolkit integration
+- MSIX modern deployment
+
+**Target Platform**: Windows 10 Build 22621+ (Windows 11 standard)
+
+**Why WinUI 3**:
+- Modern UI framework aligned with current Microsoft direction
+- Superior performance vs legacy frameworks
+- Native hardware acceleration
+- Built-in dependency injection
+- Active development and future-proof
+
+### Architecture for WinUI 3
+
+1. **Service layer** remains identical (Orchestrator + Execution Kernel)
+2. **UI architecture** (WinUI 3):
+   - MVVM Toolkit (Microsoft recommended)
+   - Dependency Injection built-in
+   - WinAppSDK 1.5+
+   - Fluent Design System
+
+3. **Threading model** (WinUI 3):
+   - Async/await primary pattern
+   - DispatcherQueue for UI thread access
+   - Background tasks with ThreadPoolTimer
+   - Clean, modern async patterns throughout
+
+4. **Deployment** (WinUI 3):
+   - MSIX packaging
+   - Store distribution or side-load
+   - Automatic updates
+   - Modern installer experience
+
+### WinUI 3 Specifics
+
+**Project Structure**:
+```
+SyncAIAppBuilder.sln
+├── SyncAIAppBuilder.Orchestration/       (Class library)
+├── SyncAIAppBuilder.ExecutionKernel/     (Class library)
+├── SyncAIAppBuilder.CodeIntelligence/    (Class library)
+└── SyncAIAppBuilder.Desktop/             (WinUI 3 App)
+    ├── App.xaml(.cs)
+    ├── MainWindow.xaml(.cs)
+    ├── Views/
+    └── ViewModels/
+```
+
+**MVVM Pattern (WinUI 3 + MVVM Toolkit)**:
+```csharp
+using Microsoft.Mvvm.Toolkit;
+
+public partial class BuildViewModel : ObservableObject
+{
+    private readonly IOrchestrator _orchestrator;
+    
+    [ObservableProperty]
+    private string projectName;
+    
+    [ObservableProperty]
+    private bool isBuilding;
+    
+    [RelayCommand]
+    private async Task BuildProjectAsync()
+    {
+        IsBuilding = true;
+        var result = await _orchestrator.ExecuteTaskAsync(task);
+        IsBuilding = false;
+    }
+}
+```
+
+**Threading (WinUI 3 DispatcherQueue)**:
+```csharp
+// Update UI from background task
+await DispatcherQueue.EnqueueAsync(() =>
+{
+    BuildProgressText = "Compiling...";
+    BuildPercentage = 45;
+});
+```
+
+---
+
+## Part 7: System-Level Architecture
 
 Complete stack when fully internalized:
 
@@ -855,7 +1369,7 @@ Complete stack when fully internalized:
 
 ---
 
-## Deployment Decision Point
+## Part 8: Deployment Decision Point
 
 ### Choice A: Local Desktop Application
 **What runs where:**
@@ -926,7 +1440,7 @@ Complete stack when fully internalized:
 
 ---
 
-## Required for True Internalization
+## Part 9: Required for True Internalization
 
 Minimum checklist:
 
@@ -943,7 +1457,7 @@ Minimum checklist:
 
 ---
 
-## Critical Warning
+## Part 10: Critical Warning
 
 If you try to build without these subsystems:
 
@@ -987,7 +1501,7 @@ User sees: "Done ✅"
 
 ---
 
-## Implementation Roadmap
+## Part 11: Implementation Roadmap
 
 ### Phase 1: Foundation
 1. Filesystem Sandbox (week 1)
@@ -1016,7 +1530,7 @@ User sees: "Done ✅"
 
 ---
 
-## Summary
+## Part 12: Summary
 
 > You cannot eliminate compile processes, runtime environments, or build systems.
 > 
@@ -1038,7 +1552,42 @@ Build for resilience, not simplicity.
 
 ---
 
-**Status**: 🟢 Production-ready specification  
-**Complexity**: High (distributed system concerns)  
+## Part 13: Local-Only Implementation Reality
+
+### What Gets Harder
+
+1. **Infra** - Can't hide behind cloud
+2. **Errors** - User sees all system variability
+3. **Retries** - Must be local, consume resources
+4. **Logging** - Must persist locally
+5. **Updates** - User controls when/if they upgrade
+
+### What Gets Easier
+
+1. **Privacy** - No cloud, no telemetry needed
+2. **Responsiveness** - Local = instant
+3. **Cost** - No server bills
+4. **Control** - User owns entire process
+
+---
+
+## Implementation Ready (WinUI 3 Confirmed)
+
+All architectural decisions are finalized:
+- ✅ Orchestrator (deterministic state machine)
+- ✅ Execution Kernel (local, managed)
+- ✅ Subsystems (6 embedded systems)
+- ✅ Local deployment (desktop-only)
+- ✅ UI Framework (WinUI 3)
+
+Next deliverable: Complete solution structure and service layer design.
+
+---
+
+**Status**: 🟢 Architecture Finalized - Ready for Implementation  
+**Framework**: WinUI 3 (.NET 8)  
+**Target OS**: Windows 10 Build 22621+ (Windows 11 standard)  
+**Deployment**: MSIX packaging  
+**Complexity**: High (distributed system concerns locally)  
 **Risk**: CRITICAL if skipped (foundation of reliability)  
-**Estimated LOC**: ~2,000 lines C# (core subsystems)
+**Estimated Total LOC**: 2,650 lines C# core

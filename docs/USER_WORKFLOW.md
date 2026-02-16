@@ -255,9 +255,9 @@ You can:
 - Suggests **prompt normalization** + **conflict resolution**
 
 #### 4. **Dependencies Are Managed**
-- Generated code includes package.json
+- Generated code includes .csproj
 - All required packages are listed
-- No manual npm install needed
+- No manual NuGet install needed
 - Suggests **dependency tracking** + **resolution**
 
 #### 5. **Real Testing/Deployment Works**
@@ -298,7 +298,7 @@ Intent Objects
                     (parallel)
     ↓
     [Integration] → Wire together
-                    Package.json
+                    .csproj
                     API routes
                     DB migrations
     ↓

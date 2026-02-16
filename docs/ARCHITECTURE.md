@@ -3,11 +3,7 @@
 ## Project Overview
 A comprehensive AI-powered **Windows-native autonomous software construction environment** that generates complete Windows desktop applications end-to-end using natural language prompts. This system leverages **multi-agent orchestration**, **structured specifications**, and **silent retry loops** to deliver a seamless, production-grade experience.
 
-**See [INTERNAL_ARCHITECTURE.md](INTERNAL_ARCHITECTURE.md) for detailed technical breakdown of the multi-agent system.**
-
-**See [INTERNAL_EXECUTION_ARCHITECTURE.md](INTERNAL_EXECUTION_ARCHITECTURE.md) for the 6 required embedded subsystems that make this fully internal.**
-
-**See [LOCAL_EXECUTION_ARCHITECTURE.md](LOCAL_EXECUTION_ARCHITECTURE.md) for desktop-only deployment: handling machine variability, filesystem sandbox, security isolation.**
+**See [EXECUTION_ARCHITECTURE.md](EXECUTION_ARCHITECTURE.md) for the 6 required embedded subsystems and local-only deployment architecture.**
 
 **See [USER_WORKFLOW.md](USER_WORKFLOW.md) for observable user behavior and what happens behind the scenes.**
 
@@ -64,7 +60,7 @@ You are building a **Windows‑native autonomous construction system**. The syst
 
 ---
 
-## System Architecture
+## System Architecture Overview
 
 ### 🔴 FOUNDATION: Deterministic Orchestrator (Must Implement First)
 
@@ -103,7 +99,7 @@ Your builder contains:
 5. **SQLite Project Graph** - Persistent memory of symbols, dependencies, decisions, errors
 6. **Process Sandbox** - Isolated execution, resource limits, timeout management
 
-**See**: [INTERNAL_EXECUTION_ARCHITECTURE.md](INTERNAL_EXECUTION_ARCHITECTURE.md) for complete specifications and implementation patterns
+**See**: [EXECUTION_ARCHITECTURE.md](EXECUTION_ARCHITECTURE.md) for complete specifications and implementation patterns
 
 **User Experience**: 
 ```
@@ -113,143 +109,856 @@ Prompt → Result (30-60 seconds)
 
 ---
 
-### 1. User-Facing Layer (Minimal UI)
+## The 7-Layer Multi-Agent Architecture
 
-**What the user sees:**
-- Prompt input field
-- Live preview of generated app
-- Project list
-- Deploy button
-
-**What's hidden:**
-- Multi-stage orchestration (6 layers)
-- AI agent coordination
-- Automatic error fixing
-- Build retry loops
-
-### 2. Core Processing Layers
-
-#### Layer 1: Intent & Specification
-- **Responsibility**: Parse natural language → structured JSON spec
-- **Prevents**: Hallucinated features, contradictory requirements
-- **Output**: Machine-readable feature list with dependencies
-
-#### Layer 2: Planning Layer (Task Graph/DAG)
-- **Responsibility**: Create ordered execution plan
-- **Enables**: Parallel work, dependency management
-- **Output**: Task graph with serialization points
-
-#### Layer 3: Code Intelligence (Project Index)
-- **Responsibility**: Maintain semantic index of entire project
-- **Enables**: Smart retrieval, impact analysis, safe modifications
-- **Storage**: SQLite with embeddings for semantic search
-- **Tracks**: File index, dependency graph, route registry, schema map
-- **Internal Tables**: `files`, `symbols`, `references`, `dependencies`, `project_graph` (Incremental Index)
-
-#### Layer 4: Multi-Agent Generation
-- **Responsibility**: Decompose complex generation into specialized agents
-- **Agents**:
-  - **Architect Agent** - defines structure
-  - **Schema Agent** - generates DB models
-  - **Frontend Agent** - generates XAML UI
-  - **Backend Agent** - generates APIs
-  - **Integration Agent** - wires dependencies
-  - **Fix Agent** - repairs build failures
-- **Output**: Structured patches, not full file rewrites
-
-#### Layer 5: Structured Patch Engine (AST-Based)
-- **Responsibility**: Apply targeted code modifications
-- **Technology**: Roslyn for C# AST manipulation
-- **Benefit**: Preserves formatting, comments, developer notes
-- **vs. Traditional**: Surgical edits instead of full rewrites
-- **Operation Schema**: AI Engine returns structured JSON operations:
-```json
-{
-  "operation": "ADD_METHOD",
-  "targetFile": "CustomerService.cs",
-  "payload": { ... }
-}
 ```
-
-#### Layer 6: Validation & Silent Retry Loop
-- **Responsibility**: Auto-detect and fix build errors
-- **Hidden**: All errors and retries from user
-- **Shows**: Only final success
-- **Loop**: Generate → Compile → Detect → Fix → Retry
-- **Error Sensitivity**: The system must classify specific errors (`CSxxxx` compile, `XDGxxxx` XAML, `NUxxxx` NuGet, `MSBxxxx` MSBuild) before attempting fixes.
-- **Rules**: Retry only allowed for patch-related failures. Snapshot taken before every attempt.
-
-#### Layer 7: Memory & State
-- **Responsibility**: Preserve architectural decisions and context
-- **Stores**: Project config, stack decisions, naming conventions, error patterns
-- **Enables**: Architectural consistency across iterations
-- **Key Tables**:
-    - `project_memory`: Stacks, architecture patterns, naming conventions
-    - `error_memory`: Error signatures, successful fixes, resolution history
-    - `decision_memory`: DI choices, DB providers, Auth modes, state management patterns
+┌─────────────────────────────────────────────────────────────┐
+│                    USER INTERFACE (Minimal)                  │
+│              Prompt Input → Live Preview → Deploy            │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+        ┌────────────▼────────────┐
+        │   Intent & Spec Layer   │ ← Parses natural language → structured JSON
+        └────────────┬────────────┘
+                     │
+        ┌────────────▼────────────┐
+        │   Planning Layer (DAG)  │ ← Creates ordered task graph
+        └────────────┬────────────┘
+                     │
+        ┌────────────▼────────────────────┐
+        │  Code Intelligence Layer        │ ← Project index, graphs, embeddings
+        │  (Indexed Project Graph)        │
+        └────────────┬────────────────────┘
+                     │
+        ┌────────────▼────────────────────┐
+        │  Multi-Agent Generation Layer   │ ← 6+ specialized agents
+        │  (Orchestrated Agent Stack)     │
+        └────────────┬────────────────────┘
+                     │
+        ┌────────────▼────────────────────┐
+        │  Structured Patch Engine (AST)  │ ← Precise surgical code changes
+        └────────────┬────────────────────┘
+                     │
+        ┌────────────▼──────────────────────────┐
+        │  Validation & Silent Retry Loop       │ ← Build → Detect → Fix → Retry
+        │  (Errors Hidden From User)           │
+        └────────────┬──────────────────────────┘
+                     │
+        ┌────────────▼──────────────────────────┐
+        │  State & Memory Layer                 │ ← SQLite-backed persistence
+        │  (Project Context, Decisions)        │
+        └────────────┬──────────────────────────┘
+                     │
+        ┌────────────▼──────────────────────────┐
+        │  Execution Kernel (Construct Output)  │ ← Build → MSIX → Local Execution
+        └──────────────────────────────────────┘
+```
 
 ---
 
-## Detailed Component Architecture
+## 1️⃣ Intent & Specification Layer
 
-### Frontend (WinUI 3 User Interface)
-- **Technology**: WinUI 3 (Windows App SDK, .NET 8, XAML)
-- **Responsibility**: Minimal, beautiful UI
-- **Features**:
-  - Prompt editor
-  - Live preview
-  - Project manager
-  - Simple build button
-- **Reality**: UI is thin wrapper around sophisticated backend
-- **Deployment**: MSIX package (modern Windows app installer)
+### Purpose
+Transform unstructured user prompts into structured, machine-readable specifications that prevent hallucination and ensure consistency.
 
-### Intent & Specification Service
-- **Technology**: AI Engine (via `z-ai-web-dev-sdk`)
-- **Responsibility**: Convert prompt to structured spec
-- **Output Example**:
+### Process
+
+**Input:**
+```
+"Build a CRM with authentication, role-based access, 
+customer database, and analytics dashboard"
+```
+
+**Processing:**
+1. **NLP Feature Extraction** - Identify requested features
+2. **Stack Selection** - Choose appropriate tech stack
+3. **Constraint Inference** - Deduce implicit requirements (e.g., auth implies session management)
+4. **Dependency Mapping** - Identify feature interdependencies
+5. **Validation** - Check for conflicts or impossibilities
+
+**Output (Structured JSON):**
 ```json
 {
   "projectType": "windows-desktop-app",
-  "features": [...],
-  "stack": {...},
-  "constraints": {...}
+  "projectName": "CRM System",
+  "features": [
+    {
+      "id": "authentication",
+      "type": "auth",
+      "subType": "windows-auth",
+      "dependencies": ["user-database"],
+      "priority": 1
+    },
+    {
+      "id": "rbac",
+      "type": "access-control",
+      "roles": ["admin", "manager", "user"],
+      "dependencies": ["authentication"],
+      "priority": 2
+    },
+    {
+      "id": "customer-database",
+      "type": "data-model",
+      "tables": ["customers", "contacts", "interactions"],
+      "dependencies": ["database-setup"],
+      "priority": 1
+    },
+    {
+      "id": "analytics-dashboard",
+      "type": "ui",
+      "components": ["charts", "metrics", "filters"],
+      "dependencies": ["customer-database", "rbac"],
+      "priority": 3
+    }
+  ],
+  "stack": {
+    "ui": "WinUI3",
+    "backend": ".NET8",
+    "database": "SQLite",
+    "auth": "Windows Authentication"
+  },
+  "constraints": {
+    "maxComplexity": "medium",
+    "requiredPackages": ["Microsoft.UI.Xaml", "System.Data.Sqlite"],
+    "incompatibleFeatures": []
+  }
 }
 ```
 
-### Planning Service
-- **Responsibility**: Create task dependency graph
-- **Output**: Ordered list of parallelizable tasks
+### Benefits
+- **No hallucination** - Features derived from extraction, not free-form
+- **Explicit dependencies** - Clear what depends on what
+- **Conflict detection** - Catch contradictory requirements early
+- **Stack consistency** - All modules use same tech choices
 
-### Code Intelligence Layer
-- **Storage**: SQLite database with:
-  - File index (symbols, exports, imports)
-  - Dependency graph (file → file relationships)
-  - Embeddings (semantic code search)
-  - Route registry (all API endpoints)
-  - Schema map (database structure)
-- **Usage**: Smart file retrieval for AI Engine context
+---
 
-### AI Engine Orchestrator
-- **Technology**: .NET + `z-ai-web-dev-sdk`
-- **Responsibility**: Coordinate 6 specialized agents
-- **Strategy**: Sequential with parallelizable stages
+## 2️⃣ Planning Layer (Task Graph / DAG)
 
-### Structured Patch Engine
-- **Technology**: Roslyn (C# compiler APIs)
-- **Responsibility**: Parse code to AST, apply patches, recompile
-- **Benefit**: Minimal, merge-friendly changes
+### Purpose
+Convert feature spec into an ordered, executable task graph where dependencies are explicit and parallelizable work is identified.
 
-### Build & Validation Service
-- **Technology**: MSBuild + custom error classifier
-- **Responsibility**: Compile, detect errors, trigger fixes
-- **If Errors**: Call Fix Agent, automatically retry
+### Task Graph Structure
 
-### Memory & State Manager
-- **Storage**: SQLite tables for:
-  - Project state (stack decisions)
-  - Pattern memory (naming conventions)
-  - Error patterns (common fixes)
-  - Session context (conversation history)
+```
+Task {
+  id: "setup-auth",
+  type: "infrastructure",
+  description: "Configure Windows Authentication",
+  dependencies: ["init-project"],
+  files_to_create: ["Models/User.cs", "Services/AuthService.cs"],
+  validation_strategy: "compile-check",
+  expected_artifacts: [
+    "AuthService class",
+    "User model",
+    "Authentication middleware"
+  ]
+}
+```
+
+### Example DAG for CRM App
+
+```
+init-project [0]
+    ↓
+setup-database [1]
+    ↓
+    ├─→ define-models [2]
+    │   ├─→ customer-model
+    │   ├─→ contact-model
+    │   └─→ interaction-model
+    │
+    ├─→ setup-auth [2]
+    │   ├─→ auth-service
+    │   └─→ user-model
+    │
+    └─→ db-migrations [2]
+        ├─→ create-tables
+        └─→ seed-data
+
+generate-ui [3]
+    ├─→ login-page (requires: setup-auth)
+    ├─→ dashboard-page (requires: setup-database)
+    └─→ customer-table (requires: define-models)
+
+wire-api-routes [4]
+    ├─→ auth-routes (requires: setup-auth)
+    ├─→ customer-crud (requires: customer-model)
+    ├─→ analytics-routes (requires: setup-database)
+    └─→ rbac-middleware (requires: setup-auth)
+
+validation & fix [5]
+    → compile & test
+    → detect errors
+    → auto-fix
+    → retry
+```
+
+### Key Insights
+- **Parallelizable work** - Tasks at same level can run concurrently
+- **Dependencies clear** - Prevents race conditions
+- **Validation points** - Each task has success criteria
+- **Rollback safe** - Can retry individual tasks
+
+---
+
+## 3️⃣ Code Intelligence Layer (Indexed Project Graph)
+
+### Purpose
+Maintain a semantic index of the entire project for intelligent, impact-aware code generation and modification.
+
+### What Gets Indexed
+
+#### File Index
+```json
+{
+  "files": [
+    {
+      "path": "Models/Customer.cs",
+      "type": "class",
+      "dependencies": ["System.Data", "DbContext"],
+      "exports": ["Customer", "CustomerValidator"],
+      "imports": ["System", "System.ComponentModel.DataAnnotations"],
+      "size_bytes": 2048,
+      "last_modified": "2026-02-16"
+    }
+  ]
+}
+```
+
+#### Dependency Graph
+```
+Customer.cs
+  ├─ imports: DbContext
+  ├─ imports: Validator
+  └─ used by: CustomerService.cs
+  
+CustomerService.cs
+  ├─ imports: Customer.cs
+  ├─ imports: ILogger
+  └─ used by: CustomerController.cs
+  
+CustomerController.cs
+  ├─ imports: CustomerService.cs
+  └─ user-accessible routes: /api/customers/*
+```
+
+#### Route Registry
+```json
+{
+  "routes": [
+    {
+      "path": "/api/customers",
+      "method": "GET",
+      "handler": "CustomerController.GetAll",
+      "auth_required": true,
+      "roles": ["admin", "manager"]
+    },
+    {
+      "path": "/api/customers/{id}",
+      "method": "GET",
+      "handler": "CustomerController.GetById",
+      "auth_required": true,
+      "roles": ["admin", "manager"]
+    }
+  ]
+}
+```
+
+#### Database Schema Map
+```json
+{
+  "tables": [
+    {
+      "name": "customers",
+      "columns": [
+        {"name": "id", "type": "int", "pk": true},
+        {"name": "name", "type": "string", "nullable": false},
+        {"name": "email", "type": "string", "unique": true}
+      ],
+      "relationships": [
+        {"foreign_key": "contact_id", "references": "contacts.id"}
+      ],
+      "models_using": ["Customer.cs"]
+    }
+  ]
+}
+```
+
+### Storage Implementation
+
+**SQLite Schema:**
+```sql
+CREATE TABLE file_index (
+  id TEXT PRIMARY KEY,
+  file_path TEXT UNIQUE NOT NULL,
+  file_type TEXT,
+  export_symbols TEXT,  -- JSON array
+  import_symbols TEXT,  -- JSON array
+  size_bytes INTEGER,
+  checksum TEXT,
+  last_analyzed DATETIME
+);
+
+CREATE TABLE dependency_graph (
+  id INTEGER PRIMARY KEY,
+  source_file TEXT NOT NULL,
+  target_file TEXT NOT NULL,
+  dep_type TEXT,  -- 'imports', 'uses', 'references'
+  FOREIGN KEY (source_file) REFERENCES file_index(file_path)
+);
+
+CREATE TABLE embeddings (
+  id INTEGER PRIMARY KEY,
+  file_path TEXT,
+  code_section TEXT,
+  embedding BLOB,  -- Vector embedding for semantic search
+  FOREIGN KEY (file_path) REFERENCES file_index(file_path)
+);
+```
+
+### Semantic Retrieval
+
+For prompt: *"Add customer validation"*
+
+1. **Embed prompt** - Convert to vector
+2. **Search embeddings** - Find related code sections
+3. **Rank by relevance** - Use similarity score
+4. **Include context** - Add dependent files
+5. **Build context window** - Only relevant code to AI Engine
+
+Result: AI Engine never sees full project, only ~2-5 relevant files.
+
+---
+
+## 4️⃣ Multi-Agent Generation Layer
+
+### Purpose
+Decompose complex app generation into specialized agents, each with narrow responsibility and deterministic output schema.
+
+### The Agent Stack
+
+#### 1. Architect Agent
+**Responsibility:** Define overall app structure
+
+**Input:**
+```json
+{
+  "spec": {...},
+  "task": "design-project-structure"
+}
+```
+
+**Output:**
+```json
+{
+  "project_structure": {
+    "Models": ["Customer.cs", "Contact.cs"],
+    "Services": ["CustomerService.cs", "AuthService.cs"],
+    "UI": ["MainWindow.xaml", "CustomerPage.xaml"],
+    "Database": ["DbContext.cs"]
+  },
+  "design_patterns": ["MVVM", "Repository", "Dependency Injection"]
+}
+```
+
+#### 2. Schema Agent
+**Responsibility:** Generate database models and migrations
+
+**Input:**
+```json
+{
+  "entities": [
+    {
+      "name": "Customer",
+      "properties": [
+        {"name": "id", "type": "int", "pk": true},
+        {"name": "name", "type": "string"}
+      ]
+    }
+  ]
+}
+```
+
+**Output:**
+```csharp
+// Generated Customer.cs
+[Table("customers")]
+public class Customer
+{
+    [Key]
+    public int Id { get; set; }
+    
+    [Required]
+    [StringLength(200)]
+    public string Name { get; set; }
+}
+```
+
+#### 3. Frontend Agent
+**Responsibility:** Generate UI components and pages
+
+**Input:**
+```json
+{
+  "pages": [
+    {
+      "name": "CustomerPage",
+      "components": ["DataGrid", "Form", "Button"],
+      "data_binding": "customer"
+    }
+  ]
+}
+```
+
+**Output:**
+```xaml
+<Page x:Class="CRM.CustomerPage">
+  <Grid>
+    <DataGrid ItemsSource="{Binding Customers}" />
+    <Button Content="Add" Click="OnAdd" />
+  </Grid>
+</Page>
+```
+
+#### 4. Backend Agent
+**Responsibility:** Generate API routes and services
+
+**Input:**
+```json
+{
+  "routes": [
+    {
+      "path": "/api/customers",
+      "methods": ["GET", "POST"],
+      "auth_required": true
+    }
+  ]
+}
+```
+
+**Output:**
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+[Authorize]
+public class CustomersController : ControllerBase
+{
+    [HttpGet]
+    public async Task<ActionResult<List<CustomerDto>>> GetAll()
+    {
+        return await _service.GetAllAsync();
+    }
+}
+```
+
+#### 5. Integration Agent
+**Responsibility:** Wire dependencies together
+
+**Input:**
+```json
+{
+  "dependencies": {
+    "CustomerController": ["CustomerService"],
+    "CustomerService": ["ICustomerRepository", "ILogger"]
+  }
+}
+```
+
+**Output:**
+```csharp
+// Updates Program.cs
+services.AddScoped<ICustomerRepository, CustomerRepository>();
+services.AddScoped<CustomerService>();
+services.AddScoped<CustomersController>();
+```
+
+#### 6. Fix Agent
+**Responsibility:** Detect and repair build failures
+
+**Input:**
+```json
+{
+  "error": "CS1503: Cannot convert type 'string' to 'int'",
+  "file": "Models/Customer.cs",
+  "line": 15,
+  "context": "public int CustomerId { get; set; } = customerId;"
+}
+```
+
+**Output:**
+```csharp
+// Fix suggestion
+public int CustomerId { get; set; } = int.Parse(customerId);
+// or
+public int CustomerId { get; set; } = Convert.ToInt32(customerId);
+```
+
+### Agent Orchestration
+
+```python
+def orchestrate_generation(spec, task_graph):
+    results = {}
+    
+    # Stage 1: Planning & Structure
+    arch_output = architect_agent(spec)
+    results['architecture'] = arch_output
+    
+    # Stage 2: Parallel Generation (tasks with no deps)
+    schema_output = schema_agent(spec)
+    auth_output = backend_agent(spec, auth_tasks)
+    results['schema'] = schema_output
+    results['auth'] = auth_output
+    
+    # Stage 3: UI Generation (needs auth context)
+    ui_output = frontend_agent(spec, auth_output)
+    results['ui'] = ui_output
+    
+    # Stage 4: Integration (wires everything)
+    integration_output = integration_agent(results)
+    results['integration'] = integration_output
+    
+    # Stage 5: Build & Validate
+    build_result = validate_and_build()
+    
+    # Stage 6: Auto-fix if needed
+    if build_result.has_errors:
+        for error in build_result.errors:
+            fix_output = fix_agent(error, results)
+            apply_fix(fix_output)
+        # Retry build
+        build_result = validate_and_build()
+    
+    return results, build_result
+```
+
+**Note**: All agent communications are handled through the `z-ai-web-dev-sdk`.
+
+---
+
+## 5️⃣ Structured Patch Engine (AST-Based)
+
+### Purpose
+Make surgical, targeted code modifications without full file rewrites or losing formatting.
+
+### Traditional Approach (❌ Bad)
+```
+User: "Add validation to Customer model"
+
+Old approach:
+- Retrieve entire Customer.cs file
+- Send to AI Engine with "rewrite this"
+- AI Engine regenerates entire file
+- Lose comments, formatting, developer notes
+- Risk introducing bugs
+```
+
+### AST-Based Approach (✅ Good)
+
+**Step 1: Parse to AST (Abstract Syntax Tree)**
+```
+Customer.cs
+│
+├─ Class: Customer
+│   ├─ Property: Id (int)
+│   ├─ Property: Name (string)
+│   └─ Property: Email (string)
+```
+
+**Step 2: Identify Target Node**
+```
+Goal: Add [Required] annotation to Name property
+Target: Property node "Name"
+```
+
+**Step 3: Generate Minimal Patch**
+```csharp
+// Only modify this:
+- public string Name { get; set; }
++ [Required]
++ public string Name { get; set; }
+```
+
+**Step 4: Apply Patch**
+```
+AST update → Recompile AST to source → Preserve formatting
+```
+
+**Step 5: Preserve Everything Else**
+```csharp
+// Comments preserved
+public class Customer
+{
+    /// <summary>Unique customer ID</summary>
+    public int Id { get; set; }
+    
+    /// <summary>Customer full name</summary>
+    [Required]  // ← Only addition
+    public string Name { get; set; }
+    
+    // Custom init logic (preserved)
+    public Customer() { /* ... */ }
+}
+```
+
+### Implementation (Roslyn-based for C#)
+
+```csharp
+public class StructuredPatchEngine
+{
+    public async Task<CodeFile> ApplyPatchAsync(
+        CodeFile originalFile, 
+        PatchRequest patch)
+    {
+        // Parse to AST
+        var tree = CSharpSyntaxTree.ParseText(originalFile.Content);
+        var root = (CompilationUnitSyntax)tree.GetRoot();
+        
+        // Find target node
+        var targetProperty = root
+            .DescendantNodes()
+            .OfType<PropertyDeclarationSyntax>()
+            .First(p => p.Identifier.Text == patch.PropertyName);
+        
+        // Add attribute
+        var attribute = SyntaxFactory.Attribute(
+            SyntaxFactory.IdentifierName("Required"));
+        var newProperty = targetProperty
+            .AddAttributeLists(
+                SyntaxFactory.AttributeList(
+                    SyntaxFactory.SingletonSeparatedList(attribute)));
+        
+        // Replace in tree
+        var newRoot = root.ReplaceNode(targetProperty, newProperty);
+        
+        // Convert back to source
+        return new CodeFile
+        {
+            Content = newRoot.ToFullString(),
+            Path = originalFile.Path
+        };
+    }
+}
+```
+
+### Benefits
+- ✅ Minimal changes
+- ✅ Preserve formatting & comments
+- ✅ No accidental deletions
+- ✅ Merge-friendly for version control
+- ✅ Fast and deterministic
+
+---
+
+## 6️⃣ Validation & Silent Retry Loop
+
+### Purpose
+Transform potential errors into invisible internal retries, surfacing only final success to the user.
+
+### The Loop
+
+```
+Generate Code
+    ↓
+Install Dependencies
+    ↓
+Compile (MSBuild)
+    ↓
+[Check for errors]
+    ├─ NO ERRORS? → Success (show to user)
+    │
+    └─ ERRORS? → Classify & Fix
+        ├─ Syntax Error → Fix Agent
+        ├─ Missing dependency → Auto-install
+        ├─ Type mismatch → Type fixer
+        ├─ Missing reference → Add using
+        └─ Build error → Rebuild & retry
+        
+        After fix → Recompile
+            ├─ Success? → Return to user ✅
+            └─ Still errors? → Re-analyze & retry
+```
+
+### Error Classifier
+
+```csharp
+public enum ErrorType
+{
+    SyntaxError,           // CS1002, etc.
+    MissingDependency,     // Package not found
+    TypeMismatch,          // CS1503
+    MissingReference,      // CS0106
+    UndefinedVariable,     // CS0103
+    InvalidRoute,          // Custom domain error
+    ConfigError,           // Missing settings
+    SchemaConflict         // DB schema mismatch
+}
+
+public class ErrorClassifier
+{
+    public ErrorType Classify(string errorCode, string message)
+    {
+        return errorCode switch
+        {
+            "CS1002" => ErrorType.SyntaxError,
+            "CS1503" => ErrorType.TypeMismatch,
+            "CS0103" => ErrorType.UndefinedVariable,
+            "CS0106" => ErrorType.MissingReference,
+            _ => ErrorType.Unknown
+        };
+    }
+}
+```
+
+### Auto-Fix Strategies
+
+**Syntax Error:**
+```
+Error: Missing ';' at line 15
+Fix: Insert ';' using AST patch
+```
+
+**Type Mismatch:**
+```
+Error: Cannot convert 'string' to 'int'
+Fix: Insert Convert.ToInt32() or Parse()
+```
+
+**Missing Using:**
+```
+Error: Type 'ILogger' not found
+Fix: Add 'using Microsoft.Extensions.Logging;'
+```
+
+**Build Failure:**
+```
+Error: Package 'Newtonsoft.Json' not found
+Fix: Run 'dotnet add package Newtonsoft.Json'
+Retry build
+```
+
+### User Experience
+
+**User sees:**
+```
+Input: "Add user validation"
+Output: [spinner for 2-3 seconds]
+        ✅ Success - Added DataAnnotations validation
+```
+
+**But internally:**
+```
+1st attempt: Syntax error in validator
+2nd attempt: Missing using statement
+3rd attempt: ✅ Success
+(All hidden, only final shown)
+```
+
+---
+
+## 7️⃣ Memory & State Layer
+
+### Purpose
+Preserve architectural decisions and context across iterations, preventing architectural drift.
+
+### What Gets Remembered
+
+#### Project Memory
+```json
+{
+  "project_id": "crm-app-001",
+  "stack_decisions": {
+    "ui_framework": "WinUI3",
+    "database": "SQLite",
+    "auth_provider": "Windows-Auth",
+    "orm": "Entity Framework Core"
+  },
+  "architectural_decisions": {
+    "pattern": "MVVM",
+    "dependency_injection": "Microsoft.Extensions.DependencyInjection",
+    "logging": "Serilog"
+  },
+  "naming_conventions": {
+    "models": "PascalCase",
+    "private_fields": "_camelCase",
+    "public_properties": "PascalCase"
+  }
+}
+```
+
+#### Pattern Memory
+```json
+{
+  "file_naming": {
+    "models": "Models/{EntityName}.cs",
+    "services": "Services/{EntityName}Service.cs",
+    "controllers": "Controllers/{EntityName}Controller.cs",
+    "views": "UI/Pages/{PageName}.xaml"
+  },
+  "routing_style": {
+    "api_base": "/api",
+    "verb_placement": "method-based",
+    "resource_naming": "plural"
+  },
+  "code_style": {
+    "async_by_default": true,
+    "nullable_enabled": true,
+    "use_records": false
+  }
+}
+```
+
+#### Error Memory
+```json
+{
+  "error_signatures": [
+    {
+      "error_code": "CS1503",
+      "pattern": "Cannot convert type 'string' to 'int'",
+      "successful_fix": "Convert.ToInt32(value)",
+      "occurrence_count": 12
+    },
+    {
+      "error_code": "CS0103",
+      "pattern": "The name 'ILogger' does not exist",
+      "successful_fix": "Add using Microsoft.Extensions.Logging;",
+      "occurrence_count": 8
+    }
+  ]
+}
+```
+
+### Storage Schema
+
+```sql
+CREATE TABLE project_memory (
+  project_id TEXT PRIMARY KEY,
+  stack_decisions JSON,
+  architectural_decisions JSON,
+  naming_conventions JSON,
+  created_at DATETIME,
+  updated_at DATETIME
+);
+
+CREATE TABLE pattern_memory (
+  id INTEGER PRIMARY KEY,
+  project_id TEXT,
+  pattern_type TEXT,  -- 'file_naming', 'routing', 'code_style'
+  pattern_data JSON,
+  FOREIGN KEY (project_id) REFERENCES project_memory(project_id)
+);
+
+CREATE TABLE error_memory (
+  id INTEGER PRIMARY KEY,
+  project_id TEXT,
+  error_code TEXT,
+  error_pattern TEXT,
+  successful_fix TEXT,
+  occurrence_count INTEGER,
+  last_seen DATETIME,
+  FOREIGN KEY (project_id) REFERENCES project_memory(project_id)
+);
+```
 
 ---
 
@@ -360,7 +1069,7 @@ The kernel must detect and mitigate machine variability that cloud-based systems
 SYNC-AI-FULL-STACK-APP-BUILDER/
 ├── docs/                              # Documentation
 │   ├── ARCHITECTURE.md                # System design (this file)
-│   ├── INTERNAL_ARCHITECTURE.md       # Multi-agent details
+│   ├── EXECUTION_ARCHITECTURE.md      # Embedded subsystems & local deployment
 │   ├── TECHNOLOGY_STACK.md
 │   ├── FEATURES.md
 │   └── ...
@@ -460,8 +1169,8 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 ## References
 
 For deeper technical details:
-- [INTERNAL_ARCHITECTURE.md](INTERNAL_ARCHITECTURE.md) - Complete multi-agent breakdown
-- [AI_ENGINE_OUTPUT_CONTRACTS.md](AI_ENGINE_OUTPUT_CONTRACTS.md) - Formal JSON output contracts
+- [EXECUTION_ARCHITECTURE.md](EXECUTION_ARCHITECTURE.md) - Complete embedded subsystems & local deployment
+- [API_CONTRACTS.md](API_CONTRACTS.md) - Formal JSON output contracts
 - [FEATURES.md](FEATURES.md) - Feature roadmap
 - [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) - Implementation guide
 

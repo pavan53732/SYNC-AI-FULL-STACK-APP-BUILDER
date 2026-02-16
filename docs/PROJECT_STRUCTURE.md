@@ -71,7 +71,6 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 │   ├── DEPLOYMENT.md                  # Deployment guide (MSIX)
 │   ├── DESIGN_PHILOSOPHY.md           # UX design principles
 │   ├── USER_WORKFLOW.md               # User behavior & workflow
-│   ├── FEEDBACK_INTEGRATION_SUMMARY.md # Feedback integration
 │   └── AI_ENGINE_OUTPUT_CONTRACTS.md  # AI Engine output schemas
 │
 ├── src/                               # Source code

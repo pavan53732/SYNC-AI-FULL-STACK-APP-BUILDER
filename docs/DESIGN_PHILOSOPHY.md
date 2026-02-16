@@ -348,7 +348,7 @@ System internally handles:
 
 ### For Web Apps (Legacy Reference)
 ```
-Parse → Generate React/Node → Validate → Deploy to Netlify
+Parse → Generate code → Validate → Deploy
 ```
 
 ### For Windows Apps (SyncAI Explorer)
@@ -388,7 +388,7 @@ Parse → Generate XAML/C# → Validate with MSBuild → Preview/Local Execution
 - **Good sign**: True code ownership
 
 ### Pattern 5: Dependency Management is Automatic
-- package.json auto-generated with all deps
+- .csproj auto-generated with all deps
 - No manual package installation
 - Integrations are pre-configured
 - **Why**: System tracks dependencies across all modules
@@ -457,9 +457,9 @@ Complex Alternative (✅ Good)
 
 | Aspect | Lovable (Web) | Windows Native |
 |---|---|---|
-| **Generate** | React components (Web) | XAML components (Windows) |
-| **Validate** | npm build | MSBuild |
-| **Deploy** | Netlify | .exe / MSIX |
+| **Generate** | Component files (Web) | XAML components (Windows) |
+| **Validate** | npm / Vite | MSBuild |
+| **Deploy** | App Hosting | .exe / MSIX |
 | **Design Philosophy** | Hide complexity | Hide complexity |
 | **Error Handling** | Internal | Internal |
 | **Code Ownership** | Real code | Real code |

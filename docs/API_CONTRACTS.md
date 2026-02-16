@@ -1,16 +1,59 @@
-# AI Engine Output Contract Specification
+# API Contracts & Interface Specifications
+
+This document describes the internal service-to-service interfaces and AI Engine output contracts for the SYNC-AI-FULL-STACK-APP-BUILDER. All services follow the 7-layer architecture and are managed by the Deterministic Orchestrator.
+
+---
+
+## Part 1: Internal Service Interfaces
+
+### Orchestrator Service (`IOrchestrator`)
+
+The Orchestrator is the central control point for all mutations.
+
+#### Methods
+- `Task<BuilderState> DispatchAsync(BuilderEvent @event)`: Dispatches an event to the state machine.
+- `Task<TaskResult> ExecuteTaskAsync(TaskDefinition task)`: Entry point for agents to request work execution.
+- `BuilderContext GetCurrentContext()`: Returns the current immutable state of the builder.
+
+### Code Intelligence Service (`IRoslynService`)
+
+Provides AST-based analysis and indexing.
+
+#### Methods
+- `Task<ProjectGraph> IndexProjectAsync(string path)`: Recursively indexes symbols in a .NET project.
+- `Task<List<Symbol>> FindUsagesAsync(ISymbol symbol)`: Finds all references to a specific symbol.
+- `Task<SemanticModel> GetSemanticModelAsync(string filePath)`: Returns the Roslyn semantic model for a file.
+
+### Patch Engine (`IPatchEngine`)
+
+Surgically modifies source code.
+
+#### Methods
+- `Task<string> ApplyPatchAsync(string filePath, PatchDefinition patch)`: Applies an AST-based patch and returns the modified content.
+- `Task<bool> ValidatePatchAsync(string filePath, PatchDefinition patch)`: Checks if a patch can be applied without conflicts.
+
+### Execution Kernel (`IExecutionKernel`)
+
+Manages the isolated .NET execution environment.
+
+#### Methods
+- `Task<BuildResult> BuildAsync(string projectPath)`: Runs an isolated MSBuild process.
+- `Task<TestResult> RunTestsAsync(string projectPath)`: Executes unit tests.
+- `Task<ExecutionResult> RunAppAsync(string projectPath)`: Launches the app in a controlled environment.
+
+---
+
+## Part 2: AI Engine Output Contracts
 
 **Status**: Draft - Addressing Architectural Gap (Response 1 Validation)  
 **Scope**: Formal JSON Schemas for all AI Engine-generated artifacts.
 
----
-
-## Overview
+### Overview
 To maintain deterministic control, all AI Engine outputs must adhere to strict JSON schemas. The Orchestrator validates every AI Engine response against these contracts before proceeding to the next stage. Any validation failure triggers a silent retry or a structured error state.
 
 ---
 
-## 1️⃣ Project Specification Contract (`ProjectSpec`)
+### 1️⃣ Project Specification Contract (`ProjectSpec`)
 **Source**: Intent Service (Layer 1)  
 **Purpose**: High-level structural definition of the application.
 
@@ -51,7 +94,7 @@ To maintain deterministic control, all AI Engine outputs must adhere to strict J
 
 ---
 
-## 2️⃣ Task Graph Contract (`TaskGraph`)
+### 2️⃣ Task Graph Contract (`TaskGraph`)
 **Source**: Planning Service (Layer 2)  
 **Purpose**: Ordered sequence of construction steps.
 
@@ -82,7 +125,7 @@ To maintain deterministic control, all AI Engine outputs must adhere to strict J
 
 ---
 
-## 3️⃣ Patch Engine Contract (`CodePatch`)
+### 3️⃣ Patch Engine Contract (`CodePatch`)
 **Source**: Generation Agents (Layer 4)  
 **Purpose**: Targeted modifications for the Patch Engine (Layer 5).
 
@@ -118,7 +161,7 @@ To maintain deterministic control, all AI Engine outputs must adhere to strict J
 
 ---
 
-## 4️⃣ Validation Rules
+### 4️⃣ Validation Rules
 1. **Schema Check**: All AI Engine responses must pass JSON Schema validation.
 2. **Path Resolution**: Files referenced in tasks must exist in the workspace or be marked for creation.
 3. **Dependency Integrity**: Task graph must be an acyclic (DAG).

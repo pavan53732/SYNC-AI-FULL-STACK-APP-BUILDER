@@ -632,8 +632,8 @@ Generated Files:
 - **Why**: System performs **impact analysis** before regeneration
 
 #### Behavior 3: Dependency Management Is Automatic
-- Generated code includes package.json with all dependencies
-- No manual "npm install missing-package"
+- Generated code includes .csproj with all dependencies
+- No manual "NuGet package addition"
 - Required libraries automatically detected and added
 - **Why**: System tracks dependencies across all generated modules
 
