@@ -4,6 +4,16 @@
 > **Purpose**: Define system boundaries, core invariants, and canonical truths
 > **Rule**: All other specifications must be consistent with this document. Conflicts indicate a bug in the other specification.
 
+## 📋 TABLE OF CONTENTS
+- [CORE INVARIANTS](#core-invariants-immutable-truths)
+- [SYSTEM BOUNDARIES](#system-boundaries)
+- [ARCHITECTURE DEFINITION](#architecture-definition)
+- [TECHNOLOGY STACK](#technology-stack-canonical)
+- [DESIGN PHILOSOPHY](#design-philosophy--ux-principles)
+- [FEATURE DEFINITIONS](#feature-definitions)
+- [CORE SUBSYSTEMS](#core-subsystems--technical-foundations)
+- [CHANGE HISTORY](#change-history)
+
 This document is the **single source of truth** for:
 1. System boundaries (what IS and IS NOT part of the system)
 2. Core invariants (truths that can never change)
@@ -170,8 +180,8 @@ Layer 9: Execution Kernel
 
 | Component | Technology | Version |
 |-----------|------------|---------|
-| Language | C# | .NET 8.0+ |
-| UI Framework | WinUI 3 | Windows App SDK |
+   | Language | C# | .NET 8.0.100+ (LTS) |
+   | UI Framework | WinUI 3 | Windows App SDK 1.4.231219000+ |
 | Database | SQLite | Microsoft.Data.Sqlite |
 | Code Analysis | Roslyn | Microsoft.CodeAnalysis.* |
 | Build System | MSBuild | Embedded API (no CLI) |
@@ -596,6 +606,125 @@ Any implementation that violates:
 
 ---
 
+## 🧪 TESTING & QUALITY ASSURANCE
+
+### Testing Stack
+
+| Type | Technology | Purpose |
+|------|------------|---------|
+| **Unit Testing** | xUnit | Core logic validation |
+| **Integration Testing** | Test Containers | Component integration |
+| **UI Testing** | Windows Application Driver | WinUI 3 automation |
+
+### Quality Targets
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| **Syntax Validity** | > 95% | Generated code compiles first pass |
+| **Build Success** | > 99% | Auto-fix handles rest |
+| **Runtime Success** | > 90% | Validates expected behavior |
+
+---
+
+## 📡 MONITORING & LOGGING
+
+### Logging Architecture
+
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| **Logging Framework** | Serilog | Structured logging |
+| **Log Aggregation** | Seq | Log viewer for debugging |
+| **Error Tracking** | Sentry / Application Insights | Exception monitoring |
+
+### Logging Requirements
+
+- **All Operations**: Every mutation logged with timestamp
+- **Error Capture**: Full stack traces with context
+- **Performance Metrics**: Timing for all pipeline stages
+- **Audit Trail**: Event sourcing for perfect replay
+
+---
+
+## 📦 DISTRIBUTION & DEPLOYMENT
+
+### Package Formats
+
+| Format | Description | Use Case |
+|--------|-------------|----------|
+| **MSIX** | Modern Windows package | Primary distribution |
+| **Windows App Installer** | Auto-update capable | Sideloading |
+| **Microsoft Store** | Store distribution | Public releases |
+| **Direct Download** | Self-hosted MSIX | Enterprise teams |
+
+### Code Signing
+
+- **Authenticode**: Required for all distributed executables
+- **Certificate**: Must be from trusted CA or self-signed for testing
+- **Timestamp**: Long-term validity with timestamping
+
+### Deployment Targets
+
+- **Local Execution**: Run directly on user's PC
+- **MSIX Package**: Installable with auto-updates
+- **GitHub Sync**: Optional repository push
+- **Standalone Export**: ZIP with full source code
+
+---
+
+## 👁️ PREVIEW SYSTEM
+
+### Preview Modes (3 Parallel)
+
+The Preview System renders generated code without user seeing internal complexity:
+
+| Mode | Technology | Description |
+|------|------------|-------------|
+| **Embedded XAML** | XamlReader.Load() | Instant UI rendering |
+| **Code View** | Syntax Highlighting | Formatted source display |
+| **Full Launch** | Process.Start() | Running .exe in new window |
+
+### Preview Data Flow
+
+```
+AI Engine generates patches
+        ↓
+Roslyn Patch Engine applies to files
+        ↓
+PreviewService triggered (auto or manual)
+        ↓
+[Mode 1] XamlReader.Load() → UIElement in PreviewPanel
+[Mode 2] Syntax highlight → CodeViewer with file tree
+[Mode 3] MSBuild → Launch .exe in separate window
+```
+
+### Preview Update Triggers
+
+1. **Auto-refresh**: After successful patch application
+2. **Manual**: User clicks "Refresh Preview"
+3. **Post-build**: After successful MSBuild compilation
+
+### Preview Error Handling
+
+```
+Invalid XAML generated
+        ↓
+XamlReader.Load() throws XamlParseException
+        ↓
+PreviewPanel shows error message
+        ↓
+User sees: "Preview Error: Invalid XAML at line N"
+        ↓
+Orchestrator retries with corrected code
+```
+
+### Performance Optimization
+
+- **Debouncing**: 500ms delay to avoid excessive re-renders
+- **Incremental**: Only refresh changed components when possible
+- **Background**: All preview updates run async
+
+---
+
 ## 📈 PERFORMANCE REQUIREMENTS
 
 ### Timing Targets
@@ -630,7 +759,8 @@ Any implementation that violates:
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
 | 1.0 | 2026-02-16 | System | Initial canonical authority |
-| 1.1 | 2026-02-17 | System | Merged content from ARCHITECTURE.md, DESIGN_PHILOSOPHY.md, TECHNOLOGY_STACK.md, FEATURES.md |
+| 1.1 | 2026-02-17 | System | Merged content from archive docs - Testing, Monitoring, Distribution, Preview System |
+| 1.2 | 2026-02-17 | System | Complete gap analysis - Added all missing canonical content |
 
 **This document is the single source of truth. All other specifications must be consistent with it.**
 
