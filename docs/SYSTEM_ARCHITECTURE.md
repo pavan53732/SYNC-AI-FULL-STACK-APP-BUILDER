@@ -10,17 +10,28 @@
 
 1. [System Overview](#1-system-overview)
 2. [The 7-Layer Architecture](#2-the-7-layer-architecture)
-3. [Multi-Agent Specifications](#3-multi-agent-specifications)
-4. [Data Flow](#4-data-flow)
-5. [Embedded Subsystems](#5-embedded-subsystems)
-6. [Execution Lifecycle](#6-execution-lifecycle)
-7. [Background Systems](#7-background-systems)
-8. [Threading & Concurrency Model](#8-threading--concurrency-model)
-9. [Security & Isolation](#9-security--isolation)
-10. [Machine Variability Handling](#10-machine-variability-handling)
-11. [Deployment Model](#11-deployment-model)
-12. [System-Level Stack](#12-system-level-stack)
-13. [Implementation Roadmap](#13-implementation-roadmap)
+3. [Intent & Specification Layer](#3-intent--specification-layer)
+4. [Planning Layer (Task Graph / DAG)](#4-planning-layer-task-graph--dag)
+5. [Multi-Agent Specifications](#5-multi-agent-specifications)
+6. [Data Flow](#6-data-flow)
+7. [AI Engine Integration with Preview System](#7-ai-engine-integration-with-preview-system)
+8. [Validation & Silent Retry Loop](#8-validation--silent-retry-loop)
+9. [Memory & State Layer](#9-memory--state-layer)
+10. [Embedded Subsystems](#10-embedded-subsystems)
+11. [Execution Lifecycle](#11-execution-lifecycle)
+12. [Background Systems](#12-background-systems)
+13. [Threading & Concurrency Model](#13-threading--concurrency-model)
+14. [Security & Isolation](#14-security--isolation)
+15. [Machine Variability Handling](#15-machine-variability-handling)
+16. [Deployment Model](#16-deployment-model)
+17. [Builder Project Structure](#17-builder-project-structure)
+18. [Module Structure](#18-module-structure)
+19. [System-Level Stack](#19-system-level-stack)
+20. [Implementation Roadmap](#20-implementation-roadmap)
+21. [Key Architectural Decisions](#21-key-architectural-decisions)
+22. [Performance Considerations](#22-performance-considerations)
+23. [Comparison with Traditional Approaches](#23-comparison-with-traditional-approaches)
+24. [Future Evolution](#24-future-evolution)
 
 ---
 
@@ -47,11 +58,39 @@ The user sees a simple prompt → app interface. Behind the scenes, 10+ subsyste
 | **Isolated**           | Each project runs in a sandboxed directory        |
 | **Hidden Complexity**  | User never sees logs, retries, or internal state  |
 
+### Core Principle: The Autonomous Construction Environment
+
+> **"Fully internal" does NOT mean "no tools exist"**
+>
+> It means: All tools are **embedded services**, not user-facing developer utilities.
+> Users never open an IDE, run CLI commands, or manage build systems.
+
+**The Lovable Model (Reference)**:
+Lovable feels completely "internal" and seamless, but behind the scenes it manages a Node runtime, package manager, and dev server.
+
+**Sync AI's Windows Equivalent**:
+
+- **Embeds .NET SDK**: No "Install .NET" step for users.
+- **Manages MSBuild**: Direct API calls, no `dotnet build` CLI.
+- **Wraps XAML Compilation**: Hidden behind the Preview System.
+- **Controls NuGet**: In-process restoration and caching.
+
+**Users never see these tools.** They are managed entirely by the orchestrator. This "No IDE Required" model ensures that the complexity of the .NET ecosystem is fully abstracted.
+
+### "No IDE Required" Philosophy
+
+The system is built as an **autonomous software construction environment**, not a developer utility.
+
+- **Zero Tooling Exposure**: Users never open Visual Studio, run `dotnet build`, or manage NuGet manually.
+- **Embedded Services**: The .NET SDK, MSBuild, and Roslyn are **internal bundled services**, not external user tools.
+- **Developer-Free Workflow**: The Orchestrator and Patch Engine handle all file edits and debugging silently.
+- **The Goal**: A self-contained constructor where the only external dependency is the Cloud AI reasoning.
+
 ---
 
 ## 2. The 7-Layer Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 7: User Interface (WinUI 3 / XAML)                   │
 │  ─ Prompt input, real-time preview, version timeline         │
@@ -88,7 +127,7 @@ The user sees a simple prompt → app interface. Behind the scenes, 10+ subsyste
 
 **Workspace Structure**:
 
-```
+```text
 %AppData%/SyncAI/
 ├── Workspaces/
 │   └── {ProjectId}/
@@ -166,14 +205,122 @@ public interface IPatchTransaction : IAsyncDisposable
 - **Conflict-Free**: Detect overlapping changes
 - **Auditable**: Track every patch
 
+#### Implementation Pattern: Transactional Patch Engine
+
+```csharp
+public class TransactionalPatchEngine
+{
+    private readonly FileSystemSandbox _sandbox;
+    private Stack<ISnapshot> _undoStack = new();
+
+    /// Begin patch operation
+    public async Task<IPatchTransaction> BeginPatchAsync(string filePath)
+    {
+        // Create snapshot before patching
+        var snapshot = await _sandbox.CreateSnapshotAsync(Path.GetDirectoryName(filePath)!);
+        return new PatchTransaction(filePath, snapshot, _undoStack);
+    }
+}
+
+public class PatchTransaction : IPatchTransaction
+{
+    private readonly string _filePath;
+    private List<Patch> _patches = new();
+    private bool _committed = false;
+
+    public async Task AddAttributeAsync(string className, string attributeName)
+    {
+        // Rosslyn SyntaxTree manipulation...
+        var syntax = CSharpSyntaxTree.ParseText(await File.ReadAllTextAsync(_filePath));
+        var root = syntax.GetCompilationUnitSyntax();
+        // ... (Find class, add attribute via SyntaxFactory) ...
+        _patches.Add(new Patch { Type = PatchType.AddAttribute, NewContent = newRoot.ToFullString() });
+    }
+
+    public async Task CommitAsync()
+    {
+        if (_committed) throw new InvalidOperationException("Already committed");
+        // Write all patches to file
+        await File.WriteAllTextAsync(_filePath, _patches.Last().NewContent);
+        _committed = true;
+    }
+
+    public async Task RollbackAsync()
+    {
+        // Restore from snapshot if needed
+    }
+}
+```
+
+**Key Comparison: Traditional vs AST**:
+Validation that simple LLM rewrites destroy code (formatting, comments), while AST patches (Roslyn) preserve structure safe for production.
+
+```csharp
+// Only modify target node implies:
+// - Comments preserved
+// - Formatting preserved
+// - Minimal diffs
+```
+
 #### Layer 4: Code Intelligence (Roslyn)
 
 **Purpose**: Deep understanding of generated code.
 
 - Parse C# into AST (Abstract Syntax Trees)
-- Extract symbols (classes, methods, properties, fields)
-- Build dependency graphs
 - Detect breaking changes before build
+
+#### Implementation: Roslyn Code Intelligence Service
+
+```csharp
+public class RoslynCodeIntelligenceService
+{
+    private readonly string _projectPath;
+    private Compilation? _cachedCompilation;
+    private Dictionary<string, ISymbol>? _symbolIndex;
+
+    /// Build or update symbol index (Async, non-blocking)
+    public async Task IndexProjectAsync()
+    {
+        var workspace = MSBuildWorkspace.Create();
+        var project = await workspace.OpenProjectAsync(_projectPath);
+        var compilation = await project.GetCompilationAsync();
+
+        _cachedCompilation = compilation;
+        _symbolIndex = new Dictionary<string, ISymbol>();
+
+        // Recursively index all symbols in the global namespace
+        IndexSymbolsRecursive(compilation.GlobalNamespace);
+    }
+
+    /// Analyze impact of changing a file
+    public async Task<FileImpactAnalysis> AnalyzeChangeImpactAsync(string filePath)
+    {
+        // 1. Find syntax tree for file
+        // 2. Find all symbols declared in file
+        // 3. Find all REFERENCES to those symbols in other files
+        var dependentFiles = await FindDependentFiles(filePath);
+
+        return new FileImpactAnalysis
+        {
+            FilePath = filePath,
+            AffectedFiles = dependentFiles,
+            ImpactLevel = dependentFiles.Count > 20 ? ImpactLevel.High : ImpactLevel.Low
+        };
+    }
+}
+```
+
+**Example Index Entry**:
+
+```json
+{
+  "path": "Models/Customer.cs",
+  "type": "class",
+  "dependencies": ["System.Data", "DbContext"],
+  "exports": ["Customer", "CustomerValidator"],
+  "size_bytes": 2048
+}
+```
 
 #### Layer 5: AI Agent Layer
 
@@ -192,6 +339,14 @@ public interface IPatchTransaction : IAsyncDisposable
 
 **Purpose**: The brain — deterministic state machine governing all operations.
 
+**Purpose**: The brain — deterministic state machine governing all operations.
+
+**🔴 CRITICAL FOUNDATION: Must Implement First**
+Without deterministic orchestration, Roslyn indexing and patching will create nondeterministic mutation loops that silently corrupt code.
+
+- **State Transitions**: `IDLE` → `SPEC_PARSED` → `TASK_GRAPH_READY` → `TASK_EXECUTING` → `VALIDATING` → `RETRYING` → `COMPLETED` / `FAILED`.
+- **Constraint**: Only 1 mutation task at time (no parallel patching)
+
 See [ORCHESTRATION_ENGINE.md](ORCHESTRATION_ENGINE.md) for complete details.
 
 #### Layer 7: User Interface
@@ -205,7 +360,160 @@ See [ORCHESTRATION_ENGINE.md](ORCHESTRATION_ENGINE.md) for complete details.
 
 ---
 
-## 3. Multi-Agent Specifications
+## 3. Intent & Specification Layer
+
+### Purpose
+
+Transform unstructured user prompts into structured, machine-readable specifications that prevent hallucination and ensure consistency.
+
+### Process
+
+**Input:**
+
+```
+"Build a CRM with authentication, role-based access,
+customer database, and analytics dashboard"
+```
+
+**Processing:**
+
+1. **NLP Feature Extraction** - Identify requested features
+2. **Stack Selection** - Choose appropriate tech stack
+3. **Constraint Inference** - Deduce implicit requirements (e.g., auth implies session management)
+4. **Dependency Mapping** - Identify feature interdependencies
+5. **Validation** - Check for conflicts or impossibilities
+
+**Output (Structured JSON):**
+
+```json
+{
+  "projectType": "windows-desktop-app",
+  "projectName": "CRM System",
+  "features": [
+    {
+      "id": "authentication",
+      "type": "auth",
+      "subType": "windows-auth",
+      "dependencies": ["user-database"],
+      "priority": 1
+    },
+    {
+      "id": "rbac",
+      "type": "access-control",
+      "roles": ["admin", "manager", "user"],
+      "dependencies": ["authentication"],
+      "priority": 2
+    },
+    {
+      "id": "customer-database",
+      "type": "data-model",
+      "tables": ["customers", "contacts", "interactions"],
+      "dependencies": ["database-setup"],
+      "priority": 1
+    },
+    {
+      "id": "analytics-dashboard",
+      "type": "ui",
+      "components": ["charts", "metrics", "filters"],
+      "dependencies": ["customer-database", "rbac"],
+      "priority": 3
+    }
+  ],
+  "stack": {
+    "ui": "WinUI3",
+    "backend": ".NET8",
+    "database": "SQLite",
+    "auth": "Windows Authentication"
+  },
+  "constraints": {
+    "maxComplexity": "medium",
+    "requiredPackages": ["Microsoft.UI.Xaml", "System.Data.Sqlite"],
+    "incompatibleFeatures": []
+  }
+}
+```
+
+### Benefits
+
+- **No hallucination** - Features derived from extraction, not free-form
+- **Explicit dependencies** - Clear what depends on what
+- **Conflict detection** - Catch contradictory requirements early
+- **Stack consistency** - All modules use same tech choices
+
+---
+
+## 4. Planning Layer (Task Graph / DAG)
+
+### Purpose
+
+Convert feature spec into an ordered, executable task graph where dependencies are explicit and parallelizable work is identified.
+
+### Task Graph Structure
+
+```text
+Task {
+  id: "setup-auth",
+  type: "infrastructure",
+  description: "Configure Windows Authentication",
+  dependencies: ["init-project"],
+  files_to_create: ["Models/User.cs", "Services/AuthService.cs"],
+  validation_strategy: "compile-check",
+  expected_artifacts: [
+    "AuthService class",
+    "User model",
+    "Authentication middleware"
+  ]
+}
+```
+
+### Example DAG for CRM App
+
+```text
+init-project [0]
+    ↓
+setup-database [1]
+    ↓
+    ├─→ define-models [2]
+    │   ├─→ customer-model
+    │   ├─→ contact-model
+    │   └─→ interaction-model
+    │
+    ├─→ setup-auth [2]
+    │   ├─→ auth-service
+    │   └─→ user-model
+    │
+    └─→ db-migrations [2]
+        ├─→ create-tables
+        └─→ seed-data
+
+generate-ui [3]
+    ├─→ login-page (requires: setup-auth)
+    ├─→ dashboard-page (requires: setup-database)
+    └─→ customer-table (requires: define-models)
+
+wire-api-routes [4]
+    ├─→ auth-routes (requires: setup-auth)
+    ├─→ customer-crud (requires: customer-model)
+    ├─→ analytics-routes (requires: setup-database)
+    └─→ rbac-middleware (requires: setup-auth)
+
+validation & fix [5]
+    → compile & test
+    → detect errors
+    → auto-fix
+    → retry
+```
+
+### Key Insights
+
+- **Parallelizable work** - Tasks at same level can run concurrently
+- **Dependencies clear** - Prevents race conditions
+- **Validation points** - Each task has success criteria
+- **Rollback safe** - Can retry individual tasks
+
+---
+
+## 5. Multi-Agent Specifications
 
 ### Purpose
 
@@ -389,9 +697,9 @@ public int CustomerId { get; set; } = Convert.ToInt32(customerId);
 
 ---
 
-## 4. Data Flow
+## 6. Data Flow
 
-```
+```text
 User Prompt
     ↓
 Intent Parser → Structured Spec
@@ -428,9 +736,253 @@ Live Preview / Deploy
 - Automatic error fixing (hidden from user)
 - Silent retries (only success shown)
 
+- Silent retries (only success shown)
+
 ---
 
-## 5. Embedded Subsystems
+## 7. AI Engine Integration with Preview System
+
+### Overview
+
+The AI Engine generates code, but **never directly renders or displays it**. The Preview System is a separate layer that consumes AI-generated code and provides visual feedback to users.
+
+### Integration Architecture
+
+```
+User Prompt → Orchestrator → AI Engine (Patches) → Roslyn Engine (Apply) → Preview Service (Render)
+```
+
+### Preview Modes (Parallel Support)
+
+1. **Embedded XAML Preview**: `XamlReader.Load()` for instant visual feedback of UI components.
+2. **Code View**: Syntax-highlighted read-only view of the generated source.
+3. **Full Launch**: `MSBuild` compile & `Process.Start()` to run the actual executables.
+
+### Key Separation of Concerns
+
+| Component           | Responsibility               | Does NOT Do                      |
+| ------------------- | ---------------------------- | -------------------------------- |
+| **AI Engine**       | Generate code patches (JSON) | ❌ Write files, Render preview   |
+| **Roslyn Engine**   | Apply patches to workspace   | ❌ Generate code, Render preview |
+| **Preview Service** | Render/display code          | ❌ Generate code, Modify files   |
+
+---
+
+## 8. Validation & Silent Retry Loop
+
+### Purpose
+
+Transform potential errors into invisible internal retries, surfacing only final success to the user.
+
+### The Loop
+
+```text
+Generate → Install Deps → Compile → Check Errors → Auto-Fix → Retry
+```
+
+### Error Classifier Strategy
+
+```csharp
+public enum ErrorType
+{
+    SyntaxError,           // CS1002
+    MissingDependency,     // Package not found
+    TypeMismatch,          // CS1503
+    MissingReference,      // CS0106
+    ...
+}
+```
+
+**Auto-Fix Examples**:
+
+- **Syntax Error**: Insert missing `;` via AST patch.
+- **Missing Using**: Add `using Namespace;` if symbol not found.
+- **Build Failure**: Running `dotnet add package` for missing nugets.
+
+---
+
+## 9. Memory & State Layer
+
+### Purpose
+
+Preserve architectural decisions and context across iterations, preventing architectural drift.
+
+### What Gets Remembered
+
+#### Project Memory
+
+```jsonjson
+{
+  "project_id": "crm-app-001",
+  "stack_decisions": {
+    "ui_framework": "WinUI3",
+    "database": "SQLite",
+    "auth_provider": "Windows-Auth",
+    "orm": "Entity Framework Core"
+  },
+  "architectural_decisions": {
+    "pattern": "MVVM",
+    "dependency_injection": "Microsoft.Extensions.DependencyInjection",
+    "logging": "Serilog"
+  },
+  "naming_conventions": {
+    "models": "PascalCase",
+    "private_fields": "_camelCase",
+    "public_properties": "PascalCase"
+  }
+}
+```
+
+#### Pattern Memory
+
+```json
+{
+  "file_naming": {
+    "models": "Models/{EntityName}.cs",
+    "services": "Services/{EntityName}Service.cs",
+    "controllers": "Controllers/{EntityName}Controller.cs",
+    "views": "UI/Pages/{PageName}.xaml"
+  },
+  "routing_style": {
+    "api_base": "/api",
+    "verb_placement": "method-based",
+    "resource_naming": "plural"
+  },
+  "code_style": {
+    "async_by_default": true,
+    "nullable_enabled": true,
+    "use_records": false
+  }
+}
+```
+
+#### Error Memory
+
+```json
+{
+  "error_signatures": [
+    {
+      "error_code": "CS1503",
+      "pattern": "Cannot convert type 'string' to 'int'",
+      "successful_fix": "Convert.ToInt32(value)",
+      "occurrence_count": 12
+    },
+    {
+      "error_code": "CS0103",
+      "pattern": "The name 'ILogger' does not exist",
+      "successful_fix": "Add using Microsoft.Extensions.Logging;",
+      "occurrence_count": 8
+    }
+  ]
+}
+```
+
+### Storage Schema
+
+````sql
+### Detailed Storage Schema (SQLite)
+
+```sql
+-- Core project data
+CREATE TABLE projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    path TEXT NOT NULL,
+    created_at DATETIME,
+    updated_at DATETIME
+);
+
+-- File index (for change detection)
+CREATE TABLE files (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    file_path TEXT,
+    content_hash TEXT,
+    content_size INT,
+    indexed_at DATETIME,
+    FOREIGN KEY (project_id) REFERENCES projects(id)
+);
+
+-- Symbol index (Code Intelligence)
+CREATE TABLE symbols (
+    id TEXT PRIMARY KEY,
+    file_id TEXT,
+    symbol_name TEXT,
+    symbol_kind TEXT,  -- class, method, property
+    line_number INT,
+    namespace TEXT,
+    FOREIGN KEY (file_id) REFERENCES files(id)
+);
+
+-- Dependencies (Impact Analysis)
+CREATE TABLE dependencies (
+    id TEXT PRIMARY KEY,
+    source_file_id TEXT,
+    target_symbol_id TEXT,
+    dependency_type TEXT,  -- references, inherits
+    FOREIGN KEY (source_file_id) REFERENCES files(id),
+    FOREIGN KEY (target_symbol_id) REFERENCES symbols(id)
+);
+
+-- Build errors knowledge base
+CREATE TABLE build_errors (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    error_code TEXT,  -- CS0123
+    error_message TEXT,
+    file_id TEXT,
+    line_number INT,
+    solution TEXT,  -- Validated fix
+    occurrence_count INT,
+    FOREIGN KEY (project_id) REFERENCES projects(id)
+);
+
+-- Execution log (Deterministic Replay)
+CREATE TABLE execution_log (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    event_type TEXT,  -- task_started, build_failed
+    event_data JSON,
+    timestamp DATETIME,
+    FOREIGN KEY (project_id) REFERENCES projects(id)
+);
+````
+
+#### Graph Service Implementation
+
+```csharp
+public class ProjectGraphService
+{
+    private readonly SQLiteConnection _db;
+
+    /// Get all symbols in project
+    public async Task<List<Symbol>> GetProjectSymbolsAsync(string projectId)
+    {
+        return await _db.QueryAsync<Symbol>(
+            @"SELECT s.* FROM symbols s
+              JOIN files f ON s.file_id = f.id
+              WHERE f.project_id = @projectId",
+            new { projectId });
+    }
+
+    /// Find previous solutions for error
+    public async Task<List<ErrorSolution>> FindErrorSolutionsAsync(string errorCode)
+    {
+        return await _db.QueryAsync<ErrorSolution>(
+            @"SELECT error_message, solution FROM build_errors
+              WHERE error_code = @errorCode
+              ORDER BY occurrence_count DESC
+              LIMIT 5",
+            new { errorCode });
+    }
+}
+```
+
+````
+
+---
+
+## 10. Embedded Subsystems
 
 ### Why "Embedded"?
 
@@ -446,103 +998,119 @@ Unlike cloud builders that call external services, Sync AI runs everything local
 
 ### The 6 Embedded Subsystems
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    SyncAI Process                        │
-│                                                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │   Execution   │  │    Code      │  │    Patch     │  │
-│  │   Kernel      │  │  Intelligence│  │    Engine    │  │
-│  │              │  │              │  │              │  │
-│  │ MSBuild API  │  │  Roslyn AST  │  │ Transactional│  │
-│  │ NuGet API    │  │  Symbol Graph │  │   Writes     │  │
-│  │ Process Mgr  │  │  Dep. Anal.  │  │   Rollback   │  │
-│  └──────────────┘  └──────────────┘  └──────────────┘  │
-│                                                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │  Filesystem   │  │   SQLite     │  │  Snapshot    │  │
-│  │  Sandbox      │  │  Graph DB    │  │  Manager     │  │
-│  │              │  │              │  │              │  │
-│  │ Isolation    │  │  Symbols     │  │  Versioning  │  │
-│  │ Path Safety  │  │  Deps        │  │  Diff/Patch  │  │
-│  │ Workspace    │  │  Errors      │  │  Rollback    │  │
-│  └──────────────┘  └──────────────┘  └──────────────┘  │
-└─────────────────────────────────────────────────────────┘
-```
+```text
 
-### NuGet Restore (In-Process)
+┌─────────────────────────────────────────────────────────┐
+│ SyncAI Process │
+│ │
+│ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │
+│ │ Execution │ │ Code │ │ Patch │ │
+│ │ Kernel │ │ Intelligence│ │ Engine │ │
+│ │ │ │ │ │ │ │
+│ │ MSBuild API │ │ Roslyn AST │ │ Transactional│ │
+│ │ NuGet API │ │ Symbol Graph │ │ Writes │ │
+│ │ Process Mgr │ │ Dep. Anal. │ │ Rollback │ │
+│ └──────────────┘ └──────────────┘ └──────────────┘ │
+│ │
+│ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ │
+│ │ Filesystem │ │ SQLite │ │ Snapshot │ │
+│ │ Sandbox │ │ Graph DB │ │ Manager │ │
+│ │ │ │ │ │ │ │
+│ │ Isolation │ │ Symbols │ │ Versioning │ │
+│ │ Path Safety │ │ Deps │ │ Diff/Patch │ │
+│ │ Workspace │ │ Errors │ │ Rollback │ │
+│ └──────────────┘ └──────────────┘ └──────────────┘ │
+└─────────────────────────────────────────────────────────┘
+
+````
+
+### 10.1 FileSystem Sandbox
+
+#### Core Implementation
+
+The sandbox enforces isolation, preventing cross-project contamination and enabling safe rollbacks.
 
 ```csharp
-public class NuGetRestoreService
+public class FileSystemSandbox
 {
-    public async Task<RestoreResult> RestoreAsync(string projectDirectory)
+    private readonly string _projectRoot;
+    private readonly string _tempWorkspace;
+
+    /// Create snapshot of current state (for rollback)
+    public async Task<string> CreateSnapshotAsync(string projectId)
     {
-        var projectPath = Directory.GetFiles(projectDirectory, "*.csproj").First();
-        var settings = Settings.LoadDefaultSettings(projectDirectory);
+        var snapshotDir = Path.Combine(_projectRoot, projectId, ".snapshots");
+        var snapshotId = $"snapshot_{DateTime.Now:yyyyMMdd_HHmmss}";
+        var snapshotPath = Path.Combine(snapshotDir, $"{snapshotId}.zip");
 
-        var restoreRequest = new RestoreRequest
+        // ZIP all project files (excluding bin/obj)
+        // Implementation details...
+        return snapshotPath;
+    }
+
+    /// Rollback to previous snapshot
+    public async Task RollbackToSnapshotAsync(string projectId, string snapshotPath)
+    {
+        var projectSrc = Path.Combine(_projectRoot, projectId, "src");
+        Directory.Delete(projectSrc, recursive: true);
+        ZipFile.ExtractToDirectory(snapshotPath, projectSrc);
+    }
+}
+```
+
+#### Local-Only Enhancements
+
+- **Disk Space Validation**: `DiskSpaceValidator` checks for sufficient space before snapshots.
+- **Path Validation**: Prevents directory traversal attacks.
+- **Snapshot Compression**: Excludes `bin`, `obj`, `.vs` to save space.
+
+### 10.2 Execution Kernel (In-Process MSBuild)
+
+#### Direct API Implementation
+
+Instead of shelling out to CLI, we use `Microsoft.Build` APIs directly for performance and control.
+
+```csharp
+public class ExecutionKernel
+{
+    /// <summary>
+    /// Builds project using Microsoft.Build APIs (No CLI)
+    /// </summary>
+    public async Task<BuildResult> BuildAsync(string projectPath, string configuration = "Debug")
+    {
+        return await Task.Run(() =>
         {
-            ProjectPath = projectPath,
-            PackagesDirectory = Path.Combine(projectDirectory, "packages"),
-            Sources = SettingsUtility.GetEnabledSources(settings)
-        };
+            var projectCollection = new ProjectCollection();
+            try
+            {
+                var project = projectCollection.LoadProject(projectPath);
+                project.SetProperty("Configuration", configuration);
 
-        var command = new RestoreCommand(restoreRequest);
-        var result = await command.ExecuteAsync(CancellationToken.None);
+                var buildParameters = new BuildParameters(projectCollection)
+                {
+                    Loggers = new[] { new StructuredLogger() },
+                    MaxNodeCount = Environment.ProcessorCount
+                };
 
-        return new RestoreResult
-        {
-            Success = result.Success,
-            InstalledPackages = result.GetAllInstalled()
-        };
+                var buildRequest = new BuildRequestData(
+                    project.CreateProjectInstance(),
+                    new[] { "Restore", "Build" } // Restore + Build in one go
+                );
+
+                var result = BuildManager.DefaultBuildManager.Build(buildParameters, buildRequest);
+                return new BuildResult { Success = result.OverallResult == BuildResultCode.Success };
+            }
+            finally { projectCollection.Dispose(); }
+        });
     }
 }
 ```
 
 ---
 
-## 6. Execution Lifecycle
+### 11. Execution Lifecycle
 
-### Boot Sequence (Application Startup)
-
-When the user launches Sync AI, the following happens in ~2 seconds:
-
-```
-Stage 1: Splash Screen (0ms)
-    → Show branded splash immediately
-
-Stage 2: Environment Validation (200ms)
-    → Verify embedded .NET SDK
-    → Check MSBuild accessibility
-    → Verify NuGet integrity
-    → Check disk space
-    → Initialize SQLite
-
-Stage 3: Load Project Registry (400ms)
-    → Scan Workspaces directory
-    → Load metadata.json per project
-    → Validate snapshots & graph integrity
-    → Auto-repair if corrupted
-
-Stage 4: Initialize Services (600ms)
-    → Orchestrator
-    → RoslynIndexer
-    → PatchEngine
-    → BuildKernel
-    → SnapshotManager
-    → AIClient
-    → ResourceMonitor
-
-Stage 5: Warm-Up Index (1000ms)
-    → Pre-load last project's symbol graph
-    → Pre-cache dependency tree
-    → Prepare AI context
-
-Stage 6: UI Ready (1500ms)
-    → Fade out splash
-    → Show main window
-    → Transition to PREVIEW_READY or EMPTY_IDLE
-```
+````
 
 ### Environment Validation Detail
 
@@ -584,13 +1152,13 @@ public async Task<ValidationResult> ValidateEnvironmentAsync()
 
     return new ValidationResult(results);
 }
-```
+````
 
 ### Task Execution Lifecycle (Generate Command)
 
 When user types a prompt and hits "Generate", this is the full lifecycle:
 
-```
+```text
 User Prompt
     ↓
 ┌─ PLANNING ──────────────────────────────────┐
@@ -674,7 +1242,7 @@ private async Task EnforceSafetyControlsAsync()
 
 ---
 
-## 7. Background Systems
+## 12. Background Systems
 
 > These systems run invisibly. The user never knows they exist.
 
@@ -831,49 +1399,24 @@ public class TokenBudgetGuard
 
 ---
 
-## 8. Threading & Concurrency Model
+### 13. Threading & Concurrency Model
 
-### Strict Execution Policy
-
-To ensure deterministic state and prevent race conditions:
-
-**✅ Parallel Execution Allowed**:
-
-- Planning Layer (Task Graph creation)
-- AI Code Generation (LLM streaming)
-- Retrieval (Vector search, read-only graph query)
-- Resource monitoring
-- UI rendering
-
-**🔒 Strictly Serialized (Single Thread)**:
-
-- Patch Application (Roslyn AST modification)
-- Indexing (Updating SQLite graph)
-- Restore operations (NuGet graph modification)
-- Build execution (MSBuild via BuildManager)
-- Snapshot Commit (Filesystem write)
-
-> **Visual Rule**: "Reads can be parallel. Writes must be serial."
-
-### Thread Architecture
-
-```
-┌─────────────────────────────────────────────┐
-│           UI Thread (DispatcherQueue)         │
-│  ─ User interactions, progress display       │
+```text
+│ ─ User interactions, progress display │
 ├─────────────────────────────────────────────┤
-│           Worker Thread Pool                  │
-│  ┌─────────────────────────────────────┐    │
-│  │ AI Worker    │ Plan + Generate code  │    │
-│  │ Build Worker │ MSBuild + NuGet       │    │
-│  │ Patch Worker │ Roslyn AST mutations  │    │
-│  │ Index Worker │ Symbol graph updates   │    │
-│  └─────────────────────────────────────┘    │
+│ Worker Thread Pool │
+│ ┌─────────────────────────────────────┐ │
+│ │ AI Worker │ Plan + Generate code │ │
+│ │ Build Worker │ MSBuild + NuGet │ │
+│ │ Patch Worker │ Roslyn AST mutations │ │
+│ │ Index Worker │ Symbol graph updates │ │
+│ └─────────────────────────────────────┘ │
 ├─────────────────────────────────────────────┤
-│           Background Services                │
-│  ─ Snapshot pruning, resource monitor,       │
-│    continuous indexer, token budget guard     │
+│ Background Services │
+│ ─ Snapshot pruning, resource monitor, │
+│ continuous indexer, token budget guard │
 └─────────────────────────────────────────────┘
+
 ```
 
 ### WinUI 3 Threading Pattern
@@ -889,7 +1432,7 @@ await DispatcherQueue.EnqueueAsync(() =>
 
 ---
 
-## 9. Security & Isolation
+## 14. Security & Isolation
 
 ### Challenge: Generated Code Is Untrusted
 
@@ -936,11 +1479,18 @@ public class SecurityBoundary
             command.StartsWith(allowed, StringComparison.OrdinalIgnoreCase));
     }
 }
+
+### Compliance & Data Privacy
+- **User prompts not stored** (privacy-first)
+- **Generated code validated** before compilation
+- **API keys in secure storage** (Azure Key Vault / env vars)
+- **Rate limiting** on API calls
+- **Input sanitization**
 ```
 
 ---
 
-## 10. Machine Variability Handling
+## 15. Machine Variability Handling
 
 ### The Local-Only Challenge
 
@@ -966,31 +1516,24 @@ public class MachineVariabilityHandler
         string projectPath,
         IProgress<BuildPhase>? progress = null)
     {
-        // Phase 1: Verify Embedded Environment
-        if (!_envValidator.ValidateEnvironment())
-        {
-            return BuildResult.CriticalFailure("Embedded SDK is corrupted.");
-        }
-
-        // Phase 2: Attempt build
-        var buildResult = await _kernel.BuildAsync(projectPath, "Debug");
-        if (!buildResult.Success)
-        {
-            if (buildResult.HasNuGetConnectionError)
-            {
-                await ClearNuGetCacheAsync();
-                buildResult = await _kernel.BuildAsync(projectPath, "Debug");
-            }
-        }
-
-        return buildResult;
+        // ... (implementation hidden)
     }
 }
 ```
 
+### Critical Stability Constraints
+
+The kernel must detect and mitigate machine variability that cloud-based systems typically avoid:
+
+- **Environment Bootstrapping**: Automatically detect missing .NET SDKs and **guide the user through installation** or install automatically.
+- **SDK Variability**: Detect missing .NET workloads (WinUI 3, XAML) and handle version mismatches.
+- **Resource Intelligence**: Monitor disk space and RAM (disable parallel builds if <4GB); warn when system resources are critically low.
+- **External Interference**: Detect and handle Antivirus blocking builds or NuGet cache corruption with "self-repair" strategies.
+- **Corruption Recovery**: Automated partial project corruption detection and rollback via the snapshot system.
+
 ---
 
-## 11. Deployment Model
+## 16. Deployment Model
 
 ### Choice A: Local Desktop Application (Current)
 
@@ -1022,7 +1565,7 @@ public class MachineVariabilityHandler
 - **DI**: Built-in dependency injection
 - **SDK**: WinAppSDK 1.5+
 
-```
+```text
 SyncAIAppBuilder.sln
 ├── SyncAIAppBuilder.Orchestration/       (Class library)
 ├── SyncAIAppBuilder.ExecutionKernel/     (Class library)
@@ -1036,11 +1579,80 @@ SyncAIAppBuilder.sln
 
 ---
 
-## 12. System-Level Stack
+## 17. Builder Project Structure
+
+The builder application itself is partitioned to ensure clean separation between the user interface, the deterministic engine, and the local execution kernel.
+
+```text
+SyncAIAppBuilder/
+├── UI/                        # WinUI 3: Prompt Console, Explorer, Logs, Status
+├── Orchestrator/              # StateMachine.cs, TaskExecutor.cs, RetryController.cs
+├── Kernel/                    # BuildRunner.cs, RoslynIndexer.cs, PatchEngine.cs, SandboxManager.cs
+├── Memory/                    # DatabaseContext.cs, GraphRepository.cs (SQLite)
+├── Services/                  # IntentService.cs, PlanningService.cs
+├── Agents/                    # Specialized AI Agent logic for code generation
+└── Infrastructure/            # AI Engine Wrapper (z-ai-web-dev-sdk)
+```
+
+---
+
+## 18. Module Structure
+
+```text
+SYNC-AI-FULL-STACK-APP-BUILDER/
+├── docs/                              # Documentation
+│   ├── SYSTEM_ARCHITECTURE.md         # System design (this file)
+│   ├── PROJECT_HANDBOOK.md            # Internal guide
+│   └── ...
+│
+├── src/
+│   ├── SyncAIAppBuilder/              # Main WinUI 3 app
+│   │   ├── UI/                        # User interface (thin layer)
+│   │   ├── Services/
+│   │   │   ├── IntentService.cs       # Intent & spec parsing
+│   │   │   ├── PlanningService.cs     # Task graph generation
+│   │   │   ├── CodeIntelligenceService.cs  # Project indexing
+│   │   │   ├── AgentOrchestrator.cs   # Multi-agent coordination
+│   │   │   ├── PatchEngine.cs         # AST-based patching
+│   │   │   ├── BuildService.cs        # MSBuild wrapper
+│   │   │   ├── ErrorClassifier.cs     # Error categorization
+│   │   │   ├── FixAgent.cs            # Auto-error fixing
+│   │   │   └── StateManager.cs        # Persistent memory
+│   │   ├── Agents/
+│   │   │   ├── ArchitectAgent.cs
+│   │   │   ├── SchemaAgent.cs
+│   │   │   ├── FrontendAgent.cs
+│   │   │   ├── BackendAgent.cs
+│   │   │   └── IntegrationAgent.cs
+│   │   ├── Models/
+│   │   ├── ViewModels/
+│   │   └── Utils/
+│   │
+│   ├── SyncAIAppBuilder.Core/         # Shared interfaces
+│   │   ├── Interfaces/
+│   │   │   ├── IAgent.cs
+│   │   │   ├── ICodeGenerator.cs
+│   │   │   ├── IPatchEngine.cs
+│   │   │   ├── IStateManager.cs
+│   │   │   └── ...
+│   │   ├── Models/
+│   │   └── Enums/
+│   │
+│   └── SyncAIAppBuilder.Tests/
+│
+├── templates/                         # Working templates
+├── ai-agents/                         # Agent prompts
+├── scripts/                           # Build automation
+└── README.md
+```
+
+---
+
+## 19. System-Level Stack
 
 Complete stack when fully internalized:
 
-```
+```text
 ┌──────────────────────────────────────────────────┐
 │          WinUI 3 Frontend (Thin Layer)           │
 │    (Prompt input, progress, app preview)         │
@@ -1092,7 +1704,37 @@ Complete stack when fully internalized:
 
 ---
 
-## 13. Implementation Roadmap
+### 20. Implementation Roadmap
+
+#### Phase 1: Foundation (Weeks 1-3)
+
+1. **Filesystem Sandbox**: Isolation, Snapshots, Rollback.
+2. **Orchestrator**: State Machine, Task Graph, Kernel hooks.
+3. **Project Graph DB**: SQLite schema for Symbols, Files, Errors.
+
+#### Phase 2: Code Intelligence (Weeks 4-6)
+
+4. **Roslyn Indexing**: Symbol extraction, Dependency graph.
+5. **Impact Analysis**: Change detection.
+6. **Embedding Integration**: Semantic search.
+
+#### Phase 3: Mutation Safety (Weeks 7-9)
+
+7. **Patch Engine**: Transactional AST-based writes.
+8. **Conflict Detection**: Prevent overlapping edits.
+9. **Rollback System**: Automated recovery.
+
+#### Phase 4: Execution & Recovery (Weeks 10-12)
+
+10. **Execution Kernel**: In-process MSBuild/NuGet.
+11. **Error Classification**: Structured diagnostics.
+12. **Auto-Fix Strategies**: Self-healing loops.
+
+#### Phase 5: Production & UI (Weeks 13-15)
+
+13. **Testing & Hardening**: Stress tests, variability handling.
+14. **Deployment Model**: MSIX packaging, Auto-update.
+15. **WinUI 3 Polish**: Fluent Design, Animations.
 
 ### Phase 1: Foundation
 
@@ -1143,6 +1785,105 @@ Complete stack when fully internalized:
 > **Framework**: WinUI 3 (.NET 8)
 > **Target OS**: Windows 10 Build 22621+
 > **Deployment**: MSIX packaging
+
+---
+
+---
+
+## 21. Key Architectural Decisions
+
+### 1. Multi-Agent Over Monolithic AI Engine
+
+- **Why**: Specialized agents produce better code than single generalist AI Engine
+- **Benefit**: Easier to control output, debug, test
+- **Tradeoff**: More orchestration complexity (but hidden from user)
+
+### 2. Structured Specs Over Free-Form Generation
+
+- **Why**: Prevents hallucinated features and contradictions
+- **Process**: Parse prompt → Extract features → Validate → Generate spec
+
+### 3. AST Patches Over Full Rewrites
+
+- **Why**: Preserves code quality, comments, formatting
+- **Technology**: Roslyn for C# manipulation
+- **Benefit**: Minimal diffs, merge-friendly, safer
+
+### 4. Smart Retrieval Over Full Context
+
+- **Why**: Solves AI Engine context window limits
+- **Strategy**: Embed code → Search semantically → Send only relevant files
+- **Result**: Stable generation as project grows
+
+### 5. Silent Retry Loop Over Error Bubbling
+
+- **Why**: Perfect user experience (no visible errors)
+- **How**: Auto-classify errors → Apply fixes → Retry until success
+
+### 6. Persistent Memory Over Stateless Generation
+
+- **Stores**: Stack decisions, patterns, error solutions
+
+---
+
+## 22. Performance Considerations
+
+- **Semantic Caching**: Store embeddings, reuse for similar prompts
+- **Parallel Agents**: Execute independent agents concurrently
+- **Incremental Builds**: Only recompile changed modules
+- **Smart Retrieval**: Send ~2-5 relevant files, not entire project
+
+---
+
+## 23. Comparison with Traditional Approaches
+
+| Aspect                    | Simple Generator                  | Our Multi-Agent System    |
+| ------------------------- | --------------------------------- | ------------------------- |
+| Code quality              | Medium (hallucinates)             | High (controlled)         |
+| Build errors              | Frequent                          | Rare (auto-fixes)         |
+| User experience           | See errors                        | See only success          |
+| Stack reliability         | Chaotic                           | Curated & stable          |
+| Iteration speed           | Fast on first pass, slow on fixes | Consistent                |
+| Scalability               | Poor (context overload)           | Good (smart retrieval)    |
+| Architectural consistency | Drifts over time                  | Maintained (memory layer) |
+
+---
+
+## 24. Future Evolution
+
+### Phase 2: Advanced
+
+- Template marketplace
+- Custom agents for domain-specific code
+- Team collaboration
+- Performance profiling
+
+### Phase 3: Production-Grade
+
+- Cloud compilation
+- Automated testing
+- Security scanning
+- SLA-backed reliability
+
+---
+
+---
+
+# Why This Approach Works
+
+The key insight from analyzing Lovable and similar systems:
+
+> **The smoothness is not from simplicity — it's from sophisticated, hidden orchestration.**
+
+Every "magic" moment (code that "just works", instant fixes, no visible errors) is the result of:
+
+- Structured specifications (prevent hallucination)
+- Multi-agents (decompose complexity)
+- Smart indexing (stay in context)
+- Silent retry loops (hide failures)
+- Persistent memory (maintain consistency)
+
+This is what separates production AI tools from basic generators.
 
 ---
 
