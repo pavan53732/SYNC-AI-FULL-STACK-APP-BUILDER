@@ -43,11 +43,11 @@ Input: "Build a CRM app with customer management and analytics"
    - Database schema (tables, relationships)
 
 4. Generate corresponding code:
-   - React components for each screen
-   - Node.js/Backend API routes
-   - Database migrations
-   - Authentication handlers
-   - Integration configs (Stripe, Supabase, etc.)
+   - XAML pages and components
+   - C# Services and ViewModels
+   - SQLite Database migrations
+   - Authentication handlers (.NET)
+   - Integration configs (Stripe, etc.)
 
 **User Sees:**
 ```
@@ -67,24 +67,23 @@ Input: "Build a CRM app with customer management and analytics"
 **Generated File Structure** (Real, Editable Code):
 ```
 /src
-  /components
-    /CustomerList.jsx
-    /CustomerDetail.jsx
-    /AnalyticsDashboard.jsx
-  /pages
-    /index.js
-    /api/customers.js
-    /api/analytics.js
-  /db
-    /schema.sql
-    /migrations/
-  /auth
-    /auth-handlers.js
-  /styles
-    /main.css
-/public
-/package.json
-/.github/workflows/deploy.yml
+  /UI
+    /Pages
+      /CustomerList.xaml
+      /CustomerDetail.xaml
+      /AnalyticsDashboard.xaml
+  /Services
+    /CustomerService.cs
+    /AnalyticsService.cs
+  /Models
+    /Customer.cs
+  /Database
+    /ApplicationDbContext.cs
+    /Migrations/
+  /Resources
+    /Styles.xaml
+/SyncAIAppBuilder.csproj
+/Program.cs
 /README.md
 ```
 
@@ -94,10 +93,10 @@ Input: "Build a CRM app with customer management and analytics"
 - ❌ Proprietary format
 
 **This IS**:
-- ✅ Real React/Node.js code
+- ✅ Real C# / XAML code
 - ✅ Real database schema
-- ✅ Real deployment scripts
-- ✅ Ready to run: `npm install && npm start`
+- ✅ Real project file (.csproj)
+- ✅ Ready to run: `dotnet build && dotnet run`
 
 ---
 
@@ -111,9 +110,9 @@ Generated Code
 [Build Step] - Compile/check syntax
     ↓
 [Errors?] → Auto-fix engine → Regenerate
-     └─ Missing import? Add it
-    └─ Type error? Fix types
-    └─ Dependency missing? Add to package.json
+     └─ Missing using? Add it
+    └─ Type error? Fix types (Roslyn)
+    └─ Dependency missing? Add to .csproj
     └─ Schema conflict? Resolve
     ↓
 [Validation] - Run tests/checks
@@ -131,10 +130,10 @@ Generated Code
 
 **User Never Sees:**
 ```
-Error: Missing React import
-Error: TypeScript type mismatch
+Error: Missing namespace using
+Error: C# type mismatch
 Error: Database schema conflict
-Fixing: Added "import React from 'react'"
+Fixing: Added "using Microsoft.UI.Xaml;"
 Retry Attempt 2 of 5...
 ```
 
@@ -178,9 +177,9 @@ Update preview
 **Export Options:**
 - ✅ **Download as ZIP** - Get all source code locally
 - ✅ **GitHub Sync** - Create repo, push code
-- ✅ **Deploy to Netlify** - One-click deployment
-- ✅ **Deploy to custom hosting** - Real code, own your host
-- ✅ **Continue in IDE** - Take code, use VS Code/IDE
+- ✅ **Build MSIX** - Create Windows installer
+- ✅ **Local Execution** - Run directly on your machine
+- ✅ **Continue in IDE** - Take code, use Visual Studio
 
 **After Export:**
 ```
@@ -207,8 +206,8 @@ You can:
 | Live preview works perfectly | Each preview went through build validation |
 | Any prompt works | Natural language → structured intent extraction |
 | Refinements are fast | Impact analysis → scoped regeneration |
-| Code is real | Actually editable React/Node.js |
-| Can use anywhere | No proprietary format, real open standards |
+| Code is real | Actually editable C#/XAML |
+| Can use anywhere | No proprietary format, .NET standard |
 
 ---
 
@@ -303,7 +302,7 @@ Intent Objects
                     API routes
                     DB migrations
     ↓
-Generated Files (Real React/Node code)
+Generated Files (Real C# / XAML code)
 ```
 
 ### Validation Pipeline
@@ -312,13 +311,13 @@ Generated Code
     ↓
     [Syntax Check] - Parse & compile
     ↓
-    [Build Check] - npm install check
+    [Build Check] - dotnet restore check
     ↓
-    [Dependency Check] - Missing packages?
+    [Dependency Check] - Missing NuGet packages?
     ↓
-    [Type Check] - TypeScript errors?
+    [Type Check] - Roslyn/C# compiler errors?
     ↓
-    [Preview Build] - Build for browser
+    [Preview Build] - Build for Windows
     ↓
     [Success?]
     ├─ YES → Show preview

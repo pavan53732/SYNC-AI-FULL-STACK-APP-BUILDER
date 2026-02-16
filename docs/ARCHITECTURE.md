@@ -19,7 +19,7 @@ A comprehensive AI-powered **Windows-native autonomous software construction env
 
 ## 🏗 System Architecture (The Local Builder)
 
-You are building a **Windows‑native autonomous construction system**. The system is divided into four primary logical layers supported by the AI Engine.
+You are building a **Windows‑native autonomous construction system**. The system is organized into **7 Multi-Agent Layers** managed by a **Deterministic Orchestrator**, supported by **6 Kernel Subsystems**.
 
 ### High-Level Stack
 ```

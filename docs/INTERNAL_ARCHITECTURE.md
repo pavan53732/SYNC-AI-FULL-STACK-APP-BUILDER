@@ -47,7 +47,7 @@ This document details the **hidden complexity** that makes AI app builders feel 
         └────────────┬──────────────────────────┘
                      │
         ┌────────────▼──────────────────────────┐
-        │  Deployment Pipeline                 │ ← Build → Container → Live Preview
+        │  Execution Kernel (Construct Output)  │ ← Build → MSIX → Local Execution
         └──────────────────────────────────────┘
 ```
 

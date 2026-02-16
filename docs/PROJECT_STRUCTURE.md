@@ -406,7 +406,7 @@ bin/
 <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
 
 <!-- AI Integration -->
-<PackageReference Include="Anthropic.SDK" Version="latest" />
+<PackageReference Include="z-ai-web-dev-sdk" Version="latest" />
 
 <!-- Code Analysis & Generation (Roslyn) -->
 <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
@@ -496,9 +496,8 @@ CREATE TABLE ProjectHistory (
 ```json
 {
   "AI": {
-    "Provider": "anthropic",
-    "ApiKey": "***",
-    "Model": "claude-3-sonnet"
+    "Engine": "z-ai-web-dev-sdk",
+    "Logging": "verbose"
   },
   "Build": {
     "OutputDirectory": "./output",

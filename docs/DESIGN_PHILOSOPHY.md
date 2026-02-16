@@ -67,7 +67,7 @@ Input: Structured specification
 Processing:
 - Architecture design (files, folders, modules)
 - Code generation (agents generate in parallel)
-  - Frontend Agent → XAML/React components
+  - Frontend Agent → XAML components
   - Backend Agent → APIs, services
   - Schema Agent → Database models
   - Auth Agent → Authentication logic
@@ -83,10 +83,10 @@ Input: Generated source files
 
 Processing:
 - Syntax validation (parse to AST)
-- Import checking (all imports present?)
-- Dependency resolution (packages exist?)
-- Type checking (TypeScript/C# types correct?)
-- Build compilation (MSBuild/npm build)
+- Import checking (all using statements present?)
+- Dependency resolution (NuGet packages exist?)
+- Type checking (C# types correct?)
+- Build compilation (MSBuild)
 
 Output: Build report
 ```
@@ -98,9 +98,9 @@ Input: Build report with errors
 Processing:
 IF errors detected:
 - Classify error type
-  - Missing import? → Add import
+  - Missing using? → Add using
   - Type mismatch? → Add conversion
-  - Missing package? → Add to package.json
+  - Missing package? → Add to .csproj
   - Syntax error? → Fix syntax
   - Config error? → Fix config
 - Apply fixes
@@ -346,16 +346,14 @@ System internally handles:
 
 ## How This Applies to Windows Native Builder
 
-### For Web Apps (Lovable.dev)
+### For Web Apps (Legacy Reference)
 ```
 Parse → Generate React/Node → Validate → Deploy to Netlify
-Hidden complexity → Smooth UX
 ```
 
-### For Windows Apps (Your Builder)
+### For Windows Apps (SyncAI Explorer)
 ```
-Parse → Generate XAML/C# → Validate with MSBuild → Preview/Export
-Same design philosophy, different tech stack
+Parse → Generate XAML/C# → Validate with MSBuild → Preview/Local Execution
 ```
 
 ---
@@ -459,9 +457,9 @@ Complex Alternative (✅ Good)
 
 | Aspect | Lovable (Web) | Windows Native |
 |---|---|---|
-| **Generate** | React components | XAML components |
+| **Generate** | React components (Web) | XAML components (Windows) |
 | **Validate** | npm build | MSBuild |
-| **Deploy** | Netlify | .exe/.msi |
+| **Deploy** | Netlify | .exe / MSIX |
 | **Design Philosophy** | Hide complexity | Hide complexity |
 | **Error Handling** | Internal | Internal |
 | **Code Ownership** | Real code | Real code |
