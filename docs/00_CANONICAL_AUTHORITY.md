@@ -365,3 +365,47 @@ Any implementation that violates:
 | 1.0 | 2026-02-16 | System | Initial canonical authority |
 
 **This document is the single source of truth. All other specifications must be consistent with it.**
+
+---
+
+# 📋 DOCUMENTATION GOVERNANCE RULES
+
+> **Authority**: These rules are binding on all documentation in this repository.
+
+## Single Definition Rules
+
+Every critical system element must exist in **exactly one** document:
+
+| Element | Authority Document |
+|----------|-------------------|
+| **Orchestrator state machine** | [02_ORCHESTRATION_AND_EXECUTION.md](./02_ORCHESTRATION_AND_EXECUTION.md) |
+| **Mutation rules** | [03_BUILD_AND_MUTATION_KERNEL.md](./03_BUILD_AND_MUTATION_KERNEL.md) |
+| **Graph schema** | [04_INDEXING_AND_MEMORY.md](./04_INDEXING_AND_MEMORY.md) |
+| **UI states** | [05_UI_SYSTEM.md](./05_UI_SYSTEM.md) |
+| **Execution flow** | [02_ORCHESTRATION_AND_EXECUTION.md](./02_ORCHESTRATION_AND_EXECUTION.md) |
+
+## Governance Rules
+
+1. Every invariant must exist in exactly one document.
+2. Orchestrator state machine defined only in 02_ORCHESTRATION_AND_EXECUTION.md.
+3. Mutation rules defined only in 03_BUILD_AND_MUTATION_KERNEL.md.
+4. Graph schema defined only in 04_INDEXING_AND_MEMORY.md.
+5. UI states defined only in 05_UI_SYSTEM.md.
+6. No duplication of execution flow across documents.
+7. Subsystem docs may not redefine system invariants.
+8. New specifications must reference existing authority documents.
+
+## Document Hierarchy
+
+```
+CANONICAL_AUTHORITY.md       ← System Law (this file)
+├── 01_ARCHITECTURE.md        ← Subsystem diagram
+├── 02_ORCHESTRATION_AND_EXECUTION.md  ← State machine, execution
+├── 03_BUILD_AND_MUTATION_KERNEL.md    ← Build, Roslyn, patches
+├── 04_INDEXING_AND_MEMORY.md          ← SQLite, graph
+├── 05_UI_SYSTEM.md                   ← UI states, UX
+├── 06_PROJECT_LAYOUT_AND_DEPLOYMENT.md ← Folders, MSIX
+├── 07_API_CONTRACTS.md               ← Interfaces, JSON
+├── DEVELOPMENT_GUIDE.md               ← Onboarding
+└── archive/                          ← Historical references
+```
