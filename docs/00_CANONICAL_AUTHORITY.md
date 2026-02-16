@@ -327,12 +327,14 @@ IDLE → SPEC_PARSED → TASK_GRAPH_READY → TASK_EXECUTING → VALIDATING → 
 
 | Document | Topic | Relationship |
 |----------|-------|--------------|
-| ORCHESTRATOR_SPECIFICATION.md | Deterministic orchestrator | **FOUNDATION** - Must implement first |
-| EXECUTION_ARCHITECTURE.md | 6 embedded subsystems | Implements execution model |
-| USER_WORKFLOW.md | Observable user behavior | User perspective |
-| DESIGN_PHILOSOPHY.md | UX principles | Hide complexity |
-| DATABASE_SPECIFICATION.md | Data persistence | SQLite schema |
-| API_CONTRACTS.md | API definitions | Integration points |
+| [01_ARCHITECTURE.md](./01_ARCHITECTURE.md) | System architecture | High-level design |
+| [02_ORCHESTRATION_AND_EXECUTION.md](./02_ORCHESTRATION_AND_EXECUTION.md) | Deterministic orchestrator | **FOUNDATION** - Must implement first |
+| [03_BUILD_AND_MUTATION_KERNEL.md](./03_BUILD_AND_MUTATION_KERNEL.md) | Build & patch engine | Code mutations |
+| [04_INDEXING_AND_MEMORY.md](./04_INDEXING_AND_MEMORY.md) | SQLite persistence | Data layer |
+| [05_UI_SYSTEM.md](./05_UI_SYSTEM.md) | UI states & UX | User interface |
+| [06_PROJECT_LAYOUT_AND_DEPLOYMENT.md](./06_PROJECT_LAYOUT_AND_DEPLOYMENT.md) | Folder structure | Deployment |
+| [API_CONTRACTS.md](./API_CONTRACTS.md) | API definitions | Integration points |
+| [DEVELOPMENT_GUIDE.md](./DEVELOPMENT_GUIDE.md) | Onboarding | Getting started |
 
 ---
 
