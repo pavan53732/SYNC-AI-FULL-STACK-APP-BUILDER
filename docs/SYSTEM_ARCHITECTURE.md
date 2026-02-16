@@ -3,6 +3,15 @@
 > **The Big Picture: 7-Layer Architecture, Deployment Model, Process Lifecycle & Hidden Background Systems**
 >
 > _Merged from: ARCHITECTURE.md, EXECUTION_ARCHITECTURE.md, EXECUTION_LIFECYCLE_SPECIFICATION.md, BACKGROUND_SYSTEMS_SPECIFICATION.md_
+>
+> **Related Documentation**:
+>
+> - [ORCHESTRATION_ENGINE.md](ORCHESTRATION_ENGINE.md) (Orchestrator Logic)
+> - [CODE_INTELLIGENCE.md](CODE_INTELLIGENCE.md) (Roslyn & Indexing)
+> - [UI_IMPLEMENTATION.md](UI_IMPLEMENTATION.md) (Frontend Specs)
+> - [PREVIEW_SYSTEM.md](PREVIEW_SYSTEM.md) (Live Preview)
+> - [USER_WORKFLOWS.md](USER_WORKFLOWS.md) (User Flows)
+> - [PROJECT_HANDBOOK.md](PROJECT_HANDBOOK.md) (Dev Guide)
 
 ---
 
@@ -10,18 +19,18 @@
 
 1. [System Overview](#1-system-overview)
 2. [The 7-Layer Architecture](#2-the-7-layer-architecture)
-3. [Intent & Specification Layer](#3-intent--specification-layer)
-4. [Planning Layer (Task Graph / DAG)](#4-planning-layer-task-graph--dag)
+3. [Intent and Specification Layer](#3-intent-and-specification-layer)
+4. [Planning Layer (Task Graph / DAG)](#4-planning-layer-task-graph-dag)
 5. [Multi-Agent Specifications](#5-multi-agent-specifications)
 6. [Data Flow](#6-data-flow)
 7. [AI Engine Integration with Preview System](#7-ai-engine-integration-with-preview-system)
-8. [Validation & Silent Retry Loop](#8-validation--silent-retry-loop)
-9. [Memory & State Layer](#9-memory--state-layer)
+8. [Validation and Silent Retry Loop](#8-validation-and-silent-retry-loop)
+9. [Memory and State Layer](#9-memory-and-state-layer)
 10. [Embedded Subsystems](#10-embedded-subsystems)
 11. [Execution Lifecycle](#11-execution-lifecycle)
 12. [Background Systems](#12-background-systems)
-13. [Threading & Concurrency Model](#13-threading--concurrency-model)
-14. [Security & Isolation](#14-security--isolation)
+13. [Threading and Concurrency Model](#13-threading-and-concurrency-model)
+14. [Security and Isolation](#14-security-and-isolation)
 15. [Machine Variability Handling](#15-machine-variability-handling)
 16. [Deployment Model](#16-deployment-model)
 17. [Builder Project Structure](#17-builder-project-structure)
@@ -39,7 +48,11 @@
 
 ### What is Sync AI?
 
-Sync AI is a **local-first, AI-powered full-stack application builder** for Windows. It is a WinUI 3 desktop application that generates, builds, previews, and iterates on .NET applications — all in-process, with no external CLI calls.
+### What is Sync AI?
+
+Sync AI is a **local-first, AI-powered full-stack application builder** for Windows. It is a **Windows-native autonomous software construction environment** that generates, builds, previews, and iterates on .NET applications — all in-process, with no external CLI calls.
+
+**Mission**: To deliver a seamless, production-grade development experience where complexity is hidden, and the user prompts for results, not code.
 
 ### Core Philosophy
 
@@ -86,9 +99,44 @@ The system is built as an **autonomous software construction environment**, not 
 - **Developer-Free Workflow**: The Orchestrator and Patch Engine handle all file edits and debugging silently.
 - **The Goal**: A self-contained constructor where the only external dependency is the Cloud AI reasoning.
 
+#### Comparison: Sync AI vs. Lovable vs. Visual Studio
+
+| Feature          | Visual Studio    | Lovable (Web)       | Sync AI (Windows)          |
+| :--------------- | :--------------- | :------------------ | :------------------------- |
+| **Execution**    | Developer manual | Cloud Container     | **Local Embedded**         |
+| **Build System** | Explicit MSBuild | Hidden Node.js      | **Hidden MSBuild**         |
+| **State**        | Files on Disk    | Ephemeral Container | **Persistent Sandbox**     |
+| **Role**         | Tool for Humans  | Web App Builder     | **Autonomous Constructor** |
+
 ---
 
 ## 2. The 7-Layer Architecture
+
+### High-Level Two-Layer View
+
+Before diving into the 7 layers, it's critical to understand the separation between the **UI Layer** (User Experience) and the **Kernel Layer** (Execution Logic).
+
+```mermaid
+graph TD
+    subgraph UI_Layer [User Interface Layer]
+        Prompt[Prompt Console]
+        Preview[Live Preview]
+        Timeline[Version Timeline]
+    end
+
+    subgraph Kernel_Layer [Execution Kernel Layer]
+        Orchestrator[Orchestrator Engine]
+        Roslyn[Roslyn Indexer]
+        Build[MSBuild System]
+        Sandbox[Filesystem Sandbox]
+    end
+
+    UI_Layer -->|Intent| Kernel_Layer
+    Kernel_Layer -->|Events/Status| UI_Layer
+    Kernel_Layer -->|App Output| Preview
+```
+
+### Detailed 7-Layer Stack
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -307,18 +355,103 @@ public class RoslynCodeIntelligenceService
             ImpactLevel = dependentFiles.Count > 20 ? ImpactLevel.High : ImpactLevel.Low
         };
     }
+
+    /// Incremental Re-Indexing Strategy (Detail)
+    public async Task IncrementalIndexFileAsync(string filePath)
+    {
+        // 1. Parse only the changed file
+        var tree = await CSharpSyntaxTree.ParseTextAsync(File.ReadAllText(filePath));
+
+        // 2. Update SyntaxTree Cache
+        _syntaxTrees[filePath] = tree;
+
+        // 3. Extract Symbols (Parallel)
+        var root = await tree.GetRootAsync();
+        var declaredSymbols = ExtractSymbols(root);
+
+        // 4. Update the Symbol Graph (Atomic Swap)
+        await _symbolGraph.UpdateSymbolsAsync(filePath, declaredSymbols);
+    }
 }
 ```
 
-**Example Index Entry**:
+### detailed Schema
+
+#### File Index
 
 ```json
 {
-  "path": "Models/Customer.cs",
-  "type": "class",
-  "dependencies": ["System.Data", "DbContext"],
-  "exports": ["Customer", "CustomerValidator"],
-  "size_bytes": 2048
+  "files": [
+    {
+      "path": "Models/Customer.cs",
+      "type": "class",
+      "dependencies": ["System.Data", "DbContext"],
+      "exports": ["Customer", "CustomerValidator"],
+      "imports": ["System", "System.ComponentModel.DataAnnotations"],
+      "size_bytes": 2048,
+      "last_modified": "2026-02-16"
+    }
+  ]
+}
+```
+
+#### Dependency Graph
+
+```text
+Customer.cs
+  ├─ imports: DbContext
+  ├─ imports: Validator
+  └─ used by: CustomerService.cs
+
+CustomerService.cs
+  ├─ imports: Customer.cs
+  ├─ imports: ILogger
+  └─ used by: CustomerController.cs
+
+CustomerController.cs
+  ├─ imports: CustomerService.cs
+  └─ user-accessible routes: /api/customers/*
+```
+
+#### Route Registry
+
+```json
+{
+  "routes": [
+    {
+      "path": "/api/customers",
+      "method": "GET",
+      "handler": "CustomerController.GetAll",
+      "auth_required": true,
+      "roles": ["admin", "manager"]
+    },
+    {
+      "path": "/api/customers/{id}",
+      "method": "GET",
+      "handler": "CustomerController.GetById",
+      "auth_required": true,
+      "roles": ["admin", "manager"]
+    }
+  ]
+}
+```
+
+#### Database Schema Map
+
+```json
+{
+  "tables": [
+    {
+      "name": "customers",
+      "columns": [
+        { "name": "id", "type": "int", "pk": true },
+        { "name": "name", "type": "string", "nullable": false },
+        { "name": "email", "type": "string", "unique": true }
+      ],
+      "relationships": [{ "foreign_key": "contact_id", "references": "contacts.id" }],
+      "models_using": ["Customer.cs"]
+    }
+  ]
 }
 ```
 
@@ -360,7 +493,7 @@ See [ORCHESTRATION_ENGINE.md](ORCHESTRATION_ENGINE.md) for complete details.
 
 ---
 
-## 3. Intent & Specification Layer
+## 3. Intent and Specification Layer
 
 ### Purpose
 
@@ -695,9 +828,71 @@ public int CustomerId { get; set; } = int.Parse(customerId);
 public int CustomerId { get; set; } = Convert.ToInt32(customerId);
 ```
 
+### 5.2 Agent Orchestration Pattern
+
+Detailed interaction logic between agents:
+
+```python
+# Conceptual Orchestration Logic
+async def orchestrate_generation(spec, task_graph):
+    for task in task_graph.topological_sort():
+        context = await retrieval_service.get_context(task)
+
+        # 1. Select Specialist Agent
+        agent = agent_factory.get_agent(task.type)
+
+        # 2. Generate Candidate Code
+        candidate = await agent.generate(spec, context)
+
+        # 3. Apply via Patch Engine (Dry Run)
+        if not await patch_engine.validate(candidate):
+            # 4. Self-Correction Loop
+            attempts = 0
+            while attempts < 3:
+                error = patch_engine.get_last_error()
+                candidate = await fix_agent.fix(candidate, error)
+                if await patch_engine.validate(candidate):
+                    break
+                attempts += 1
+
+        # 5. Commit if Valid
+        if await patch_engine.validate(candidate):
+            await patch_engine.commit(candidate)
+```
+
 ---
 
-## 6. Data Flow
+## 6. Data Flow and Orchestration
+
+### 6.1 Deterministic Orchestrator Engine
+
+The Orchestrator is the deterministic "brain" that governs all operations. It ensures that the system never enters an invalid state.
+
+**State Machine Transitions**:
+
+```mermaid
+stateDiagram-v2
+    [*] --> IDLE
+    IDLE --> SPEC_PARSED: User Prompt
+    SPEC_PARSED --> TASK_GRAPH_READY: AI Planning
+    TASK_GRAPH_READY --> TASK_EXECUTING: Dispatch
+    TASK_EXECUTING --> VALIDATING: Patch Applied
+    VALIDATING --> RETRYING: Error Detected
+    RETRYING --> TASK_EXECUTING: Fix Applied
+    VALIDATING --> COMPLETED: Build Success
+    RETRYING --> FAILED: Max Retries Exceeded
+    COMPLETED --> IDLE: Ready
+    FAILED --> IDLE: Reset
+```
+
+**Key Responsibilities**:
+
+- **Concurrency Control**: Enforces "One Mutation at a Time" rule.
+- **Retry Budget**: Tracks attempts (Max 3 per task, Max 10 total).
+- **Error Classification**: Maps huge MSBuild logs to actionable error codes.
+- **Timeout Management**: Kills hung processes after 60s.
+
+### 6.2 Application Data Flow
 
 ```text
 User Prompt
@@ -768,7 +963,7 @@ User Prompt → Orchestrator → AI Engine (Patches) → Roslyn Engine (Apply) �
 
 ---
 
-## 8. Validation & Silent Retry Loop
+## 8. Validation and Silent Retry Loop
 
 ### Purpose
 
@@ -801,7 +996,7 @@ public enum ErrorType
 
 ---
 
-## 9. Memory & State Layer
+## 9. Memory and State Layer
 
 ### Purpose
 
@@ -811,7 +1006,7 @@ Preserve architectural decisions and context across iterations, preventing archi
 
 #### Project Memory
 
-```jsonjson
+```json
 {
   "project_id": "crm-app-001",
   "stack_decisions": {
@@ -879,7 +1074,7 @@ Preserve architectural decisions and context across iterations, preventing archi
 
 ### Storage Schema
 
-````sql
+````markdown
 ### Detailed Storage Schema (SQLite)
 
 ```sql
@@ -890,6 +1085,28 @@ CREATE TABLE projects (
     path TEXT NOT NULL,
     created_at DATETIME,
     updated_at DATETIME
+);
+
+-- Architectural Decisions (prevent drift)
+CREATE TABLE architectural_decisions (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    topic TEXT,          -- e.g., "Pattern", "Logging"
+    decision TEXT,       -- e.g., "MVVM", "Serilog"
+    rationale TEXT,      -- e.g., "Standard for WinUI 3"
+    made_at DATETIME,
+    FOREIGN KEY (project_id) REFERENCES projects(id)
+);
+
+-- Snapshot Graph (Reversibility)
+CREATE TABLE snapshots (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    label TEXT,          -- e.g., "Added Customer Model"
+    parent_snapshot_id TEXT,
+    timestamp DATETIME,
+    is_stable BOOLEAN,   -- True if build succeeded
+    FOREIGN KEY (project_id) REFERENCES projects(id)
 );
 
 -- File index (for change detection)
@@ -946,6 +1163,18 @@ CREATE TABLE execution_log (
     timestamp DATETIME,
     FOREIGN KEY (project_id) REFERENCES projects(id)
 );
+
+-- Semantic Embeddings (For RAG)
+CREATE TABLE embeddings (
+    id TEXT PRIMARY KEY,
+    file_id TEXT,
+    code_snippet TEXT,
+    vector BLOB,      -- 1536-dim float array
+    model_version TEXT,
+    indexed_at DATETIME,
+    FOREIGN KEY (file_id) REFERENCES files(id)
+);
+```
 ````
 
 #### Graph Service Implementation
@@ -998,6 +1227,90 @@ Unlike cloud builders that call external services, Sync AI runs everything local
 
 ### The 6 Embedded Subsystems
 
+The architecture relies on 6 critical internal subsystems that must be implemented as embedded services:
+
+1.  **Filesystem Sandbox**: Manages isolated workspaces, enforcing security boundaries and ensuring no cross-project contamination. It handles snapshot creation and atomic writes.
+2.  **Execution Kernel**: The "engine room" that manages the .NET SDK, MSBuild, and NuGet operations in-process. It abstracts CLI complexity.
+3.  **Roslyn Code Intelligence**: The "brain" that parses code into ASTs, maintains the symbol graph, and performs impact analysis for every change.
+4.  **Transactional Patch Engine**: The "surgeon" that performs safe, reversible code mutations using AST manipulation, ensuring no syntax errors are introduced.
+5.  **SQLite Project Graph**: The "memory" that persists the project's structure, symbols, dependencies, and execution history for intelligent decision-making.
+6.  **Process Sandbox**: The "supervisor" that manages isolated execution of the generated app, enforcing resource limits and timeout policies.
+
+### 10.1 Filesystem Sandbox (Deep Dive)
+
+**Overview**:
+The sandbox ensures that Sync AI never accidentally modifying user files outside the project scope. It acts as a virtualized file system wrapper.
+
+**Key Responsibilities**:
+- **Path Validation**: Rejects any path containing `..` or pointing outside `%AppData%/SyncAI/Workspaces/{Id}`.
+- **Atomic Writes**: Uses `.tmp` files and `MoveFileEx` to ensure files are never half-written.
+- **Snapshotting**: Differential compression of the entire workspace state before every mutation.
+
+```csharp
+public class FileSystemSandbox
+{
+    private readonly string _rootPath;
+
+    public async Task WriteFileAsync(string relativePath, string content)
+    {
+        ValidatePath(relativePath); // Throws SecurityException
+
+        var fullPath = Path.Combine(_rootPath, relativePath);
+        var tempPath = fullPath + ".tmp";
+
+        await File.WriteAllTextAsync(tempPath, content);
+        File.Move(tempPath, fullPath, overwrite: true);
+
+        // Update snapshot hash
+        _snapshotManager.RegisterChange(relativePath);
+    }
+
+    public async Task<ISnapshot> CreateSnapshotAsync(string label)
+    {
+        // 1. Pause mutations
+        // 2. Compute diff from last snapshot
+        // 3. Store compressed diff
+        // 4. Return snapshot handle
+    }
+}
+```
+
+### 10.2 Execution Kernel (Deep Dive)
+
+**Overview**:
+The Execution Kernel wraps the .NET SDK tools (MSBuild, NuGet) into a managed API. It avoids launching `dotnet.exe` processes where possible, preferring in-process libraries for speed and control.
+
+**Key Responsibilities**:
+- **MSBuild Localization**: Uses `Microsoft.Build.Locator` to find the correct SDK without user PATH configuration.
+- **NuGet Cache Management**: Maintained a local package cache to avoid redownloading common packages.
+- **Build Logger**: Implementation of `ILogger` that captures MSBuild events and converts them into structural definition (Error Code, File, Line).
+
+```csharp
+public class ExecutionKernel
+{
+    public async Task<BuildResult> BuildAsync(string projectPath)
+    {
+        // 1. Verify SDK
+        if (!MSBuildLocator.IsRegistered) MSBuildLocator.RegisterDefaults();
+
+        // 2. Prepare Request
+        var projectCollection = new ProjectCollection();
+        var buildParams = new BuildParameters(projectCollection)
+        {
+            Loggers = { new StructuredLogger() } // Captures errors structually
+        };
+
+        // 3. Execute In-Process
+        var buildResult = BuildManager.DefaultBuildManager.Build(
+            buildParams,
+            new BuildRequestData(projectPath, new Dictionary<string, string>(), null, new[] { "Build" }, null)
+        );
+
+        return new BuildResult(buildResult);
+    }
+}
+```
+
 ```text
 
 ┌─────────────────────────────────────────────────────────┐
@@ -1033,20 +1346,60 @@ The sandbox enforces isolation, preventing cross-project contamination and enabl
 ```csharp
 public class FileSystemSandbox
 {
-    private readonly string _projectRoot;
-    private readonly string _tempWorkspace;
+    private readonly string _projectRoot; // e.g. "C:\Users\John\SyncAIProjects"
 
-    /// Create snapshot of current state (for rollback)
-    public async Task<string> CreateSnapshotAsync(string projectId)
+    /// <summary>
+    /// Validates if a file path is safe to write to (Sandbox Containment)
+    /// </summary>
+    public bool IsPathSafe(string path)
     {
-        var snapshotDir = Path.Combine(_projectRoot, projectId, ".snapshots");
-        var snapshotId = $"snapshot_{DateTime.Now:yyyyMMdd_HHmmss}";
-        var snapshotPath = Path.Combine(snapshotDir, $"{snapshotId}.zip");
+        var fullPath = Path.GetFullPath(path);
+        var workspacePath = Path.GetFullPath(_projectRoot);
 
-        // ZIP all project files (excluding bin/obj)
-        // Implementation details...
-        return snapshotPath;
+        // 1. Ensure path is within workspace root
+        if (!fullPath.StartsWith(workspacePath, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // 2. Block directory traversal attempts
+        if (fullPath.Contains(".."))
+            return false;
+
+        // 3. Block system files
+        if (Path.GetFileName(fullPath).StartsWith("."))
+            return false;
+
+        return true;
     }
+
+    /// <summary>
+    /// Writes content atomically within the sandbox
+    /// </summary>
+    public async Task WriteFileAsync(string projectId, string relativePath, string content)
+    {
+        var fullPath = Path.Combine(_projectRoot, projectId, relativePath);
+
+        if (!IsPathSafe(fullPath))
+        {
+            throw new SecurityException($"Sandbox Violation: Attempted write to {fullPath}");
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
+        await File.WriteAllTextAsync(fullPath, content);
+    }
+
+    /// <summary>
+    /// Silently cleans build artifacts (bin/obj) to free space or reset state
+    /// </summary>
+    public void CleanBuildArtifacts(string projectId)
+    {
+        var projectDir = Path.Combine(_projectRoot, projectId);
+        var bin = Path.Combine(projectDir, "bin");
+        var obj = Path.Combine(projectDir, "obj");
+
+        if (Directory.Exists(bin)) Directory.Delete(bin, true);
+        if (Directory.Exists(obj)) Directory.Delete(obj, true);
+    }
+```
 
     /// Rollback to previous snapshot
     public async Task RollbackToSnapshotAsync(string projectId, string snapshotPath)
@@ -1055,8 +1408,10 @@ public class FileSystemSandbox
         Directory.Delete(projectSrc, recursive: true);
         ZipFile.ExtractToDirectory(snapshotPath, projectSrc);
     }
+
 }
-```
+
+````
 
 #### Local-Only Enhancements
 
@@ -1104,14 +1459,142 @@ public class ExecutionKernel
         });
     }
 }
+````
+
+---
+
+### 10.3 Patch Engine & Mutation Safety Guard
+
+The Patch Engine is the "heart" of the builder, responsible for safely applying AI-generated changes.
+
+#### The 5-Layer Mutation Shield (Safety Guard)
+
+Before any patch is written to disk, it must pass a rigorous 5-layer safety check to prevent build breaks and runtime instability.
+
+| Layer                    | Check                                        | Action on Failure               |
+| :----------------------- | :------------------------------------------- | :------------------------------ |
+| **1. Target Validation** | Does the file/symbol exist? Has it changed?  | **REJECT** (Stale Context)      |
+| **2. Impact Radius**     | Calculate outgoing/incoming edges (Depth=2). | **ANALYZE** (Determine Scope)   |
+| **3. Breaking Change**   | Does it modify public contracts or DI?       | **BLOCK** (If deps break)       |
+| **4. AST Simulation**    | Dry-run apply on in-memory syntax tree.      | **REJECT** (Syntax Errors)      |
+| **5. Pre-Commit Build**  | Run design-time build in sandbox.            | **REJECT** (Compilation Errors) |
+
+#### Implementation
+
+````csharp
+public async Task<bool> ValidatePatchAsync(Patch patch)
+{
+    // Simulate AST modification in memory first
+    var tree = await CSharpSyntaxTree.ParseTextAsync(File.ReadAllText(patch.FilePath));
+    var root = await tree.GetRootAsync();
+
+    try
+    {
+        var modifiedRoot = ApplyPatchToNode(root, patch);
+
+        // Validate syntax tree (Layer 4)
+        var diagnostics = modifiedRoot.GetDiagnostics();
+        if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
+        {
+            return false; // Syntax error caught before disk write
+        }
+
+        // specific semantic checks (Layers 1-3)...
+
+```csharp
+        return true;
+    }
+    catch
+    {
+        return false;
+    }
+}
+````
+
+### 10.4 Roslyn Code Intelligence (Deep Dive)
+
+**Overview**: The brain that parses code into ASTs, maintains the symbol graph, and performs impact analysis.
+
+**Key Responsibilities**:
+
+- **Symbol Extraction**: Identifies classes, methods, properties, and their relationships.
+- **Impact Analysis**: Determines which files need re-compilation or re-validation after a change.
+- **Semantic Search**: Generates embeddings for code snippets to support AI retrieval.
+
+```csharp
+public class RoslynCodeIntelligence
+{
+    public async Task<ImpactReport> AnalyzeImpactAsync(string filePath)
+    {
+        var tree = await _syntaxCache.GetTreeAsync(filePath);
+        var semanticModel = await _compilation.GetSemanticModelAsync(tree);
+
+        // Find dependent files
+        var symbol = semanticModel.GetDeclaredSymbol(tree.GetRoot());
+        var references = await SymbolFinder.FindReferencesAsync(symbol, _solution);
+
+        return new ImpactReport
+        {
+            DirectDependents = references.Select(r => r.Location.SourceTree.FilePath).Distinct(),
+            RiskLevel = CalculateRisk(references.Count())
+        };
+    }
+}
+```
+
+### 10.5 SQLite Project Graph (Deep Dive)
+
+**Overview**: The persistent memory that records the project's structure, symbols, dependencies, and execution history.
+
+**Key Responsibilities**:
+
+- **Graph Persistence**: Stores the DAG of tasks and their statuses.
+- **Symbol Indexing**: fast lookups for "Where is class X defined?".
+- **Audit Trail**: Records every mutation, error, and fix for debugging and rollback.
+
+**Schema Highlights**:
+
+- `Symbols`: (Name, FileId, Type, Span)
+- `Dependencies`: (SourceId, TargetId, Type)
+- `TaskHistory`: (TaskId, Prompt, Result, Duration)
+
+### 10.6 Process Sandbox (Deep Dive)
+
+**Overview**: The supervisor that manages isolated execution of the generated app, enforcing resource limits and timeout policies.
+
+**Key Responsibilities**:
+
+- **Resource Quotas**: Limits CPU time and memory usage per build/run.
+- **Timeout Enforcement**: Kills processes that hang (e.g., infinite loops).
+- **Environment Sanitation**: Clears environment variables to prevent leakage.
+
+```csharp
+public class ProcessSandbox
+{
+    public async Task<int> RunSafeAsync(ProcessStartInfo info, TimeSpan timeout)
+    {
+        using var process = Process.Start(info);
+        using var cts = new CancellationTokenSource(timeout);
+
+        try
+        {
+            await process.WaitForExitAsync(cts.Token);
+            return process.ExitCode;
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            throw new TimeoutException($"Process exceeded {timeout.TotalSeconds}s limit");
+        }
+    }
+}
 ```
 
 ---
 
 ### 11. Execution Lifecycle
 
-````
-
+````markdown
 ### Environment Validation Detail
 
 ```csharp
@@ -1152,48 +1635,82 @@ public async Task<ValidationResult> ValidateEnvironmentAsync()
 
     return new ValidationResult(results);
 }
+```
 ````
 
 ### Task Execution Lifecycle (Generate Command)
 
-When user types a prompt and hits "Generate", this is the full lifecycle:
+### 11.1 Full Hidden Background Execution Lifecycle
 
-```text
-User Prompt
-    ↓
-┌─ PLANNING ──────────────────────────────────┐
-│  AI Planner decomposes prompt into tasks     │
-│  Orchestrator builds task graph              │
-│  Snapshot created (pre-mutation baseline)    │
-└──────────────────────────────────────────────┘
-    ↓
-┌─ GENERATING ────────────────────────────────┐
-│  AI Coder generates code per task            │
-│  Patch Engine applies changes (Roslyn AST)   │
-│  Code Intelligence re-indexes symbols        │
-└──────────────────────────────────────────────┘
-    ↓
-┌─ BUILDING ──────────────────────────────────┐
-│  NuGet restore (in-process)                  │
-│  MSBuild compile (in-process)                │
-│  Structured error capture                    │
-└──────────────────────────────────────────────┘
-    ↓
-┌─ ERROR? ────────────────────────────────────┐
-│  YES → Classify error                        │
-│       → AI Fix Agent patches                 │
-│       → Re-build (retry up to 3 times)       │
-│  NO  → Continue to commit                    │
-└──────────────────────────────────────────────┘
-    ↓
-┌─ COMMITTING ────────────────────────────────┐
-│  Commit snapshot                             │
-│  Update version timeline                     │
-│  Update preview                              │
-│  Log execution to database                   │
-└──────────────────────────────────────────────┘
-    ↓
-User sees: Updated App Preview ✅
+When user types a prompt and hits "Generate", the system executes a 6-phase lifecycle. Phases 1-5 run on background threads.
+
+#### Phase 0: Pre-Execution Guard (UI Thread)
+
+- **Validation**: Checks if Orchestrator is IDLE.
+- **Lock**: Acquires workspace lock.
+- **Session Init**: Creates `ExecutionSession` with unique ID.
+- **UI Update**: Sets status to "Thinking...".
+
+#### Phase 1: AI Planning (Worker Thread)
+
+- **Context Retrieval**: Pulls relevant snippets from Vector DB.
+- **Symbol Resolution**: Queries SQLite for referenced symbols.
+- **Planner Agent**: Generates Task Graph (DAG).
+- **Validation**: Checks for circular dependencies in tasks.
+
+#### Phase 2: Task Execution Loop (Orchestrator Thread)
+
+- **Topological Sort**: Orders tasks by dependency.
+- **Snapshot**: Creates `pre-task` snapshot.
+- **Dispatch**: Sends tasks to Worker Pool.
+
+#### Phase 3: Patch Application (Worker Thread)
+
+- **Code Gen**: AI Coder produces C# code.
+- **AST Parsing**: Roslyn parses code to SyntaxTree.
+- **Mutation**: Applies changes to existing files via `SyntaxRewriter`.
+- **Atomic Write**: Saves to `.tmp` then moves to target.
+
+#### Phase 4: Build Execution (Worker Thread)
+
+- **Restore**: `dotnet restore` (in-process).
+- **Build**: `dotnet build` (in-process).
+- **Error Capture**: StructuredLogger intercepts errors.
+
+#### Phase 5: Silent Retry Loop (AI Fix Worker)
+
+_Only if Build fails (max 3 times)_
+
+- **Analysis**: Classifies error (Syntax vs Logic).
+- **Fix Gen**: AI Fixer proposes solution.
+- **Patch**: Applies fix.
+- **Retry**: Jumps back to Phase 4.
+
+#### Phase 6: Finalization (Orchestrator Thread)
+
+- **Commit**: Marks session as Success.
+- **Preview**: Updates Live Preview.
+- **Unlock**: Releases workspace lock.
+
+```mermaid
+sequenceDiagram
+    participant UI as UI Thread
+    participant Orch as Orchestrator
+    participant Worker as Worker Thread
+    participant Kernel as Build Kernel
+
+    UI->>Orch: Submit Prompt
+    Orch->>Worker: Phase 1: Plan
+    Worker-->>Orch: Task Graph
+    loop For Each Task
+        Orch->>Worker: Phase 3: Patch
+        Worker->>Kernel: Phase 4: Build
+        Kernel-->>Orch: Result (Success/Fail)
+        alt Fail
+            Orch->>Worker: Phase 5: Silent Retry
+        end
+    end
+    Orch->>UI: Phase 6: Finalize (Update Preview)
 ```
 
 ### Crash Recovery
@@ -1220,6 +1737,30 @@ private async Task HandleCrashRecoveryAsync(ExecutionSession incompleteSession)
         "We restored your project to a stable version.",
         severity: InfoBarSeverity.Informational
     );
+}
+```
+
+### 11.2 Execution Session Management
+
+Every user action triggers an `ExecutionSession`. This ensures tractability and cancellation.
+
+```csharp
+public class ExecutionSession
+{
+    public Guid Id { get; } = Guid.NewGuid();
+    public string ProjectId { get; init; }
+    public string Prompt { get; init; }
+    public DateTime StartTime { get; } = DateTime.UtcNow;
+    public SessionStatus Status { get; set; } = SessionStatus.Running;
+    public CancellationTokenSource Cts { get; } = new();
+
+    // Track detailed phase for UI progress
+    public ExecutionPhase CurrentPhase { get; set; }
+
+    // History of what this session changed
+    public List<string> ModifiedFiles { get; } = new();
+
+    public void Cancel() => Cts.Cancel();
 }
 ```
 
@@ -1399,40 +1940,64 @@ public class TokenBudgetGuard
 
 ---
 
-### 13. Threading & Concurrency Model
+### 13. Threading and Concurrency Model
 
-```text
-│ ─ User interactions, progress display │
-├─────────────────────────────────────────────┤
-│ Worker Thread Pool │
-│ ┌─────────────────────────────────────┐ │
-│ │ AI Worker │ Plan + Generate code │ │
-│ │ Build Worker │ MSBuild + NuGet │ │
-│ │ Patch Worker │ Roslyn AST mutations │ │
-│ │ Index Worker │ Symbol graph updates │ │
-│ └─────────────────────────────────────┘ │
-├─────────────────────────────────────────────┤
-│ Background Services │
-│ ─ Snapshot pruning, resource monitor, │
-│ continuous indexer, token budget guard │
-└─────────────────────────────────────────────┘
+### 13.1 Threading Diagram
 
+```mermaid
+graph TD
+    UI[Main UI Thread]
+    Orch[Orchestrator Worker]
+    Roslyn[Roslyn Single-Writer]
+    Pool[ThreadPool Agents]
+
+    UI -->|Async Command| Orch
+    Orch -->|Dispatch Task| Pool
+    Pool -->|Request Write| Roslyn
+    Roslyn -->|Update Index| SQLite[(Project Graph)]
+    Orch -->|Update Status| UI
 ```
+
+### 13.2 Threading Roles & Rules
+
+**Roles:**
+
+- **UI Thread (DispatcherQueue)**: Handles all rendering, user input, and animations. Never blocked.
+- **Orchestrator Worker**: Manages the state machine and task delegation.
+- **Roslyn Single-Writer**: Exclusive thread for all indexing and graph mutations to ensure consistency.
+- **Background Agents**: Thread pool for build (MSBuild), AI planning, and telemetry.
+
+**Concurrency Rules:**
+
+1.  **Single-Writer, Multi-Reader**: Only one thread (Patch Engine) can modify the graph/files at a time. Multiple threads (UI, AI) can read.
+2.  **Workspace Lock**: Uses a global mutex `Global\Workspace_{ProjectId}` to prevent multiple app instances from opening the same project.
+3.  **Strict Ordering**: `PATCH → INDEX → BUILD → COMMIT`. No overlapping steps.
 
 ### WinUI 3 Threading Pattern
 
 ```csharp
 // Update UI from background task
+public void UpdateStatus(string message)
+{
+    _dispatcherQueue.TryEnqueue(() =>
+    {
+        StatusText.Text = message;
+        LoadingSpinner.IsActive = true;
+    });
+}
+```
+
 await DispatcherQueue.EnqueueAsync(() =>
 {
-    BuildProgressText = "Compiling...";
-    BuildPercentage = 45;
+BuildProgressText = "Compiling...";
+BuildPercentage = 45;
 });
-```
+
+````
 
 ---
 
-## 14. Security & Isolation
+## 14. Security and Isolation
 
 ### Challenge: Generated Code Is Untrusted
 
@@ -1479,14 +2044,42 @@ public class SecurityBoundary
             command.StartsWith(allowed, StringComparison.OrdinalIgnoreCase));
     }
 }
+```
+
+### 14.2 Operation Whitelist (LLM Constraints)
+
+To prevent "jailbreak" attempts by the LLM, we enforce a strict whitelist of allowed operations. The LLM cannot execute arbitrary code or shell commands.
+
+```csharp
+public class OperationWhitelist
+{
+    private static readonly HashSet<string> AllowedOperations = new()
+    {
+        "ADD_CLASS",
+        "MODIFY_METHOD",
+        "ADD_PROPERTY",
+        "ADD_DEPENDENCY",
+        "UPDATE_XAML",
+        "DELETE_FILE",
+        "MOVE_FILE"
+    };
+
+    public bool IsOperationAllowed(string operation)
+    {
+        return AllowedOperations.Contains(operation);
+    }
+}
+```
 
 ### Compliance & Data Privacy
+
 - **User prompts not stored** (privacy-first)
 - **Generated code validated** before compilation
 - **API keys in secure storage** (Azure Key Vault / env vars)
 - **Rate limiting** on API calls
 - **Input sanitization**
-```
+
+````
 
 ---
 
@@ -1534,6 +2127,23 @@ The kernel must detect and mitigate machine variability that cloud-based systems
 ---
 
 ## 16. Deployment Model
+
+### Detailed Comparison: Cloud vs. Local Build Model
+
+| Factor                 | Cloud Build (e.g., Lovable/Replit) | Sync AI (Local-First)        |
+| :--------------------- | :--------------------------------- | :--------------------------- |
+| **Execution Location** | Remote Docker Container            | **Local User Process**       |
+| **Latency**            | Network RTT + Container Boot       | **Zero (In-Process)**        |
+| **Offline Capable**    | No                                 | **Yes (After AI reasoning)** |
+| **Data Privacy**       | Code lives on server               | **Code stays on device**     |
+| **Cost**               | High (Compute/Hosting)             | **Zero (User Hardware)**     |
+| **Access to Hardware** | Abstracted/Virtual                 | **Native (GPU/File/USB)**    |
+| **Persistence**        | Ephemeral (sleeps)                 | **Permanent (Filesystem)**   |
+| **Ecosystem**          | Web/Node.js primarily              | **Full .NET Desktop**        |
+| **Interop**            | Web APIs only                      | **COM/Win32/Local APIs**     |
+| **Dependencies**       | NPM / CDN                          | **Local NuGet Cache**        |
+| **Debugging**          | Browser Console                    | **Attached Debugger**        |
+| **Distribution**       | Web URL                            | **MSIX / EXE**               |
 
 ### Choice A: Local Desktop Application (Current)
 
@@ -1736,6 +2346,21 @@ Complete stack when fully internalized:
 14. **Deployment Model**: MSIX packaging, Auto-update.
 15. **WinUI 3 Polish**: Fluent Design, Animations.
 
+### Threading Model
+
+**Roles:**
+
+- **UI Thread (DispatcherQueue)**: Handles all rendering, user input, and animations. Never blocked.
+- **Orchestrator Worker**: Manages the state machine and task delegation.
+- **Roslyn Single-Writer**: Exclusive thread for all indexing and graph mutations to ensure consistency.
+- **Background Agents**: Thread pool for build (MSBuild), AI planning, and telemetry.
+
+**Concurrency Rules:**
+
+1.  **Single-Writer, Multi-Reader**: Only one thread (Patch Engine) can modify the graph/files at a time. Multiple threads (UI, AI) can read.
+2.  **Workspace Lock**: Uses a global mutex `Global\Workspace_{ProjectId}` to prevent multiple app instances from opening the same project.
+3.  **Strict Ordering**: `PATCH → INDEX → BUILD → COMMIT`. No overlapping steps.
+
 ### Phase 1: Foundation
 
 1. Filesystem Sandbox (week 1)
@@ -1895,3 +2520,359 @@ This is what separates production AI tools from basic generators.
 - [USER_WORKFLOWS.md](./USER_WORKFLOWS.md) — Features, refinement flows
 - [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) — Preview rendering, sandbox launch
 - [PROJECT_HANDBOOK.md](./PROJECT_HANDBOOK.md) — Project structure, dev setup, deployment
+
+````
+
+---
+
+## 25. API Contracts & Interface Specifications
+
+### Internal Service Interfaces
+
+**Orchestrator Service (`IOrchestrator`)**
+The central control point for all mutations.
+- `Task<BuilderState> DispatchAsync(BuilderEvent @event)`: Dispatches an event to the state machine.
+- `Task<TaskResult> ExecuteTaskAsync(TaskDefinition task)`: Entry point for agents to request work execution.
+- `BuilderContext GetCurrentContext()`: Returns the current immutable state of the builder.
+
+**Code Intelligence Service (`IRoslynService`)**
+Provides AST-based analysis and indexing.
+- `Task<ProjectGraph> IndexProjectAsync(string path)`: Recursively indexes symbols in a .NET project.
+- `Task<List<Symbol>> FindUsagesAsync(ISymbol symbol)`: Finds all references to a specific symbol.
+- `Task<SemanticModel> GetSemanticModelAsync(string filePath)`: Returns the Roslyn semantic model for a file.
+
+**Patch Engine (`IPatchEngine`)**
+Surgically modifies source code.
+- `Task<string> ApplyPatchAsync(string filePath, PatchDefinition patch)`: Applies an AST-based patch.
+- `Task<bool> ValidatePatchAsync(string filePath, PatchDefinition patch)`: Checks for conflicts.
+
+**Execution Kernel (`IExecutionKernel`)**
+Manages the isolated .NET execution environment.
+- `Task<BuildResult> BuildAsync(string projectPath)`: Runs an isolated MSBuild process.
+- `Task<TestResult> RunTestsAsync(string projectPath)`: Executes unit tests.
+- `Task<ExecutionResult> RunAppAsync(string projectPath)`: Launches the app in a controlled environment.
+
+### AI Engine Output Contracts
+
+**1. Project Specification Contract (`ProjectSpec`)**
+High-level structural definition of the application.
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "projectId": { "type": "string" },
+    "projectName": { "type": "string" },
+    "stack": {
+      "type": "object",
+      "properties": {
+        "ui": { "enum": ["WinUI3", "WPF", "Console"] },
+        "language": { "const": "C#" },
+        "framework": { "const": ".NET 8.0" },
+        "database": { "enum": ["SQLite", "None"] }
+      },
+      "required": ["ui", "language", "framework"]
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string" },
+          "description": { "type": "string" },
+          "dependencies": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["id", "type", "description"]
+      }
+    }
+  },
+  "required": ["projectId", "projectName", "stack", "features"]
+}
+````
+
+**2. Task Graph Contract (`TaskGraph`)**
+Ordered sequence of construction steps.
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "enum": ["INFRASTRUCTURE", "MODEL", "SERVICE", "UI", "INTEGRATION", "FIX"] },
+          "description": { "type": "string" },
+          "targetFiles": { "type": "array", "items": { "type": "string" } },
+          "dependencies": { "type": "array", "items": { "type": "string" } },
+          "validationStrategy": { "enum": ["COMPILE", "UNIT_TEST", "XAML_PARSE"] }
+        },
+        "required": ["id", "type", "description", "targetFiles", "dependencies"]
+      }
+    }
+  },
+  "required": ["tasks"]
+}
+```
+
+**3. Patch Engine Contract (`CodePatch`)**
+Targeted modifications for the Patch Engine.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "filePatches": {
+      "array": {
+        "items": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string" },
+            "changes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "ADD_CLASS",
+                      "ADD_METHOD",
+                      "ADD_PROPERTY",
+                      "ADD_FIELD",
+                      "MODIFY_METHOD_BODY",
+                      "MODIFY_PROPERTY",
+                      "INSERT_USING",
+                      "REMOVE_MEMBER",
+                      "UPDATE_XAML_NODE",
+                      "ADD_XAML_ELEMENT",
+                      "MODIFY_XAML_ATTRIBUTE"
+                    ]
+                  },
+                  "targetSymbol": { "type": "string" },
+                  "content": { "type": "string" }
+                },
+                "required": ["action", "content"]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+````
+
+---
+
+## 26. Database Specification
+
+### Database Architecture
+The system uses **SQLite** for all local data persistence. Each component has its own database file to ensure separation of concerns and enable independent backups.
+
+**File Location**: `C:\Users\{User}\AppData\Local\SyncAIAppBuilder\Workspaces\{ProjectId}\.builder\`
+- `application.db`: Application-level data (settings, projects list)
+- `project_graph.db`: Symbol index, dependencies, Roslyn data
+- `orchestrator.db`: State machine, event log, task history
+- `build_history.db`: Build results, error classifications
+
+### Complete Database Schemas
+
+#### 1. Application Database (`application.db`)
+```sql
+CREATE TABLE Projects (
+    Id TEXT PRIMARY KEY,
+    Name TEXT NOT NULL,
+    WorkspacePath TEXT NOT NULL UNIQUE,
+    CreatedDate DATETIME NOT NULL,
+    LastOpenedDate DATETIME,
+    HealthStatus TEXT DEFAULT 'Unknown'
+);
+
+CREATE TABLE Settings (
+    Key TEXT PRIMARY KEY,
+    Value TEXT NOT NULL,
+    Category TEXT,
+    ModifiedDate DATETIME NOT NULL
+);
+````
+
+#### 2. Project Graph Database (`project_graph.db`)
+
+**Files Table**
+
+```sql
+CREATE TABLE files (
+    id INTEGER PRIMARY KEY,
+    path TEXT NOT NULL UNIQUE,
+    hash TEXT NOT NULL,
+    last_modified_utc TEXT NOT NULL,
+    language TEXT NOT NULL,
+    snapshot_id INTEGER NOT NULL
+);
+```
+
+**Symbols Table**
+
+```sql
+CREATE TABLE symbols (
+    id INTEGER PRIMARY KEY,
+    file_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    fully_qualified_name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    return_type TEXT,
+    accessibility TEXT,
+    snapshot_id INTEGER NOT NULL,
+    FOREIGN KEY(file_id) REFERENCES files(id)
+);
+```
+
+**Symbol Edges Table**
+
+```sql
+CREATE TABLE symbol_edges (
+    id INTEGER PRIMARY KEY,
+    from_symbol_id INTEGER NOT NULL,
+    to_symbol_id INTEGER NOT NULL,
+    edge_type TEXT NOT NULL, -- 'CALLS', 'INHERITS', 'IMPLEMENTS'
+    snapshot_id INTEGER NOT NULL
+);
+```
+
+#### 3. Orchestrator Database (`orchestrator.db`)
+
+**Tasks Table**
+
+```sql
+CREATE TABLE Tasks (
+    Id TEXT PRIMARY KEY,
+    TaskType TEXT NOT NULL,
+    Status TEXT NOT NULL,
+    CreatedDate DATETIME NOT NULL,
+    RetryCount INTEGER DEFAULT 0,
+    Payload TEXT,
+    Result TEXT
+);
+```
+
+**Task Events (Event Sourcing)**
+
+```sql
+CREATE TABLE TaskEvents (
+    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+    TaskId TEXT NOT NULL,
+    EventType TEXT NOT NULL,
+    Timestamp DATETIME NOT NULL,
+    EventData TEXT
+);
+```
+
+#### 4. Build History Database (`build_history.db`)
+
+**Build Results**
+
+```sql
+CREATE TABLE BuildResults (
+    Id TEXT PRIMARY KEY,
+    TaskId TEXT,
+    Success INTEGER NOT NULL,
+    DurationMs INTEGER NOT NULL,
+    BuildLog TEXT
+);
+```
+
+**Build Errors**
+
+```sql
+CREATE TABLE BuildErrors (
+    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+    BuildResultId TEXT NOT NULL,
+    ErrorCode TEXT,
+    Severity TEXT NOT NULL,
+    Message TEXT NOT NULL,
+    FilePath TEXT,
+    LineNumber INTEGER
+);
+```
+
+### Graph Update Algorithm
+
+Updates must be **deterministic** and **transactional**.
+
+**Scenario: On Single File Mutation**
+
+1. **Begin Transaction**
+2. **Clear Old Records**: Delete symbols/edges for file in current snapshot context.
+3. **Parse & Insert**: Parse syntax tree, insert new nodes, symbols, and resolve edges.
+4. **Commit Transaction**
+
+If any step fails, the transaction rolls back, ensuring the graph never enters an inconsistent state.
+
+### AI Retrieval Pipeline
+
+Optimized for token efficiency.
+
+1. **Intent Classification**: Identify target symbol and operation.
+2. **Impact Analysis**: Query `symbol_edges` to find immediate dependencies (depth 1) and dependents.
+3. **Context Assembly**: Prioritize System Rules > Target Code > Direct Dependencies > Error Context.
+4. **Token Trimming**: Stop adding context when budget is reached.
+
+```
+
+---
+
+## 27. Core Development Guide
+
+> [!NOTE]
+> This guide is for **contributors developing the SyncAI Explorer tool itself**.
+
+### 27.1 Guided Implementation Sequence (Critical Path)
+**WARNING**: Do not start with UI or Intent. The system must be built bottom-up to ensure determinism.
+
+1.  **Phase 1: Deterministic Foundation**
+    *   Implement `BuilderReducer.cs` (Pure functions only).
+    *   Define `TaskSchema.cs` and immutable `BuilderEvent.cs`.
+    *   Implement `IOrchestrator` interface.
+    *   *Why?* Prevents "state spaghetti" in later complex agents.
+
+2.  **Phase 2: The Graph Brain**
+    *   Implement `SQLite` schema (Section 26).
+    *   Implement `RoslynService.cs` (Indexing only).
+    *   *Why?* Agents need a queryable world model before they can act.
+
+3.  **Phase 3: Safe Mutation**
+    *   Implement `PatchEngine.cs` (AST manipulation).
+    *   Implement `SnapshotManager.cs` (Rollback).
+    *   *Why?* AI will make mistakes. We need a safety net before turning it on.
+
+4.  **Phase 4: Execution Kernel**
+    *   Implement `BuildService.cs` (MSBuild wrapper).
+    *   Implement `ProcessSandbox.cs`.
+
+5.  **Phase 5: Agents & AI**
+    *   Only NOW do we connect the actual LLM `ArchitectAgent`, `CoderAgent`.
+
+### 27.2 WinUI 3 Patterns
+*   **Threading**: Use `DispatcherQueue.TryEnqueue` for ALL UI updates. Never blocks.
+*   **Binding**: Use `x:Bind` (compiled binding) for performance.
+*   **DI**: Register services in `App.xaml.cs` (Microsoft.Extensions.DependencyInjection).
+*   **MVVM**: Inherit from `ObservableObject` (CommunityToolkit.Mvvm).
+
+### 27.3 Local Constraints & Optimization
+*   **Memory**: If RAM < 8GB, disable parallel builds (`GetMaxParallelTasks`).
+*   **Disk**: Warn if free space < 2GB. Prune snapshots aggressively.
+*   **Nuget**: Detect corrupted local caches (`dotnet nuget locals all -clear`).
+*   **Process**: Every async method MUST accept a `CancellationToken`.
+
+### 27.4 Core Dev Workflow
+*   **API Keys**: Never commit to git. Use `appsettings.local.json`.
+*   **Validation**: Run `BuildKernelValidator` before every build.
+*   **Logs**: Use structured logging (`Serilog`) for tracing deterministic flows.
+
+```
