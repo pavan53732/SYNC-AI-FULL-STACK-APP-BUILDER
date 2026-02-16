@@ -53,9 +53,158 @@ public partial class App : Application
 }
 ```
 
+```
+
 ---
 
-## 2. Main Application Layout
+## 2. Design System (Pixel-Perfect Specifications)
+
+### Window Specifications
+
+```csharp
+// MainWindow.xaml.cs
+public sealed partial class MainWindow : Window
+{
+    public MainWindow()
+    {
+        InitializeComponent();
+        
+        // Set window constraints
+        this.MinWidth = 1200;
+        this.MinHeight = 800;
+        
+        // Set default size
+        this.Width = 1440;
+        this.Height = 900;
+        
+        // Apply Mica background
+        this.SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+    }
+}
+```
+
+**Specifications**:
+- **Minimum Width**: 1200px
+- **Minimum Height**: 800px
+- **Default Size**: 1440 × 900px
+- **Background**: Mica (BaseAlt)
+- **Card Corner Radius**: 12px
+- **Outer Padding**: 32px
+
+### Spacing Scale (8px System)
+
+Use consistent spacing throughout the application:
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| `xs` | 4px | Tight spacing (icon padding) |
+| `sm` | 8px | Default spacing between related elements |
+| `md` | 16px | Section spacing |
+| `lg` | 24px | Major section spacing |
+| `xl` | 32px | Page margins |
+
+**Implementation**:
+```xaml
+<ResourceDictionary>
+    <x:Double x:Key="SpacingXS">4</x:Double>
+    <x:Double x:Key="SpacingSM">8</x:Double>
+    <x:Double x:Key="SpacingMD">16</x:Double>
+    <x:Double x:Key="SpacingLG">24</x:Double>
+    <x:Double x:Key="SpacingXL">32</x:Double>
+</ResourceDictionary>
+```
+
+### Typography Scale
+
+| Style | Size | Weight | Usage |
+|-------|------|--------|-------|
+| **Title** | 28px | Semibold | Page titles, empty state |
+| **Subtitle** | 20px | Semibold | Section headers |
+| **Body** | 16px | Regular | Primary content |
+| **Caption** | 14px | Regular | Secondary text, labels |
+| **Small** | 12px | Regular | Metadata, timestamps |
+| **Code** | 14px | Regular | Code display (Cascadia Code) |
+
+**Implementation**:
+```xaml
+<Style x:Key="TitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="28"/>
+    <Setter Property="FontWeight" Value="Semibold"/>
+</Style>
+
+<Style x:Key="SubtitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="20"/>
+    <Setter Property="FontWeight" Value="Semibold"/>
+</Style>
+
+<Style x:Key="CodeStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="Cascadia Code"/>
+    <Setter Property="FontSize" Value="14"/>
+</Style>
+```
+
+### Color Palette
+
+**Status Indicators**:
+```xaml
+<ResourceDictionary>
+    <!-- Status Colors -->
+    <SolidColorBrush x:Key="StatusIdleBrush" Color="#6B6B6B"/>
+    <SolidColorBrush x:Key="StatusBuildingBrush" Color="#0078D4"/>
+    <SolidColorBrush x:Key="StatusSuccessBrush" Color="#107C10"/>
+    <SolidColorBrush x:Key="StatusErrorBrush" Color="#D13438"/>
+</ResourceDictionary>
+```
+
+| State | Color | Hex | Behavior |
+|-------|-------|-----|----------|
+| **Idle** | Gray | `#6B6B6B` | Static |
+| **Building** | Blue | `#0078D4` | Pulse animation |
+| **Success** | Green | `#107C10` | Flash 300ms |
+| **Error** | Red | `#D13438` | Soft pulse |
+
+### Material System
+
+**Background Materials**:
+```csharp
+// Mica for main window background
+this.SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+
+// Acrylic for panels
+var acrylicBrush = new AcrylicBrush
+{
+    TintColor = Colors.Transparent,
+    TintOpacity = 0.0,
+    TintLuminosityOpacity = 0.15,
+    FallbackColor = Colors.Transparent
+};
+```
+
+**Material Usage**:
+- **Main Window**: Mica BaseAlt
+- **Side Panels**: Acrylic (subtle, 15% luminosity)
+- **Cards**: LayerFillColorDefault with 12px corner radius
+- **Elevated Cards**: Add subtle drop shadow
+
+### Component Sizing
+
+**Buttons**:
+- **Primary Button**: 160px × 48px, 8px corner radius
+- **Icon Button**: 32px × 32px
+- **Chip Button**: Auto width × 32px, 16px corner radius
+
+**Input Fields**:
+- **Prompt Box**: 720px × 48px (empty state), 10px corner radius
+- **Text Input**: Auto width × 32px, 6px corner radius
+
+**Panels**:
+- **Left Panel**: 260px fixed width
+- **Top Bar**: Full width × 64px
+- **Tab Strip**: Full width × 48px
+
+---
+
+## 3. Main Application Layout
 
 ### Window Structure
 
@@ -609,9 +758,242 @@ public partial class App : Application
 </Page>
 ```
 
+```
+
 ---
 
-## 4. Progressive Disclosure Pattern (Lovable-Style UX)
+## 4. Micro-Interactions (Motion Design)
+
+### Generate Button Behavior
+
+The primary action button must feel responsive and provide clear feedback.
+
+**Idle State**:
+```xaml
+<Button x:Name="GenerateButton"
+        Content="Generate Application"
+        Width="160"
+        Height="48"
+        CornerRadius="8"
+        Style="{StaticResource AccentButtonStyle}"/>
+```
+
+**Hover State**:
+```csharp
+private void OnGenerateButtonPointerEntered(object sender, PointerRoutedEventArgs e)
+{
+    // Increase brightness by 4%
+    var compositor = ElementCompositionPreview.GetElementVisual(GenerateButton).Compositor;
+    var brightnessEffect = new BrightnessEffect
+    {
+        Source = new CompositionEffectSourceParameter("source"),
+        BlackPoint = new Vector2(0.0f),
+        WhitePoint = new Vector2(1.04f) // +4% brightness
+    };
+    
+    // Increase elevation shadow
+    GenerateButton.Translation = new Vector3(0, -2, 8);
+}
+```
+
+**Click Animation** (80ms shrink):
+```csharp
+private async void OnGenerateClick(object sender, RoutedEventArgs e)
+{
+    // Shrink to 96% scale for 80ms
+    var scaleAnimation = GenerateButton.Compositor.CreateVector3KeyFrameAnimation();
+    scaleAnimation.InsertKeyFrame(0.0f, new Vector3(1.0f, 1.0f, 1.0f));
+    scaleAnimation.InsertKeyFrame(1.0f, new Vector3(0.96f, 0.96f, 1.0f));
+    scaleAnimation.Duration = TimeSpan.FromMilliseconds(80);
+    
+    GenerateButton.StartAnimation("Scale", scaleAnimation);
+    await Task.Delay(80);
+    
+    // Transition to building state
+    TransitionToBuildingState();
+}
+```
+
+**Building State**:
+```csharp
+private void TransitionToBuildingState()
+{
+    GenerateButton.Content = "Building…";
+    GenerateButton.IsEnabled = false;
+    
+    // Show progress bar inside button
+    var progressBar = new ProgressBar
+    {
+        IsIndeterminate = true,
+        Height = 4,
+        VerticalAlignment = VerticalAlignment.Bottom
+    };
+    
+    // Add to button's visual tree
+    var grid = GenerateButton.Content as Grid;
+    grid?.Children.Add(progressBar);
+}
+```
+
+### Status Indicator Pulse
+
+**Status Dot** (12px circle in top bar):
+```xaml
+<Ellipse x:Name="StatusDot"
+         Width="12"
+         Height="12"
+         Fill="{StaticResource StatusIdleBrush}"/>
+```
+
+**Building State Pulse** (1.5s cycle):
+```csharp
+private void StartStatusPulse()
+{
+    var compositor = ElementCompositionPreview.GetElementVisual(StatusDot).Compositor;
+    
+    // Scale animation: 1.0 → 1.15 → 1.0
+    var scaleAnimation = compositor.CreateVector3KeyFrameAnimation();
+    scaleAnimation.InsertKeyFrame(0.0f, new Vector3(1.0f, 1.0f, 1.0f));
+    scaleAnimation.InsertKeyFrame(0.5f, new Vector3(1.15f, 1.15f, 1.0f));
+    scaleAnimation.InsertKeyFrame(1.0f, new Vector3(1.0f, 1.0f, 1.0f));
+    scaleAnimation.Duration = TimeSpan.FromSeconds(1.5);
+    scaleAnimation.IterationBehavior = AnimationIterationBehavior.Forever;
+    
+    // Apply cubic easing
+    var easing = compositor.CreateCubicBezierEasingFunction(
+        new Vector2(0.42f, 0.0f), 
+        new Vector2(0.58f, 1.0f)
+    );
+    scaleAnimation.InsertExpressionKeyFrame(0.5f, "this.FinalValue", easing);
+    
+    StatusDot.StartAnimation("Scale", scaleAnimation);
+    
+    // Change color to blue
+    StatusDot.Fill = (SolidColorBrush)Resources["StatusBuildingBrush"];
+}
+```
+
+**Success Flash** (300ms):
+```csharp
+private async void ShowSuccessFlash()
+{
+    // Quick green flash
+    StatusDot.Fill = (SolidColorBrush)Resources["StatusSuccessBrush"];
+    
+    await Task.Delay(300);
+    
+    // Fade back to idle gray
+    var fadeAnimation = StatusDot.Compositor.CreateColorKeyFrameAnimation();
+    fadeAnimation.InsertKeyFrame(1.0f, Color.FromArgb(255, 107, 107, 107)); // #6B6B6B
+    fadeAnimation.Duration = TimeSpan.FromMilliseconds(200);
+    
+    StatusDot.StartAnimation("Fill.Color", fadeAnimation);
+}
+```
+
+### Page Transitions
+
+**Smooth Fade + Slide** (120ms fade out, 160ms slide in):
+```csharp
+private async Task TransitionToPage(Page newPage, Page currentPage)
+{
+    var compositor = ElementCompositionPreview.GetElementVisual(currentPage).Compositor;
+    
+    // Step 1: Fade out current page (120ms)
+    var fadeOut = compositor.CreateScalarKeyFrameAnimation();
+    fadeOut.InsertKeyFrame(1.0f, 0.0f);
+    fadeOut.Duration = TimeSpan.FromMilliseconds(120);
+    
+    currentPage.StartAnimation("Opacity", fadeOut);
+    await Task.Delay(120);
+    
+    // Step 2: Swap pages
+    ContentFrame.Content = newPage;
+    
+    // Step 3: Slide in new page from right (160ms)
+    var slideIn = compositor.CreateVector3KeyFrameAnimation();
+    slideIn.InsertKeyFrame(0.0f, new Vector3(100, 0, 0)); // Start 100px to the right
+    slideIn.InsertKeyFrame(1.0f, new Vector3(0, 0, 0));
+    slideIn.Duration = TimeSpan.FromMilliseconds(160);
+    
+    // Cubic ease out
+    var easing = compositor.CreateCubicBezierEasingFunction(
+        new Vector2(0.0f, 0.0f),
+        new Vector2(0.2f, 1.0f)
+    );
+    slideIn.InsertExpressionKeyFrame(1.0f, "this.FinalValue", easing);
+    
+    newPage.StartAnimation("Translation", slideIn);
+    
+    // Fade in simultaneously
+    var fadeIn = compositor.CreateScalarKeyFrameAnimation();
+    fadeIn.InsertKeyFrame(0.0f, 0.0f);
+    fadeIn.InsertKeyFrame(1.0f, 1.0f);
+    fadeIn.Duration = TimeSpan.FromMilliseconds(160);
+    
+    newPage.StartAnimation("Opacity", fadeIn);
+}
+```
+
+### Silent Retry Feedback
+
+**User sees**: "Building your app…"
+
+**If retry occurs internally**:
+```csharp
+private void ShowSubtleRetryHint(int retryCount)
+{
+    if (retryCount <= 3)
+    {
+        // Silent - no UI change
+        // Only log internally
+        _logger.LogDebug("Retry attempt {Attempt} in progress", retryCount);
+        return;
+    }
+    
+    // After 3 retries, show subtle hint
+    if (retryCount == 4)
+    {
+        // Slight text shimmer effect
+        var shimmer = BuildStatusText.Compositor.CreateScalarKeyFrameAnimation();
+        shimmer.InsertKeyFrame(0.0f, 1.0f);
+        shimmer.InsertKeyFrame(0.5f, 0.85f);
+        shimmer.InsertKeyFrame(1.0f, 1.0f);
+        shimmer.Duration = TimeSpan.FromMilliseconds(400);
+        
+        BuildStatusText.StartAnimation("Opacity", shimmer);
+        
+        // Update subtext
+        BuildStatusSubtext.Text = "Optimizing build…";
+        BuildStatusSubtext.Visibility = Visibility.Visible;
+    }
+}
+```
+
+### Snapshot Restore (Invisible)
+
+**If rollback happens**:
+```csharp
+private async Task RollbackToSnapshot(string snapshotId)
+{
+    // No UI flicker - seamless transition
+    await _snapshotService.RestoreAsync(snapshotId);
+    
+    // Only visible if user is in Logs tab (Developer Mode)
+    if (DeveloperModeEnabled && CurrentTab == "Logs")
+    {
+        LogsPanel.AppendLine($"[INFO] Restored to stable state: {snapshotId}");
+        
+        // Show diff indicator
+        DiffIndicator.Visibility = Visibility.Visible;
+        DiffIndicator.Text = "Reverted to last stable state";
+    }
+}
+```
+
+---
+
+## 5. Progressive Disclosure Pattern (Lovable-Style UX)
 
 ### Philosophy
 
@@ -754,7 +1136,369 @@ private void UpdateNavigationItems()
 
 ---
 
-## 5. UI → Orchestrator Contract
+## 6. Failure State Hierarchy (Three-Tier System)
+
+### Philosophy
+
+> **"Fail silently, succeed loudly"**
+
+Errors must be handled gracefully with minimal user disruption. The system uses a three-tier approach based on severity and recoverability.
+
+### Tier 1: Silent Auto-Recovery
+
+**Condition**: Build error resolved within retry budget (≤3 attempts)
+
+**User Experience**:
+- ✅ No error message shown
+- ✅ Spinner continues smoothly
+- ✅ No logs exposed
+- ✅ No UI change whatsoever
+
+**Implementation**:
+```csharp
+private async Task<BuildResult> BuildWithSilentRetryAsync(string projectPath)
+{
+    for (int attempt = 1; attempt <= 3; attempt++)
+    {
+        var result = await _buildService.BuildAsync(projectPath);
+        
+        if (result.Success)
+        {
+            // Silent success - user never knew there was a problem
+            _logger.LogInformation("Build succeeded on attempt {Attempt}", attempt);
+            return result;
+        }
+        
+        // Log internally, don't show to user
+        _logger.LogWarning("Build attempt {Attempt} failed: {Error}", attempt, result.Error);
+        
+        // Exponential backoff
+        await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt - 1)));
+    }
+    
+    // Escalate to Tier 2
+    return await HandleRecoverableFailureAsync(projectPath);
+}
+```
+
+### Tier 2: Recoverable Failure
+
+**Condition**: Initial retries failed, but system can try alternative approaches
+
+**User Experience**:
+```xaml
+<InfoBar x:Name="RecoverableFailureBar"
+         Severity="Warning"
+         IsOpen="False"
+         Title="Build Issue Detected"
+         Message="We encountered an issue while building your app. Retrying with adjustments…">
+    <InfoBar.ActionButton>
+        <Button Content="Retry Now" 
+                Click="{x:Bind ViewModel.RetryBuild}"/>
+    </InfoBar.ActionButton>
+</InfoBar>
+```
+
+**Logs Tab**: Becomes available (collapsed by default)
+
+**Implementation**:
+```csharp
+private async Task<BuildResult> HandleRecoverableFailureAsync(string projectPath)
+{
+    // Show non-technical warning
+    RecoverableFailureBar.IsOpen = true;
+    
+    // Make Logs tab available (but don't auto-open)
+    LogsTab.Visibility = Visibility.Visible;
+    
+    // Try alternative build strategies
+    var strategies = new[]
+    {
+        () => _buildService.BuildWithCleanAsync(projectPath),
+        () => _buildService.BuildWithRestoreAsync(projectPath),
+        () => _buildService.BuildWithFallbackConfigAsync(projectPath)
+    };
+    
+    foreach (var strategy in strategies)
+    {
+        var result = await strategy();
+        if (result.Success)
+        {
+            RecoverableFailureBar.IsOpen = false;
+            return result;
+        }
+    }
+    
+    // Escalate to Tier 3
+    return await HandleHardFailureAsync(projectPath);
+}
+```
+
+### Tier 3: Hard Failure
+
+**Condition**: Retry budget exhausted, structural conflict detected
+
+**User Experience**:
+```xaml
+<ContentDialog x:Name="HardFailureDialog"
+               Title="Build Could Not Complete"
+               PrimaryButtonText="Retry"
+               SecondaryButtonText="Modify Prompt"
+               CloseButtonText="Cancel"
+               DefaultButton="ContentDialogButton.Close">
+    <StackPanel Spacing="16" Padding="24">
+        <!-- Error Icon -->
+        <FontIcon Glyph="&#xE7BA;" 
+                  FontSize="48" 
+                  Foreground="{ThemeResource SystemErrorTextColor}"
+                  HorizontalAlignment="Center"/>
+        
+        <!-- Main Message -->
+        <TextBlock Text="We couldn't complete this build."
+                   Style="{StaticResource SubtitleTextBlockStyle}"
+                   HorizontalAlignment="Center"/>
+        
+        <!-- Reason -->
+        <TextBlock Text="{x:Bind ViewModel.FriendlyErrorMessage}"
+                   TextWrapping="Wrap"
+                   HorizontalAlignment="Center"/>
+        
+        <!-- Technical Details (Collapsed) -->
+        <Expander Header="View Technical Details"
+                  HorizontalAlignment="Stretch">
+            <StackPanel Spacing="8" Padding="12">
+                <TextBlock Text="{x:Bind ViewModel.ErrorType}" FontWeight="SemiBold"/>
+                <TextBlock Text="{x:Bind ViewModel.AffectedFile}"/>
+                <TextBlock Text="{x:Bind ViewModel.BuildCode}" FontFamily="Consolas"/>
+                <TextBlock Text="{x:Bind ViewModel.RetryAttempts}"/>
+                <TextBlock Text="{x:Bind ViewModel.SnapshotId}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            </StackPanel>
+        </Expander>
+    </StackPanel>
+</ContentDialog>
+```
+
+**Implementation**:
+```csharp
+private async Task<BuildResult> HandleHardFailureAsync(string projectPath)
+{
+    // Populate error details
+    ViewModel.FriendlyErrorMessage = TranslateErrorMessage(lastError);
+    ViewModel.ErrorType = lastError.Type.ToString();
+    ViewModel.AffectedFile = Path.GetFileName(lastError.FilePath);
+    ViewModel.BuildCode = lastError.Code;
+    ViewModel.RetryAttempts = $"Attempted {totalRetries} times";
+    ViewModel.SnapshotId = await _snapshotService.GetLatestSnapshotIdAsync();
+    
+    // Show dialog
+    var result = await HardFailureDialog.ShowAsync();
+    
+    if (result == ContentDialogResult.Primary)
+    {
+        // User clicked Retry
+        return await BuildWithSilentRetryAsync(projectPath);
+    }
+    else if (result == ContentDialogResult.Secondary)
+    {
+        // User clicked Modify Prompt
+        NavigateToEditor();
+    }
+    
+    return BuildResult.Failed(lastError);
+}
+```
+
+---
+
+## 7. First-Time User Experience
+
+### Empty State (First Launch)
+
+**Layout** (Centered, 720px max width):
+```xaml
+<Grid x:Name="EmptyStateGrid"
+      Visibility="{x:Bind ViewModel.IsFirstLaunch, Mode=OneWay}">
+    <StackPanel VerticalAlignment="Center"
+                HorizontalAlignment="Center"
+                Spacing="24"
+                MaxWidth="720">
+        
+        <!-- Title -->
+        <TextBlock Text="What would you like to build?"
+                   FontSize="28"
+                   FontWeight="Semibold"
+                   HorizontalAlignment="Center"
+                   Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+        
+        <!-- Prompt Box -->
+        <TextBox x:Name="FirstPromptBox"
+                 PlaceholderText="Describe your app in plain English…"
+                 Height="48"
+                 CornerRadius="10"
+                 TextWrapping="Wrap"
+                 AcceptsReturn="False"/>
+        
+        <!-- Generate Button -->
+        <Button Content="Generate Application"
+                Width="160"
+                Height="48"
+                CornerRadius="8"
+                Style="{StaticResource AccentButtonStyle}"
+                HorizontalAlignment="Center"
+                Click="{x:Bind ViewModel.GenerateFromEmptyState}"/>
+        
+        <!-- Suggestion Chips -->
+        <ItemsControl ItemsSource="{x:Bind ViewModel.SuggestionChips}"
+                      Margin="0,16,0,0">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" 
+                                Spacing="8"
+                                HorizontalAlignment="Center"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                    <Button Content="{Binding}"
+                            Height="32"
+                            CornerRadius="16"
+                            Padding="16,0"
+                            Style="{StaticResource SubtleButtonStyle}"
+                            Click="OnSuggestionClick"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        
+        <!-- Helper Text -->
+        <TextBlock Text="Tip: Be specific about features you want"
+                   FontSize="14"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   HorizontalAlignment="Center"/>
+    </StackPanel>
+</Grid>
+```
+
+**Suggestion Chips**:
+```csharp
+public ObservableCollection<string> SuggestionChips { get; } = new()
+{
+    "Inventory system",
+    "CRM app",
+    "Task manager",
+    "Note-taking app",
+    "Budget tracker",
+    "Recipe organizer"
+};
+
+private void OnSuggestionClick(object sender, RoutedEventArgs e)
+{
+    var button = sender as Button;
+    FirstPromptBox.Text = button.Content.ToString();
+    FirstPromptBox.Focus(FocusState.Programmatic);
+}
+```
+
+### No Tutorial Wizard
+
+**Philosophy**: Users learn by doing, not by reading documentation walls.
+
+- ❌ No multi-step onboarding
+- ❌ No feature tour
+- ❌ No "Getting Started" guide
+- ✅ Immediate prompt input
+- ✅ Contextual tooltips only when needed
+
+---
+
+## 8. Anti-Terror UX Rules
+
+### Never Show to Users
+
+| ❌ Forbidden | Why |
+|-------------|-----|
+| Raw MSBuild console output | Overwhelming, technical noise |
+| Stack traces by default | Intimidating, not actionable |
+| Full file paths | Exposes internal structure unnecessarily |
+| Red error overlays blocking entire UI | Creates panic, prevents recovery |
+| Frozen UI during builds | Feels broken, causes anxiety |
+| Compiler error codes without translation | Meaningless to non-developers |
+
+### Always Provide
+
+| ✅ Required | Why |
+|------------|-----|
+| Animated feedback during operations | Reassures user system is working |
+| Cancel button for long operations | Gives user control |
+| Retry option on failures | Enables recovery |
+| State recovery via snapshots | Prevents data loss |
+| User-friendly error messages | Actionable, understandable |
+
+### Error Message Translation
+
+**Implementation**:
+```csharp
+public string TranslateErrorMessage(BuildError error)
+{
+    return error.Code switch
+    {
+        "CS0246" => "We couldn't find a required component. The system will attempt to add the missing reference automatically.",
+        "CS1061" => "There's a mismatch in the code structure. Attempting to fix automatically.",
+        "CS0103" => "A variable name wasn't recognized. Retrying with corrections.",
+        "CS0029" => "There's a type mismatch in the generated code. Adjusting automatically.",
+        "MSB3073" => "The build process encountered an issue. Retrying with different settings.",
+        "MSB4018" => "A build task failed. Attempting alternative build strategy.",
+        _ => "We encountered a build issue. Retrying with adjustments…"
+    };
+}
+```
+
+### Example Translations
+
+**Bad** (Technical):
+```
+CS0246: The type or namespace name 'ObservableObject' could not be found 
+(are you missing a using directive or an assembly reference?)
+at MainViewModel.cs:line 12
+```
+
+**Good** (User-Friendly):
+```
+We couldn't find a required component.
+The system will attempt to add the missing reference automatically.
+```
+
+---
+
+**Bad** (Technical):
+```
+MSB3073: The command "dotnet build" exited with code 1.
+```
+
+**Good** (User-Friendly):
+```
+The build process encountered an issue.
+Retrying with different settings…
+```
+
+### UI Behavior During Errors
+
+**Never**:
+- Block the entire window with modal error
+- Show red background overlays
+- Display technical jargon
+- Freeze animations
+- Remove user's ability to cancel
+
+**Always**:
+- Keep UI responsive
+- Show calm, informative messages
+- Provide clear next steps
+- Maintain animation/feedback
+- Allow user to retry or modify
+
+---
+
+## 9. UI → Orchestrator Contract
 
 ### Command Pattern
 
