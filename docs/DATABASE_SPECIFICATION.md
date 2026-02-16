@@ -87,122 +87,26 @@ CREATE TABLE RecentPrompts (
 );
 
 CREATE INDEX idx_recent_prompts_date ON RecentPrompts(LastUsedDate DESC);
-
--- ============================================
--- SDK INSTALLATIONS (cached)
--- ============================================
-CREATE TABLE SdkInstallations (
-    Version TEXT PRIMARY KEY,
-    InstallPath TEXT NOT NULL,
-    DetectedDate DATETIME NOT NULL,
-    IsValid INTEGER DEFAULT 1
-);
 ```
 
 ---
 
 ### 2.2 Project Graph Database (project_graph.db)
 
-**Purpose**: Roslyn symbol index, dependency graph, code intelligence.
+> **SOURCE OF TRUTH**: The schema for the Semantic Graph (Files, Symbols, SyntaxNodes, Edges, XamlBindings) is authoritative in [DATABASE_SCHEMA_SPECIFICATION.md](./DATABASE_SCHEMA_SPECIFICATION.md).
+>
+> Please refer to that document for the exact table definitions for:
+> - `files`
+> - `syntax_nodes`
+> - `symbols`
+> - `symbol_edges`
+> - `xaml_bindings`
+>
+> The `project_graph.db` also includes:
 
 ```sql
 -- ============================================
--- FILES TABLE
--- ============================================
-CREATE TABLE Files (
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    FilePath TEXT NOT NULL UNIQUE,          -- Relative to workspace root
-    FileHash TEXT NOT NULL,                 -- SHA256 hash for change detection
-    FileType TEXT NOT NULL,                 -- 'CSharp', 'Xaml', 'Json', 'Other'
-    SizeBytes INTEGER,
-    LineCount INTEGER,
-    LastIndexed DATETIME NOT NULL,
-    LastModified DATETIME NOT NULL
-);
-
-CREATE INDEX idx_files_type ON Files(FileType);
-CREATE INDEX idx_files_hash ON Files(FileHash);
-
--- ============================================
--- SYMBOLS TABLE (Roslyn AST)
--- ============================================
-CREATE TABLE Symbols (
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    FileId INTEGER NOT NULL,
-    SymbolType TEXT NOT NULL,               -- 'Class', 'Method', 'Property', 'Field', 'Interface', 'Enum'
-    Name TEXT NOT NULL,
-    FullyQualifiedName TEXT NOT NULL,
-    Namespace TEXT,
-    LineNumber INTEGER,
-    ColumnNumber INTEGER,
-    EndLineNumber INTEGER,
-    Accessibility TEXT,                     -- 'Public', 'Private', 'Protected', 'Internal'
-    IsStatic INTEGER DEFAULT 0,
-    IsAbstract INTEGER DEFAULT 0,
-    IsSealed INTEGER DEFAULT 0,
-    Signature TEXT,                         -- Method signature or property type
-    XmlDocumentation TEXT,                  -- XML doc comments
-    FOREIGN KEY (FileId) REFERENCES Files(Id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_symbols_file ON Symbols(FileId);
-CREATE INDEX idx_symbols_type ON Symbols(SymbolType);
-CREATE INDEX idx_symbols_name ON Symbols(Name);
-CREATE INDEX idx_symbols_fqn ON Symbols(FullyQualifiedName);
-
--- ============================================
--- REFERENCES TABLE (Dependencies)
--- ============================================
-CREATE TABLE References (
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    FromSymbolId INTEGER NOT NULL,
-    ToSymbolId INTEGER NOT NULL,
-    ReferenceType TEXT NOT NULL,            -- 'Inheritance', 'Implementation', 'Usage', 'Invocation'
-    LineNumber INTEGER,
-    FOREIGN KEY (FromSymbolId) REFERENCES Symbols(Id) ON DELETE CASCADE,
-    FOREIGN KEY (ToSymbolId) REFERENCES Symbols(Id) ON DELETE CASCADE
-);
-
-CREATE INDEX idx_references_from ON References(FromSymbolId);
-CREATE INDEX idx_references_to ON References(ToSymbolId);
-CREATE INDEX idx_references_type ON References(ReferenceType);
-
--- ============================================
--- FILE DEPENDENCIES (File-level graph)
--- ============================================
-CREATE TABLE FileDependencies (
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    FromFileId INTEGER NOT NULL,
-    ToFileId INTEGER NOT NULL,
-    DependencyType TEXT NOT NULL,           -- 'Using', 'Reference', 'XamlCodeBehind'
-    FOREIGN KEY (FromFileId) REFERENCES Files(Id) ON DELETE CASCADE,
-    FOREIGN KEY (ToFileId) REFERENCES Files(Id) ON DELETE CASCADE,
-    UNIQUE(FromFileId, ToFileId, DependencyType)
-);
-
-CREATE INDEX idx_file_deps_from ON FileDependencies(FromFileId);
-CREATE INDEX idx_file_deps_to ON FileDependencies(ToFileId);
-
--- ============================================
--- XAML BINDINGS
--- ============================================
-CREATE TABLE XamlBindings (
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    XamlFileId INTEGER NOT NULL,
-    ElementName TEXT,                       -- x:Name attribute
-    BindingPath TEXT,                       -- Binding path expression
-    TargetSymbolId INTEGER,                 -- Resolved C# symbol
-    LineNumber INTEGER,
-    IsResolved INTEGER DEFAULT 0,
-    FOREIGN KEY (XamlFileId) REFERENCES Files(Id) ON DELETE CASCADE,
-    FOREIGN KEY (TargetSymbolId) REFERENCES Symbols(Id) ON DELETE SET NULL
-);
-
-CREATE INDEX idx_xaml_bindings_file ON XamlBindings(XamlFileId);
-CREATE INDEX idx_xaml_bindings_symbol ON XamlBindings(TargetSymbolId);
-
--- ============================================
--- NUGET PACKAGES
+-- NUGET PACKAGES (Package Management)
 -- ============================================
 CREATE TABLE NuGetPackages (
     Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -215,6 +119,7 @@ CREATE TABLE NuGetPackages (
 
 CREATE INDEX idx_nuget_packages_id ON NuGetPackages(PackageId);
 ```
+
 
 ---
 

@@ -115,9 +115,11 @@ Generated Code
     └─ Dependency missing? Add to .csproj
     └─ Schema conflict? Resolve
     ↓
-[Validation] - Run tests/checks
-    ↓
-[Success?]
+### 3. Smart "Optimistic" Preview
+- **XAML/Styling**: Near-instant updates via Hot Reload where possible.
+- **C# Logic/ViewModels**: Shows a "Building..." spinner (5-10s) while the local build kernel recompiles.
+- **Optimistic UI**: The Code View updates immediately, while the Preview pane shows a skeleton or loading state until compilation completes.
+
     ├─ YES → Present preview
     └─ NO → Retry (up to 5x) then fallback
 ```

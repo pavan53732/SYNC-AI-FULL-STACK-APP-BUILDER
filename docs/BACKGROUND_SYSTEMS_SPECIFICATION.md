@@ -413,15 +413,6 @@ CREATE TABLE ErrorHistory (
     Timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Snapshot Graph
-CREATE TABLE Snapshots (
-    Id TEXT PRIMARY KEY,
-    ProjectId TEXT NOT NULL,
-    TriggerReason TEXT,
-    ParentSnapshotId TEXT,
-    Timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
 -- Project Metadata
 CREATE TABLE Projects (
     Id TEXT PRIMARY KEY,

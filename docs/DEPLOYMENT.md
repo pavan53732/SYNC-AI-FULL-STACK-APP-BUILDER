@@ -15,8 +15,8 @@ All generated applications and the Builder itself are packaged using the **MSIX*
 ## Deployment Strategy
 
 ### Local Desktop App (V1)
-1. **Building**: Run `dotnet publish -f net8.0-windows10.0.19041.0 -c Release`.
-2. **Packaging**: Generate an MSIX package using the Windows Application Packaging Project.
+1. **Building**: Execute `Publish` target via Embedded MSBuild (Release configuration).
+2. **Packaging**: Generate MSIX package using Windows Application Packaging Project APIs.
 3. **Distribution**: Direct sideloading or Windows Store.
 
 ### Requirements

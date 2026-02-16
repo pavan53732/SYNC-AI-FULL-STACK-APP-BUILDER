@@ -41,9 +41,13 @@ public partial class App : Application
         services.AddTransient<BuildMonitorViewModel>();
         
         // Services
-        services.AddSingleton<IOrchestrator, OrchestratorService>();
-        services.AddSingleton<IProjectService, ProjectService>();
-        services.AddSingleton<IPreviewService, PreviewService>();
+        // Services
+        services.AddSingleton<IProjectService, ProjectService>(); // Global
+        
+        // Scope-based services (reset per project load)
+        services.AddScoped<IOrchestrator, OrchestratorService>();
+        services.AddScoped<IPreviewService, PreviewService>();
+        services.AddScoped<IRoslynIndexer, RoslynIndexerService>();
         
         return services.BuildServiceProvider();
     }

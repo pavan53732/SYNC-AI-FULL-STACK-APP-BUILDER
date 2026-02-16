@@ -10,12 +10,11 @@
 
 The Build System is responsible for:
 
-* **Execute `dotnet restore`** - Restore NuGet packages
-* **Execute `dotnet build`** - Compile C# and XAML
-* **Parse MSBuild output** - Extract errors and warnings
+* **Execute In-Process Restore** - Restore NuGet packages via MSBuild API
+* **Execute In-Process Build** - Compile C# and XAML via `BuildManager`
+* **Capture Structured Logs** - Collect errors/warnings directly from `ILogger`
 * **Enforce timeout** - Prevent infinite builds
-* **Enforce process isolation** - Sandbox build execution
-* **Capture logs** - Structured logging for debugging
+* **Enforce process isolation** - Build in isolated `ProjectCollection` context
 * **Classify errors** - Categorize by error type
 * **Support cancellation** - Allow user to cancel builds
 * **Snapshot management** - Create/restore workspace snapshots
@@ -48,37 +47,31 @@ The Build System is responsible for:
 └────────────────────┬────────────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────────────┐
-│ 4. Clean Build Artifacts                                │
+│ 4. Clean Workspace                                      │
 │    - Delete bin/ and obj/ directories                   │
-│    - Clear NuGet cache if needed                        │
+│    - Reset ProjectCollection context                    │
 └────────────────────┬────────────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────────────┐
-│ 5. Restore NuGet Packages                               │
-│    - Run: dotnet restore                                │
-│    - Timeout: 120 seconds                               │
-│    - Capture output                                     │
+│ 5. Execute In-Process Build (Microsoft.Build)           │
+│    - Load Project (ProjectCollection.LoadProject)       │
+│    - Create Logger (StructuredLogger)                   │
+│    - Run Target: "Restore;Build"                        │
+│    - Timeout: 60-120 seconds                            │
 └────────────────────┬────────────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────────────┐
-│ 6. Build Project                                        │
-│    - Run: dotnet build --no-restore                     │
-│    - Timeout: 60 seconds                                │
-│    - Capture stdout and stderr                          │
-└────────────────────┬────────────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────────────┐
-│ 7. Parse Build Output                                   │
-│    - Extract errors and warnings                        │
-│    - Classify error types                               │
-│    - Generate structured result                         │
+│ 6. Process Build Result                                 │
+│    - Retrieve structured errors from Logger             │
+│    - Classify error types (CS, NU, MSB)                 │
+│    - Generate BuildResult object                        │
 └────────────────────┬────────────────────────────────────┘
                      │
                      ├─── SUCCESS ───┐
                      │                │
                      │                ▼
                      │    ┌───────────────────────────┐
-                     │    │ 8a. Commit Snapshot       │
+                     │    │ 7a. Commit Snapshot       │
                      │    │    - Mark as successful   │
                      │    │    - Update state.json    │
                      │    └───────────────────────────┘
@@ -87,7 +80,7 @@ The Build System is responsible for:
                                      │
                                      ▼
                          ┌───────────────────────────┐
-                         │ 8b. Classify Error        │
+                         │ 7b. Classify Error        │
                          │    - Determine error type │
                          │    - Return to Orchestrator│
                          │    - Keep snapshot        │
@@ -104,7 +97,7 @@ The Build System is responsible for:
 public interface IBuildService
 {
     /// <summary>
-    /// Builds a project asynchronously with timeout and cancellation support.
+    /// Builds a project asynchronously using MSBuild API.
     /// </summary>
     Task<BuildResult> BuildAsync(
         string projectPath, 
@@ -112,7 +105,7 @@ public interface IBuildService
         CancellationToken cancellationToken = default);
     
     /// <summary>
-    /// Restores NuGet packages for a project.
+    /// Restores NuGet packages via MSBuild "Restore" target.
     /// </summary>
     Task<RestoreResult> RestoreAsync(
         string projectPath,
@@ -122,11 +115,6 @@ public interface IBuildService
     /// Cleans build artifacts (bin/obj directories).
     /// </summary>
     Task CleanAsync(string projectPath);
-    
-    /// <summary>
-    /// Validates that the .NET SDK is available.
-    /// </summary>
-    Task<SdkValidationResult> ValidateSdkAsync();
 }
 ```
 
@@ -151,19 +139,14 @@ public class BuildOptions
     public bool RestoreBeforeBuild { get; set; } = true;
     
     /// <summary>
-    /// Whether to clean before building.
+    /// Additional global properties for MSBuild.
     /// </summary>
-    public bool CleanBeforeBuild { get; set; } = false;
+    public Dictionary<string, string> Properties { get; set; } = new();
     
     /// <summary>
-    /// Additional MSBuild arguments.
+    /// Diagnostic verbosity.
     /// </summary>
-    public string[] AdditionalArguments { get; set; }
-    
-    /// <summary>
-    /// Verbosity level (quiet, minimal, normal, detailed, diagnostic).
-    /// </summary>
-    public string Verbosity { get; set; } = "minimal";
+    public LoggerVerbosity Verbosity { get; set; } = LoggerVerbosity.Minimal;
 }
 ```
 
@@ -172,45 +155,13 @@ public class BuildOptions
 ```csharp
 public class BuildResult
 {
-    /// <summary>
-    /// Whether the build succeeded.
-    /// </summary>
     public bool Success { get; set; }
-    
-    /// <summary>
-    /// Type of error if build failed.
-    /// </summary>
-    public ErrorType? ErrorType { get; set; }
-    
-    /// <summary>
-    /// Primary error message.
-    /// </summary>
-    public string ErrorMessage { get; set; }
-    
-    /// <summary>
-    /// All errors encountered during build.
-    /// </summary>
+    public ErrorType? ErrorType { get; set; } // Dominant error type
+    public string ErrorMessage { get; set; }   // Summary message
     public List<BuildError> Errors { get; set; } = new();
-    
-    /// <summary>
-    /// All warnings encountered during build.
-    /// </summary>
     public List<BuildWarning> Warnings { get; set; } = new();
-    
-    /// <summary>
-    /// Time taken to complete the build.
-    /// </summary>
     public TimeSpan Duration { get; set; }
-    
-    /// <summary>
-    /// Full build output log.
-    /// </summary>
-    public string BuildLog { get; set; }
-    
-    /// <summary>
-    /// Exit code from dotnet build process.
-    /// </summary>
-    public int ExitCode { get; set; }
+    public string BuildLog { get; set; }       // Full diagnostic log
 }
 ```
 
@@ -219,35 +170,12 @@ public class BuildResult
 ```csharp
 public class BuildError
 {
-    /// <summary>
-    /// Error code (e.g., CS0103, XAML1234).
-    /// </summary>
-    public string Code { get; set; }
-    
-    /// <summary>
-    /// Error message text.
-    /// </summary>
+    public string Code { get; set; }          // e.g. CS1002
     public string Message { get; set; }
-    
-    /// <summary>
-    /// File path where error occurred.
-    /// </summary>
-    public string FilePath { get; set; }
-    
-    /// <summary>
-    /// Line number in file.
-    /// </summary>
-    public int? LineNumber { get; set; }
-    
-    /// <summary>
-    /// Column number in file.
-    /// </summary>
-    public int? ColumnNumber { get; set; }
-    
-    /// <summary>
-    /// Classified error type.
-    /// </summary>
-    public ErrorType ErrorType { get; set; }
+    public string File { get; set; }
+    public int LineNumber { get; set; }
+    public int ColumnNumber { get; set; }
+    public ErrorType ErrorType { get; set; }  // e.g. CSharpCompiler
 }
 ```
 
@@ -260,45 +188,13 @@ public class BuildError
 ```csharp
 public enum ErrorType
 {
-    /// <summary>
-    /// C# compiler errors (CS0001-CS9999).
-    /// </summary>
-    CSharpCompiler,
-    
-    /// <summary>
-    /// XAML parsing/compilation errors (XDG0001-XDG9999).
-    /// </summary>
-    XamlCompiler,
-    
-    /// <summary>
-    /// NuGet package restore errors (NU0001-NU9999).
-    /// </summary>
-    NuGetRestore,
-    
-    /// <summary>
-    /// MSBuild infrastructure errors (MSB0001-MSB9999).
-    /// </summary>
-    MSBuildInfrastructure,
-    
-    /// <summary>
-    /// Project file errors (.csproj syntax).
-    /// </summary>
-    ProjectFile,
-    
-    /// <summary>
-    /// SDK not found or version mismatch.
-    /// </summary>
-    SdkNotFound,
-    
-    /// <summary>
-    /// Build timeout exceeded.
-    /// </summary>
-    Timeout,
-    
-    /// <summary>
-    /// Unknown or unclassified error.
-    /// </summary>
-    Unknown
+    CSharpCompiler,         // CSxxxx
+    XamlCompiler,           // XDGxxxx, XLSxxxx
+    NuGetRestore,           // NUxxxx
+    MSBuildInfrastructure,  // MSBxxxx
+    ProjectFile,            // Missing .csproj, invalid XML
+    Timeout,                // Build exceeded time limit
+    Unknown                 // Unclassified
 }
 ```
 
@@ -307,39 +203,23 @@ public enum ErrorType
 ```csharp
 public class ErrorClassifier
 {
-    public ErrorType ClassifyError(string errorCode, string errorMessage)
+    public ErrorType Classify(BuildErrorEventArgs error)
     {
-        if (string.IsNullOrEmpty(errorCode))
-            return ClassifyByMessage(errorMessage);
-        
-        // C# compiler errors
-        if (errorCode.StartsWith("CS", StringComparison.OrdinalIgnoreCase))
-            return ErrorType.CSharpCompiler;
-        
-        // XAML errors
-        if (errorCode.StartsWith("XDG", StringComparison.OrdinalIgnoreCase) ||
-            errorCode.StartsWith("XLS", StringComparison.OrdinalIgnoreCase))
-            return ErrorType.XamlCompiler;
-        
-        // NuGet errors
-        if (errorCode.StartsWith("NU", StringComparison.OrdinalIgnoreCase))
-            return ErrorType.NuGetRestore;
-        
-        // MSBuild errors
-        if (errorCode.StartsWith("MSB", StringComparison.OrdinalIgnoreCase))
-            return ErrorType.MSBuildInfrastructure;
-        
-        return ErrorType.Unknown;
-    }
-    
-    private ErrorType ClassifyByMessage(string message)
-    {
-        if (message.Contains("SDK", StringComparison.OrdinalIgnoreCase))
-            return ErrorType.SdkNotFound;
-        
-        if (message.Contains(".csproj", StringComparison.OrdinalIgnoreCase))
+        // 1. Check Error Code first (most reliable)
+        if (!string.IsNullOrEmpty(error.Code))
+        {
+            if (error.Code.StartsWith("CS")) return ErrorType.CSharpCompiler;
+            if (error.Code.StartsWith("XDG") || error.Code.StartsWith("XLS")) return ErrorType.XamlCompiler;
+            if (error.Code.StartsWith("NU")) return ErrorType.NuGetRestore;
+            if (error.Code.StartsWith("MSB")) return ErrorType.MSBuildInfrastructure;
+        }
+
+        // 2. Fallback to Project File analysis
+        if (error.File != null && error.File.EndsWith(".csproj"))
+        {
             return ErrorType.ProjectFile;
-        
+        }
+
         return ErrorType.Unknown;
     }
 }
@@ -349,20 +229,22 @@ public class ErrorClassifier
 
 ## 5. Build Service Implementation
 
-### BuildService Class
+### BuildService Class (API-Based)
 
 ```csharp
+using Microsoft.Build.Evaluation;
+using Microsoft.Build.Execution;
+using Microsoft.Build.Framework;
+
 public class BuildService : IBuildService
 {
     private readonly ILogger<BuildService> _logger;
     private readonly ErrorClassifier _errorClassifier;
-    private readonly string _dotnetPath;
     
     public BuildService(ILogger<BuildService> logger)
     {
         _logger = logger;
         _errorClassifier = new ErrorClassifier();
-        _dotnetPath = FindDotnetExecutable();
     }
     
     public async Task<BuildResult> BuildAsync(
@@ -373,319 +255,146 @@ public class BuildService : IBuildService
         options ??= new BuildOptions();
         var stopwatch = Stopwatch.StartNew();
         
-        try
+        return await Task.Run(() => 
         {
-            // Validate project path
-            if (!File.Exists(projectPath))
+            var projectCollection = new ProjectCollection();
+            var buildLogger = new StructuredLogger();
+            
+            try
             {
+                // 1. Load Project
+                var project = projectCollection.LoadProject(projectPath);
+                
+                // 2. Set Properties
+                project.SetProperty("Configuration", options.Configuration);
+                foreach (var prop in options.Properties)
+                {
+                    project.SetProperty(prop.Key, prop.Value);
+                }
+                
+                // 3. Prepare Build Parameters
+                var buildParameters = new BuildParameters(projectCollection)
+                {
+                    Loggers = new[] { buildLogger },
+                    MaxNodeCount = Environment.ProcessorCount,
+                    DetailedSummary = false
+                };
+                
+                // 4. Create Request (Restore + Build)
+                var targets = options.RestoreBeforeBuild 
+                    ? new[] { "Restore", "Build" } 
+                    : new[] { "Build" };
+                    
+                var buildRequest = new BuildRequestData(
+                    project.CreateProjectInstance(),
+                    targets
+                );
+                
+                // 5. Execute
+                var buildResult = BuildManager.DefaultBuildManager
+                    .Build(buildParameters, buildRequest);
+                
+                stopwatch.Stop();
+                
+                // 6. Process Results
+                return CreateResult(buildResult, buildLogger, stopwatch.Elapsed);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Build failed with exception");
                 return new BuildResult
                 {
                     Success = false,
-                    ErrorType = ErrorType.ProjectFile,
-                    ErrorMessage = $"Project file not found: {projectPath}"
+                    ErrorType = ErrorType.MSBuildInfrastructure,
+                    ErrorMessage = ex.Message,
+                    Duration = stopwatch.Elapsed
                 };
             }
-            
-            // Clean if requested
-            if (options.CleanBeforeBuild)
+            finally
             {
-                await CleanAsync(projectPath);
+                projectCollection.Dispose();
             }
-            
-            // Restore if requested
-            if (options.RestoreBeforeBuild)
-            {
-                var restoreResult = await RestoreAsync(projectPath, cancellationToken);
-                if (!restoreResult.Success)
-                {
-                    return new BuildResult
-                    {
-                        Success = false,
-                        ErrorType = ErrorType.NuGetRestore,
-                        ErrorMessage = restoreResult.ErrorMessage,
-                        Duration = stopwatch.Elapsed
-                    };
-                }
-            }
-            
-            // Build
-            var buildArgs = BuildCommandArguments(projectPath, options);
-            var processResult = await RunDotnetCommandAsync(
-                buildArgs, 
-                options.Timeout, 
-                cancellationToken);
-            
-            stopwatch.Stop();
-            
-            // Parse output
-            var result = ParseBuildOutput(processResult, stopwatch.Elapsed);
-            return result;
-        }
-        catch (OperationCanceledException)
-        {
-            return new BuildResult
-            {
-                Success = false,
-                ErrorType = ErrorType.Timeout,
-                ErrorMessage = "Build was cancelled",
-                Duration = stopwatch.Elapsed
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Build failed with exception");
-            return new BuildResult
-            {
-                Success = false,
-                ErrorType = ErrorType.Unknown,
-                ErrorMessage = ex.Message,
-                Duration = stopwatch.Elapsed
-            };
-        }
+        }, cancellationToken);
     }
     
-    private string[] BuildCommandArguments(string projectPath, BuildOptions options)
-    {
-        var args = new List<string>
-        {
-            "build",
-            $"\"{projectPath}\"",
-            $"--configuration {options.Configuration}",
-            $"--verbosity {options.Verbosity}"
-        };
-        
-        if (!options.RestoreBeforeBuild)
-        {
-            args.Add("--no-restore");
-        }
-        
-        if (options.AdditionalArguments != null)
-        {
-            args.AddRange(options.AdditionalArguments);
-        }
-        
-        return args.ToArray();
-    }
-    
-    private async Task<ProcessResult> RunDotnetCommandAsync(
-        string[] arguments,
-        TimeSpan timeout,
-        CancellationToken cancellationToken)
-    {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = _dotnetPath,
-            Arguments = string.Join(" ", arguments),
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-        
-        using var process = new Process { StartInfo = startInfo };
-        var outputBuilder = new StringBuilder();
-        var errorBuilder = new StringBuilder();
-        
-        process.OutputDataReceived += (s, e) =>
-        {
-            if (e.Data != null)
-                outputBuilder.AppendLine(e.Data);
-        };
-        
-        process.ErrorDataReceived += (s, e) =>
-        {
-            if (e.Data != null)
-                errorBuilder.AppendLine(e.Data);
-        };
-        
-        process.Start();
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        
-        // Wait with timeout
-        using var timeoutCts = new CancellationTokenSource(timeout);
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, timeoutCts.Token);
-        
-        try
-        {
-            await process.WaitForExitAsync(linkedCts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            process.Kill(entireProcessTree: true);
-            throw;
-        }
-        
-        return new ProcessResult
-        {
-            ExitCode = process.ExitCode,
-            StandardOutput = outputBuilder.ToString(),
-            StandardError = errorBuilder.ToString()
-        };
-    }
-    
-    private BuildResult ParseBuildOutput(ProcessResult processResult, TimeSpan duration)
+    private BuildResult CreateResult(
+        Microsoft.Build.Execution.BuildResult msBuildResult,
+        StructuredLogger logger,
+        TimeSpan duration)
     {
         var result = new BuildResult
         {
-            Success = processResult.ExitCode == 0,
-            ExitCode = processResult.ExitCode,
-            BuildLog = processResult.StandardOutput + processResult.StandardError,
-            Duration = duration
+            Success = msBuildResult.OverallResult == BuildResultCode.Success,
+            Duration = duration,
+            Errors = logger.Errors.Select(e => new BuildError 
+            {
+                Code = e.Code,
+                Message = e.Message,
+                File = e.File,
+                LineNumber = e.LineNumber,
+                ColumnNumber = e.ColumnNumber,
+                ErrorType = _errorClassifier.Classify(e)
+            }).ToList(),
+            Warnings = logger.Warnings.Select(w => new BuildWarning
+            {
+                 Code = w.Code,
+                 Message = w.Message,
+                 File = w.File,
+                 LineNumber = w.LineNumber
+            }).ToList(),
+            BuildLog = logger.FullLog
         };
         
-        if (!result.Success)
+        if (!result.Success && result.Errors.Any())
         {
-            // Parse errors from output
-            var errors = ExtractErrors(processResult.StandardOutput);
-            result.Errors = errors;
-            
-            if (errors.Any())
-            {
-                var firstError = errors.First();
-                result.ErrorType = firstError.ErrorType;
-                result.ErrorMessage = firstError.Message;
-            }
+            var primaryError = result.Errors.FirstOrDefault();
+            result.ErrorType = primaryError?.ErrorType;
+            result.ErrorMessage = primaryError?.Message;
         }
         
         return result;
     }
-    
-    private List<BuildError> ExtractErrors(string buildOutput)
-    {
-        var errors = new List<BuildError>();
-        var lines = buildOutput.Split('\n');
-        
-        // MSBuild error format: path(line,col): error CODE: message
-        var errorRegex = new Regex(
-            @"^(.+?)\((\d+),(\d+)\):\s*error\s+([A-Z]+\d+):\s*(.+)$",
-            RegexOptions.Compiled);
-        
-        foreach (var line in lines)
-        {
-            var match = errorRegex.Match(line.Trim());
-            if (match.Success)
-            {
-                var errorCode = match.Groups[4].Value;
-                var error = new BuildError
-                {
-                    FilePath = match.Groups[1].Value,
-                    LineNumber = int.Parse(match.Groups[2].Value),
-                    ColumnNumber = int.Parse(match.Groups[3].Value),
-                    Code = errorCode,
-                    Message = match.Groups[5].Value,
-                    ErrorType = _errorClassifier.ClassifyError(errorCode, match.Groups[5].Value)
-                };
-                
-                errors.Add(error);
-            }
-        }
-        
-        return errors;
-    }
-    
+
     public async Task<RestoreResult> RestoreAsync(
         string projectPath,
         CancellationToken cancellationToken = default)
     {
-        var args = new[] { "restore", $"\"{projectPath}\"" };
-        var result = await RunDotnetCommandAsync(
-            args, 
-            TimeSpan.FromSeconds(120), 
-            cancellationToken);
-        
-        return new RestoreResult
-        {
-            Success = result.ExitCode == 0,
-            ErrorMessage = result.ExitCode != 0 ? result.StandardError : null
-        };
+        // Re-use BuildAsync with "Restore" target only
+        // Implementation omitted for brevity, logic identical to BuildAsync
+        return new RestoreResult { Success = true }; 
     }
-    
+
     public async Task CleanAsync(string projectPath)
     {
         var projectDir = Path.GetDirectoryName(projectPath);
         var binPath = Path.Combine(projectDir, "bin");
         var objPath = Path.Combine(projectDir, "obj");
         
-        if (Directory.Exists(binPath))
-            Directory.Delete(binPath, recursive: true);
-        
-        if (Directory.Exists(objPath))
-            Directory.Delete(objPath, recursive: true);
+        if (Directory.Exists(binPath)) Directory.Delete(binPath, recursive: true);
+        if (Directory.Exists(objPath)) Directory.Delete(objPath, recursive: true);
         
         await Task.CompletedTask;
     }
+}
+
+/// <summary>
+/// Captures MSBuild events into structured data.
+/// </summary>
+public class StructuredLogger : ILogger
+{
+    public List<BuildErrorEventArgs> Errors { get; } = new();
+    public List<BuildWarningEventArgs> Warnings { get; } = new();
+    public string FullLog { get; private set; } = string.Empty;
     
-    public async Task<SdkValidationResult> ValidateSdkAsync()
+    public void Initialize(IEventSource eventSource)
     {
-        try
-        {
-            var args = new[] { "--version" };
-            var result = await RunDotnetCommandAsync(
-                args, 
-                TimeSpan.FromSeconds(5), 
-                CancellationToken.None);
-            
-            if (result.ExitCode == 0)
-            {
-                var version = result.StandardOutput.Trim();
-                return new SdkValidationResult
-                {
-                    IsValid = true,
-                    Version = version
-                };
-            }
-        }
-        catch { }
-        
-        return new SdkValidationResult
-        {
-            IsValid = false,
-            ErrorMessage = ".NET SDK not found or not accessible"
-        };
+        eventSource.ErrorRaised += (s, e) => Errors.Add(e);
+        eventSource.WarningRaised += (s, e) => Warnings.Add(e);
     }
     
-    private string FindDotnetExecutable()
-    {
-        // Check common locations
-        var paths = new[]
-        {
-            "dotnet",
-            @"C:\Program Files\dotnet\dotnet.exe",
-            @"C:\Program Files (x86)\dotnet\dotnet.exe"
-        };
-        
-        foreach (var path in paths)
-        {
-            if (File.Exists(path) || IsInPath(path))
-                return path;
-        }
-        
-        throw new FileNotFoundException(".NET SDK not found");
-    }
-    
-    private bool IsInPath(string executable)
-    {
-        try
-        {
-            var process = Process.Start(new ProcessStartInfo
-            {
-                FileName = executable,
-                Arguments = "--version",
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            });
-            
-            process?.WaitForExit(1000);
-            return process?.ExitCode == 0;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    public void Shutdown() { }
+    public LoggerVerbosity Verbosity { get; set; }
+    public string Parameters { get; set; }
 }
 ```
 
@@ -782,42 +491,63 @@ public class IncrementalBuildTracker
 
 ## 8. Testing Strategy
 
-### Unit Tests
+### Integration Tests (Kernel Level)
+Since `BuildManager` is a static singleton, we test `BuildService` via integration tests with a real project on disk.
 
 ```csharp
 [TestClass]
-public class BuildServiceTests
+public class BuildServiceIntegrationTests
 {
+    private BuildService _buildService;
+    private string _testWorkspace;
+
+    [TestInitialize]
+    public void Setup()
+    {
+        _testWorkspace = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_testWorkspace);
+        _buildService = new BuildService(new NullLogger<BuildService>());
+    }
+
     [TestMethod]
     public async Task BuildAsync_ValidProject_ReturnsSuccess()
     {
         // Arrange
-        var buildService = new BuildService(Mock.Of<ILogger<BuildService>>());
-        var projectPath = "TestProjects/ValidApp/ValidApp.csproj";
-        
+        var projectPath = CreateValidProject(_testWorkspace);
+
         // Act
-        var result = await buildService.BuildAsync(projectPath);
-        
+        var result = await _buildService.BuildAsync(projectPath);
+
         // Assert
         Assert.IsTrue(result.Success);
-        Assert.AreEqual(0, result.ExitCode);
+        Assert.AreEqual(0, result.Errors.Count);
     }
-    
-    [TestMethod]
-    public async Task BuildAsync_CompilerError_ClassifiesCorrectly()
-    {
-        // Arrange
-        var buildService = new BuildService(Mock.Of<ILogger<BuildService>>());
-        var projectPath = "TestProjects/ErrorApp/ErrorApp.csproj";
-        
-        // Act
-        var result = await buildService.BuildAsync(projectPath);
-        
-        // Assert
-        Assert.IsFalse(result.Success);
-        Assert.AreEqual(ErrorType.CSharpCompiler, result.ErrorType);
-        Assert.IsTrue(result.Errors.Any());
-    }
+}
+```
+
+### Unit Tests (Consumer Level)
+Consumers of `IBuildService` (like Orchestrator) should mock the interface.
+
+```csharp
+[TestMethod]
+public async Task Orchestrator_HandlesBuildFailure_Correctly()
+{
+    // Arrange
+    var mockBuild = new Mock<IBuildService>();
+    mockBuild.Setup(b => b.BuildAsync(It.IsAny<string>(), null, default))
+             .ReturnsAsync(new BuildResult 
+             { 
+                 Success = false, 
+                 ErrorType = ErrorType.CSharpCompiler 
+             });
+
+    var orchestrator = new Orchestrator(mockBuild.Object);
+
+    // Act
+    await orchestrator.RunTaskAsync(new BuildTask());
+
+    // Assert
+    // Verify remediation logic triggered
 }
 ```
 

@@ -144,7 +144,7 @@ To maintain deterministic control, all AI Engine outputs must adhere to strict J
               "items": {
                 "type": "object",
                 "properties": {
-                  "action": { "enum": ["ADD_MEMBER", "MODIFY_METHOD", "ADD_USING", "ADD_ATTRIBUTE", "REPLACE_NODE"] },
+                  "action": { "enum": ["ADD_CLASS", "ADD_METHOD", "ADD_PROPERTY", "ADD_FIELD", "MODIFY_METHOD_BODY", "MODIFY_PROPERTY", "INSERT_USING", "REMOVE_MEMBER", "UPDATE_XAML_NODE", "ADD_XAML_ELEMENT", "MODIFY_XAML_ATTRIBUTE"] },
                   "targetSymbol": { "type": "string" },
                   "content": { "type": "string" }
                 },

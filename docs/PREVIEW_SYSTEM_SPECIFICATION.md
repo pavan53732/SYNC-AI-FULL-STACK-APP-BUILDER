@@ -62,10 +62,17 @@ public class PreviewService
     }
     
     // Mode 3: Full Launch (Compiled App)
-    // ⚠️ SECURITY: Requires user consent before launching AI-generated code
+    // ⚠️ SECURITY: Requires Windows Sandbox for isolated execution
     public async Task<Process> LaunchFullPreviewAsync(string projectPath)
     {
-        // SECURITY STEP 1: Show consent dialog
+        // SECURITY STEP 1: Verify Windows Sandbox is available
+        if (!IsWindowsSandboxAvailable())
+        {
+             // Fallback: Show error or require admin override (Not implemented for safety)
+             throw new SecurityException("Windows Sandbox is required for safe execution of AI-generated code.");
+        }
+
+        // SECURITY STEP 2: Show consent dialog
         var consent = await ShowSecurityConsentDialogAsync();
         if (!consent)
         {
@@ -73,7 +80,7 @@ public class PreviewService
             return null;
         }
         
-        // Step 2: Build the project
+        // Step 3: Build the project
         var buildResult = await _buildService.BuildAsync(projectPath);
         
         if (!buildResult.Success)
@@ -81,22 +88,17 @@ public class PreviewService
             throw new BuildException("Build failed", buildResult.Errors);
         }
         
-        // Step 3: Get executable path
+        // Step 4: Get executable path
         var exePath = Path.Combine(
             projectPath, 
             "bin/Debug/net8.0-windows/GeneratedApp.exe");
         
-        // Step 4: Launch process with limited privileges
-        var process = Process.Start(new ProcessStartInfo
-        {
-            FileName = exePath,
-            UseShellExecute = false,  // More secure
-            WorkingDirectory = Path.GetDirectoryName(exePath),
-            CreateNoWindow = false
-        });
+        // Step 5: Launch process in Windows Sandbox
+        // Implementation triggers .wsb file generation and execution
+        await LaunchInSandboxAsync(exePath);
         
-        _logger.LogInformation("Launched generated application: {ExePath}", exePath);
-        return process;
+        _logger.LogInformation("Launched generated application in Sandbox: {ExePath}", exePath);
+        return null; // Process management handled by Sandbox
     }
     
     /// <summary>

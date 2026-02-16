@@ -185,11 +185,16 @@ public enum BuilderState
     SPEC_PARSED = 2,         // Spec validated, ready for planning
     TASK_GRAPH_BUILDING = 3, // Planning service creating DAG
     TASK_GRAPH_BUILT = 4,    // Task DAG complete, ready to execute
-    EXECUTING_TASK = 5,      // Active task is running
-    VALIDATING = 6,          // Build/XAML validation phase
-    RETRYING = 7,            // Retry in progress
-    BUILD_SUCCEEDED = 8,     // All tasks completed
-    BUILD_FAILED = 9         // Unrecoverable failure
+    // Execution Breakdown
+    MUTATION_GUARD = 5,      // Pre-execution safety check (Impact/Breaking Change)
+    PATCHING = 6,            // Roslyn AST transformation
+    INDEXING = 7,            // Updating semantic graph post-patch
+    BUILDING = 8,            // MSBuild / Dotnet CLI execution
+    // Validation & Result
+    VALIDATING = 9,          // Final integrity check
+    RETRYING = 10,           // Retry in progress
+    BUILD_SUCCEEDED = 11,    // All tasks completed
+    BUILD_FAILED = 12        // Unrecoverable failure
 }
 ```
 
@@ -205,8 +210,14 @@ TASK_GRAPH_BUILDING
   ↓ (DAG complete)
 TASK_GRAPH_BUILT
   ↓ (execute next task)
-EXECUTING_TASK
-  ↓ (task done)
+MUTATION_GUARD
+  ↓ (guard safe)
+PATCHING
+  ↓ (patch applied)
+INDEXING
+  ↓ (index updated)
+BUILDING
+  ↓ (build complete)
 VALIDATING
   ↓ (validation succeeds)    ↓ (validation fails)
 BUILD_SUCCEEDED            RETRYING
@@ -273,6 +284,24 @@ public record TaskStartedEvent : BuilderEvent
 {
     public string TaskId { get; init; }
     public TaskType TaskType { get; init; }
+}
+
+public record TaskGuardPassedEvent : BuilderEvent
+{
+    public string TaskId { get; init; }
+    public string ImpactAnalysis { get; init; }
+}
+
+public record TaskPatchedEvent : BuilderEvent
+{
+    public string TaskId { get; init; }
+    public List<string> ModifiedFiles { get; init; }
+}
+
+public record TaskIndexedEvent : BuilderEvent
+{
+    public string TaskId { get; init; }
+    public int NodesIndexed { get; init; }
 }
 
 public record TaskValidatingEvent : BuilderEvent
@@ -359,11 +388,20 @@ public class BuilderReducer
                     EventLog = [..context.EventLog, @event]
                 },
             
-            // === TASK EXECUTION ===
+            // === TASK EXECUTION & PHASES ===
             (BuilderState.TASK_GRAPH_BUILT, TaskStartedEvent e) =>
-                UpdateTaskAndTransition(context, e.TaskId, BuilderState.EXECUTING_TASK, @event),
+                UpdateTaskAndTransition(context, e.TaskId, BuilderState.MUTATION_GUARD, @event),
             
-            (BuilderState.EXECUTING_TASK, TaskValidatingEvent e) =>
+            (BuilderState.MUTATION_GUARD, TaskGuardPassedEvent e) => 
+                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.PATCHING, @event),
+                 
+            (BuilderState.PATCHING, TaskPatchedEvent e) => 
+                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.INDEXING, @event),
+
+            (BuilderState.INDEXING, TaskIndexedEvent e) => 
+                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.BUILDING, @event),
+
+            (BuilderState.BUILDING, TaskValidatingEvent e) =>
                 context with
                 {
                     State = BuilderState.VALIDATING,

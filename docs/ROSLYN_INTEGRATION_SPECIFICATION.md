@@ -74,63 +74,7 @@ The Roslyn service must index and store:
 
 ### SQLite Schema
 
-```sql
--- Files table
-CREATE TABLE Files (
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    FilePath TEXT NOT NULL UNIQUE,
-    FileHash TEXT NOT NULL,
-    LastIndexed DATETIME NOT NULL,
-    FileType TEXT NOT NULL -- 'CSharp' or 'Xaml'
-);
-
--- Symbols table
-CREATE TABLE Symbols (
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    FileId INTEGER NOT NULL,
-    SymbolType TEXT NOT NULL, -- 'Class', 'Method', 'Property', etc.
-    Name TEXT NOT NULL,
-    FullyQualifiedName TEXT NOT NULL,
-    Namespace TEXT,
-    LineNumber INTEGER,
-    ColumnNumber INTEGER,
-    Accessibility TEXT, -- 'Public', 'Private', etc.
-    Signature TEXT,
-    FOREIGN KEY (FileId) REFERENCES Files(Id)
-);
-
--- References table (dependencies)
-CREATE TABLE References (
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    FromSymbolId INTEGER NOT NULL,
-    ToSymbolId INTEGER NOT NULL,
-    ReferenceType TEXT NOT NULL, -- 'Inheritance', 'Usage', 'Binding'
-    FOREIGN KEY (FromSymbolId) REFERENCES Symbols(Id),
-    FOREIGN KEY (ToSymbolId) REFERENCES Symbols(Id)
-);
-
--- Dependency edges (file-level)
-CREATE TABLE FileDependencies (
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    FromFileId INTEGER NOT NULL,
-    ToFileId INTEGER NOT NULL,
-    DependencyType TEXT NOT NULL,
-    FOREIGN KEY (FromFileId) REFERENCES Files(Id),
-    FOREIGN KEY (ToFileId) REFERENCES Files(Id)
-);
-
--- XAML bindings
-CREATE TABLE XamlBindings (
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    XamlFileId INTEGER NOT NULL,
-    ElementName TEXT,
-    BindingPath TEXT,
-    TargetSymbolId INTEGER,
-    LineNumber INTEGER,
-    FOREIGN KEY (XamlFileId) REFERENCES Files(Id),
-    FOREIGN KEY (TargetSymbolId) REFERENCES Symbols(Id)
-);
-```
+Schema Definition: The Roslyn service reads and writes to the Semantic Graph defined in `DATABASE_SCHEMA_SPECIFICATION.md`. It specifically populates the `syntax_nodes`, `symbols`, and `symbol_edges` tables.
 
 ---
 

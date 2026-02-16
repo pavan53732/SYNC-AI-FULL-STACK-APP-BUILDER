@@ -50,10 +50,10 @@ Similar to Lovable, Budibase, or other web builders:
 - Build infrastructure centralized
 - Infra complexity hidden
 
-#### New Reality (Local-First Build Model with WinUI 3)
-All **build and execution** on user's PC:
+#### New Reality (Self-Contained Windows Construction Kernel)
+All **build and execution** on user's PC using **Embedded Tools**:
 - WinUI 3 desktop application (modern Windows UI)
-- All build operations local (MSBuild, .NET SDK embedded)
+- **Embedded MSBuild & Roslyn** (No external SDK required)
 - User controls infrastructure
 - Complexity is visible and managed by orchestrator
 
@@ -62,12 +62,12 @@ All **build and execution** on user's PC:
 > **IMPORTANT**: "Local-First" refers to the **build infrastructure**, not all components.
 
 **Local Components** (Zero Cloud Dependency):
-- ✅ Build system (MSBuild, .NET SDK)
+- ✅ Build system (Embedded Microsoft.Build, NuGet)
 - ✅ File system operations (snapshots, rollback)
 - ✅ Preview rendering (XAML, code view)
-- ✅ Application execution (generated .exe runs locally)
+- ✅ Application execution (generated .exe runs in Sandbox)
 - ✅ Database (SQLite, local storage)
-- ✅ Roslyn code analysis (AST parsing, symbol indexing)
+- ✅ Roslyn code analysis (In-process AST parsing)
 
 **Cloud Components** (Requires Internet):
 - ☁️ AI code generation (GPT-4 API calls)
@@ -75,12 +75,12 @@ All **build and execution** on user's PC:
 - ☁️ NuGet package downloads (first-time only, then cached)
 
 **Accurate Description**: 
-> "Local-First **Build Infrastructure** with Cloud-Powered **Intelligence**"
+> "Self-Contained **Construction Kernel** with Cloud-Powered **Intelligence**"
 
 **User Impact**:
-- ✅ Can build and run existing projects **offline**
+- ✅ Can build and run existing projects **offline** (if packages cached)
 - ❌ Cannot generate new code **offline** (requires AI API)
-- ✅ NuGet packages cached locally after first download
+- ✅ Zero setup required (No "Install .NET SDK" step)
 
 ### Two-Layer Architecture (Single WinUI 3 App)
 
@@ -129,10 +129,11 @@ All **build and execution** on user's PC:
          └────────┬────────┘
                   │
          ┌────────▼────────┐
-         │ SQLite DB       │
-         │ (Graph +        │
-         │  Memory)        │
-         └─────────────────┘
+## 2. Database Schema
+> **Source of Truth**: See [DATABASE_SCHEMA_SPECIFICATION.md](./DATABASE_SCHEMA_SPECIFICATION.md) for the definitive schema definition.
+
+The Execution Context relies on the `files`, `symbols`, `symbol_edges`, `syntax_nodes`, and `snapshots` tables defined in the master schema.
+
 
 Run entirely on user's PC. Zero cloud.
 ```
@@ -313,466 +314,144 @@ public class PathValidator
 
 ---
 
-### 3.2 Execution Kernel Subsystem
+### 3.2 Execution Kernel Subsystem (Embedded)
 
 #### Purpose
-Manage isolated .NET execution (MSBuild, NuGet, dotnet CLI) without exposing complexity to users.
+Manage isolated .NET execution using **in-process Microsoft.Build APIs** (no CLI).
 
-#### .NET SDK Version Requirements
+#### Embedded SDK Strategy (Self-Contained)
+**Selected Strategy**: **Option B (Embed Required Components)**
+- **Why**: Zero dependency on user environment.
+- **Implementation**: We ship `Microsoft.Build.*` assemblies and a bundled .NET runtime.
+- **Bootstrapper**: Use `MSBuildLocator` to load the bundled MSBuild context.
 
-**Required SDK Version**: .NET 8.0 SDK (8.0.100 or later)
-
-**Minimum Supported**: .NET 8.0.100  
-**Recommended**: .NET 8.0.300 or later (for latest WinUI 3 support)  
-**Maximum Tested**: .NET 9.0 Preview (forward compatibility)
-
-##### Version Detection and Validation
+#### Implementation (API-Based)
 
 ```csharp
-public class SdkVersionManager
-{
-    private readonly ILogger<SdkVersionManager> _logger;
-    
-    /// <summary>
-    /// Detects all installed .NET SDKs on the system.
-    /// </summary>
-    public async Task<List<SdkVersion>> DetectInstalledSdksAsync()
-    {
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "dotnet",
-                Arguments = "--list-sdks",
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
-        };
-        
-        process.Start();
-        var output = await process.StandardOutput.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        
-        // Parse output: "8.0.300 [C:\Program Files\dotnet\sdk]"
-        var sdks = new List<SdkVersion>();
-        foreach (var line in output.Split('\n'))
-        {
-            var match = Regex.Match(line, @"^(\d+\.\d+\.\d+)\s+\[(.+)\]");
-            if (match.Success)
-            {
-                sdks.Add(new SdkVersion
-                {
-                    Version = Version.Parse(match.Groups[1].Value),
-                    Path = match.Groups[2].Value
-                });
-            }
-        }
-        
-        return sdks;
-    }
-    
-    /// <summary>
-    /// Validates that a compatible .NET SDK is installed.
-    /// </summary>
-    public async Task<SdkValidationResult> ValidateSdkAsync()
-    {
-        var sdks = await DetectInstalledSdksAsync();
-        
-        // Check for .NET 8.0
-        var net8Sdks = sdks.Where(s => s.Version.Major == 8).ToList();
-        
-        if (!net8Sdks.Any())
-        {
-            return new SdkValidationResult
-            {
-                IsValid = false,
-                ErrorMessage = ".NET 8.0 SDK not found. Please install from https://dotnet.microsoft.com/download/dotnet/8.0",
-                RequiredVersion = "8.0.100",
-                InstalledSdks = sdks
-            };
-        }
-        
-        // Find highest .NET 8 version
-        var latestNet8 = net8Sdks.OrderByDescending(s => s.Version).First();
-        
-        // Check minimum version
-        var minimumVersion = new Version(8, 0, 100);
-        if (latestNet8.Version < minimumVersion)
-        {
-            return new SdkValidationResult
-            {
-                IsValid = false,
-                ErrorMessage = $".NET 8.0 SDK version {latestNet8.Version} is too old. Minimum required: {minimumVersion}",
-                RequiredVersion = minimumVersion.ToString(),
-                InstalledSdks = sdks
-            };
-        }
-        
-        return new SdkValidationResult
-        {
-            IsValid = true,
-            SelectedSdk = latestNet8,
-            InstalledSdks = sdks
-        };
-    }
-}
+using Microsoft.Build.Evaluation;
+using Microsoft.Build.Execution;
+using Microsoft.Build.Framework;
+using Microsoft.Build.Locator;
 
-public class SdkVersion
-{
-    public Version Version { get; set; }
-    public string Path { get; set; }
-}
-
-public class SdkValidationResult
-{
-    public bool IsValid { get; set; }
-    public string ErrorMessage { get; set; }
-    public string RequiredVersion { get; set; }
-    public SdkVersion SelectedSdk { get; set; }
-    public List<SdkVersion> InstalledSdks { get; set; }
-}
-```
-
-##### Handling Multiple .NET SDK Versions
-
-**Strategy**: Use `global.json` to pin SDK version per project.
-
-```csharp
-public class GlobalJsonManager
-{
-    /// <summary>
-    /// Creates or updates global.json to pin SDK version.
-    /// </summary>
-    public async Task PinSdkVersionAsync(string projectPath, string sdkVersion)
-    {
-        var globalJsonPath = Path.Combine(projectPath, "global.json");
-        
-        var globalJson = new
-        {
-            sdk = new
-            {
-                version = sdkVersion,
-                rollForward = "latestFeature" // Allow patch updates
-            }
-        };
-        
-        var json = JsonSerializer.Serialize(globalJson, new JsonSerializerOptions
-        {
-            WriteIndented = true
-        });
-        
-        await File.WriteAllTextAsync(globalJsonPath, json);
-        
-        _logger.LogInformation("Pinned SDK version to {Version} in {Path}", 
-            sdkVersion, globalJsonPath);
-    }
-    
-    /// <summary>
-    /// Reads SDK version from global.json if it exists.
-    /// </summary>
-    public async Task<string> GetPinnedSdkVersionAsync(string projectPath)
-    {
-        var globalJsonPath = Path.Combine(projectPath, "global.json");
-        
-        if (!File.Exists(globalJsonPath))
-            return null;
-        
-        var json = await File.ReadAllTextAsync(globalJsonPath);
-        var doc = JsonDocument.Parse(json);
-        
-        if (doc.RootElement.TryGetProperty("sdk", out var sdkElement) &&
-            sdkElement.TryGetProperty("version", out var versionElement))
-        {
-            return versionElement.GetString();
-        }
-        
-        return null;
-    }
-}
-```
-
-##### SDK Version Fallback Strategy
-
-```
-1. Check global.json in project root
-   ↓ (if not found)
-2. Use latest installed .NET 8.x SDK
-   ↓ (if not found)
-3. Check for .NET 9.x SDK (forward compatibility)
-   ↓ (if not found)
-4. Show error dialog with download link
-   ↓
-5. User installs SDK
-   ↓
-6. Retry validation
-```
-
-##### Implementation in Execution Kernel
-
-```csharp
-public class ExecutionKernel
-{
-    private readonly SdkVersionManager _sdkManager;
-    private readonly GlobalJsonManager _globalJsonManager;
-    private SdkVersion _selectedSdk;
-    
-    public async Task InitializeAsync(string projectPath)
-    {
-        // Validate SDK
-        var validation = await _sdkManager.ValidateSdkAsync();
-        
-        if (!validation.IsValid)
-        {
-            throw new SdkNotFoundException(validation.ErrorMessage);
-        }
-        
-        _selectedSdk = validation.SelectedSdk;
-        
-        // Pin SDK version in global.json
-        await _globalJsonManager.PinSdkVersionAsync(
-            projectPath, 
-            _selectedSdk.Version.ToString());
-        
-        _logger.LogInformation("Initialized Execution Kernel with SDK {Version}", 
-            _selectedSdk.Version);
-    }
-    
-    /// <summary>
-    /// Builds project using the selected SDK version.
-    /// </summary>
-    public async Task<BuildResult> BuildAsync(string projectPath)
-    {
-        if (_selectedSdk == null)
-        {
-            throw new InvalidOperationException("Execution Kernel not initialized. Call InitializeAsync first.");
-        }
-        
-        // Ensure global.json exists
-        var pinnedVersion = await _globalJsonManager.GetPinnedSdkVersionAsync(projectPath);
-        if (pinnedVersion == null)
-        {
-            await _globalJsonManager.PinSdkVersionAsync(projectPath, _selectedSdk.Version.ToString());
-        }
-        
-        // Build using dotnet CLI
-        // ... (rest of build logic)
-    }
-}
-```
-
-##### User-Facing SDK Validation
-
-**On Application Startup**:
-```csharp
-public class App : Application
-{
-    protected override async void OnLaunched(LaunchActivatedEventArgs args)
-    {
-        var sdkManager = GetService<SdkVersionManager>();
-        var validation = await sdkManager.ValidateSdkAsync();
-        
-        if (!validation.IsValid)
-        {
-            // Show error dialog
-            var dialog = new ContentDialog
-            {
-                Title = ".NET SDK Required",
-                Content = new StackPanel
-                {
-                    Children =
-                    {
-                        new TextBlock { Text = validation.ErrorMessage },
-                        new HyperlinkButton
-                        {
-                            Content = "Download .NET 8.0 SDK",
-                            NavigateUri = new Uri("https://dotnet.microsoft.com/download/dotnet/8.0")
-                        }
-                    }
-                },
-                CloseButtonText = "Exit"
-            };
-            
-            await dialog.ShowAsync();
-            Application.Current.Exit();
-            return;
-        }
-        
-        // Continue with normal startup
-        base.OnLaunched(args);
-    }
-}
-```
-
-##### SDK Version Compatibility Matrix
-
-| SDK Version | WinUI 3 Support | Status |
-|-------------|-----------------|--------|
-| 8.0.100 | ✅ Full | Minimum Required |
-| 8.0.200 | ✅ Full | Supported |
-| 8.0.300+ | ✅ Full + Latest Features | **Recommended** |
-| 9.0.x Preview | ⚠️ Experimental | Forward Compatible |
-| 7.0.x | ❌ Not Supported | Too Old |
-
-#### Core Architecture
-
-```csharp
 public class ExecutionKernel
 {
     private readonly ILogger _logger;
     private readonly FileSystemSandbox _sandbox;
+    private static bool _isInitialized;
     
-    /// Build a .NET project in isolation
+    public ExecutionKernel(ILogger logger, FileSystemSandbox sandbox)
+    {
+        _logger = logger;
+        _sandbox = sandbox;
+        InitializeMSBuild();
+    }
+    
+    /// <summary>
+    /// One-time initialization of MSBuild Locator
+    /// </summary>
+    private static void InitializeMSBuild()
+    {
+        if (!_isInitialized)
+        {
+            // Locate the embedded SDK/MSBuild instance
+            MSBuildLocator.RegisterDefaults();
+            _isInitialized = true;
+        }
+    }
+    
+    /// <summary>
+    /// Builds project using Microsoft.Build APIs (No CLI)
+    /// </summary>
     public async Task<BuildResult> BuildAsync(
         string projectPath,
-        string configuration = "Debug",
-        string? additionalArgs = null)
+        string configuration = "Debug")
     {
-        // Create isolated workspace
-        var workspace = await _sandbox.CreateIsolatedWorkspaceAsync();
-        
-        try
+        return await Task.Run(() => 
         {
-            // Run MSBuild in isolated process
-            var process = new Process
+            var projectCollection = new ProjectCollection();
+            
+            try 
             {
-                StartInfo = new ProcessStartInfo
+                // Load project into memory
+                var project = projectCollection.LoadProject(projectPath);
+                
+                // Set properties
+                project.SetProperty("Configuration", configuration);
+                project.SetProperty("Platform", "Any CPU");
+                
+                // Configure logger
+                var buildLogger = new StructuredLogger();
+                
+                // Create build parameters
+                var buildParameters = new BuildParameters(projectCollection)
                 {
-                    FileName = "dotnet",
-                    Arguments = $"build \"{projectPath}\" -c {configuration} {additionalArgs}",
-                    WorkingDirectory = workspace.WorkspacePath,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
-            };
-            
-            var output = new StringBuilder();
-            var errors = new StringBuilder();
-            
-            process.OutputDataReceived += (s, e) => output.AppendLine(e.Data);
-            process.ErrorDataReceived += (s, e) => errors.AppendLine(e.Data);
-            
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            
-            await process.WaitForExitAsync();
-            
-            return new BuildResult
-            {
-                Success = process.ExitCode == 0,
-                Output = output.ToString(),
-                Errors = errors.ToString(),
-                ExitCode = process.ExitCode
-            };
-        }
-        finally
-        {
-            _sandbox.CleanupWorkspace(workspace);
-        }
-    }
-    
-    /// Restore NuGet packages
-    public async Task<RestoreResult> RestoreAsync(string projectPath)
-    {
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "dotnet",
-                Arguments = $"restore \"{projectPath}\"",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false
+                    Loggers = new[] { buildLogger },
+                    MaxNodeCount = Environment.ProcessorCount // Parallel build
+                };
+                
+                // Create build request
+                var buildRequest = new BuildRequestData(
+                    project.CreateProjectInstance(),
+                    new[] { "Restore", "Build" } // Run Restore then Build
+                );
+                
+                // Execute Build
+                var result = BuildManager.DefaultBuildManager
+                    .Build(buildParameters, buildRequest);
+                
+                return new BuildResult
+                {
+                    Success = result.OverallResult == BuildResultCode.Success,
+                    Output = buildLogger.Output,
+                    Errors = buildLogger.Errors,
+                    ExitCode = result.OverallResult == BuildResultCode.Success ? 0 : 1
+                };
             }
-        };
-        
-        process.Start();
-        var output = await process.StandardOutput.ReadToEndAsync();
-        var errors = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        
-        return new RestoreResult
-        {
-            Success = process.ExitCode == 0,
-            Output = output,
-            Errors = errors
-        };
-    }
-    
-    /// Run the application
-    public async Task<ExecutionResult> RunAsync(string projectPath)
-    {
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
+            finally
             {
-                FileName = "dotnet",
-                Arguments = $"run --project \"{projectPath}\"",
-                RedirectStandardOutput = true,
-                UseShellExecute = false
+                projectCollection.Dispose();
             }
-        };
-        
-        process.Start();
-        
-        return new ExecutionResult
-        {
-            ProcessId = process.Id,
-            IsRunning = !process.HasExited
-        };
+        });
+    }
+
+    /// <summary>
+    /// Captures build output efficiently
+    /// </summary>
+    private class StructuredLogger : ILogger
+    {
+        public string Output { get; private set; }
+        public string Errors { get; private set; }
+        // Implementation details...
     }
 }
 ```
 
-#### Local-Only Enhancements
-
-##### Pre-Build SDK Detection
+#### Restore Strategy
+Instead of `dotnet restore` CLI, we include the `Restore` target in the build request:
 ```csharp
-public class SdkValidator
+new[] { "Restore", "Build" }
+```
+This leverages the internal NuGet targets linked in the embedded SDK.
+
+
+#### Embedded Environment Integrity
+
+##### Environment Verification
+```csharp
+public class EmbeddedEnvironmentValidator
 {
-    public async Task<SdkValidationResult> ValidateEnvironmentAsync()
+    private readonly string _embeddedSdkPath;
+    
+    public bool ValidateEnvironment()
     {
-        // Check if .NET SDK is installed
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "dotnet",
-                Arguments = "--version",
-                RedirectStandardOutput = true,
-                UseShellExecute = false
-            }
-        };
-        
-        try
-        {
-            process.Start();
-            var version = await process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
+        // 1. Verify MSBuild assemblies are present
+        if (!File.Exists(Path.Combine(_embeddedSdkPath, "Microsoft.Build.dll")))
+            return false;
             
-            if (process.ExitCode == 0)
-            {
-                return new SdkValidationResult
-                {
-                    IsInstalled = true,
-                    Version = version.Trim(),
-                    IsCompatible = version.StartsWith("8.") // Require .NET 8
-                };
-            }
-        }
-        catch (Exception ex)
-        {
-            return new SdkValidationResult
-            {
-                IsInstalled = false,
-                Error = ".NET SDK not found. Please install .NET 8 SDK."
-            };
-        }
+        // 2. Verify .NET Runtime is functional
+        // (Self-check handled by app startup)
         
-        return new SdkValidationResult { IsInstalled = false };
+        return true;
     }
 }
 ```
@@ -789,14 +468,19 @@ public async Task<BuildResult> BuildWithTimeoutAsync(
     
     try
     {
-        var buildTask = BuildAsync(projectPath);
-        await buildTask.WaitAsync(cts.Token);
-        return await buildTask;
+        // Use the new API-based BuildAsync
+        return await _kernel.BuildAsync(projectPath, "Debug");
     }
     catch (OperationCanceledException)
     {
         return new BuildResult
         {
+            Success = false,
+            Errors = "Build timed out."
+        };
+    }
+}
+```
             Success = false,
             Errors = $"Build timed out after {timeout.TotalSeconds} seconds",
             TimedOut = true
@@ -1462,21 +1146,20 @@ public bool CanExecute(string command)
 
 ## Part 5: Machine Variability Handling
 
-### The Local-Only Challenge
+### The Local-Only Challenge (Embedded Edition)
 
 Unlike cloud environments with fixed infrastructure, local execution must handle:
 
 | Issue | Solution |
 |-------|----------|
-| .NET SDK not installed | Show download link, fail gracefully |
-| Wrong .NET version | Check version, suggest upgrade |
-| Missing XAML workload | Provide install instructions |
-| Low disk space | Check before build, warn user |
-| Antivirus blocking dotnet | Suggest whitelist, fallback to safe mode |
-| Broken NuGet cache | Clear cache, retry restore |
-| Limited RAM | Use incremental builds, limit parallelism |
-| Slow disk | Use smaller snapshots, avoid full ZIP |
-| Power loss during build | Snapshot before = safe recovery |
+| **Embedded Runtime Corrupted** | App self-repair / Reinstall prompt |
+| **Missing Windows Runtime** | Detected by MSIX installer |
+| **Antivirus blocking MSBuild** | Sign binaries with trusted cert |
+| **Low disk space** | Check before build, warn user |
+| **Broken NuGet cache** | Clear local cache, retry restore |
+| **Limited RAM** | Use incremental builds, limit parallelism |
+| **Slow disk** | Use smaller snapshots, avoid full ZIP |
+| **Power loss during build** | Snapshot before = safe recovery |
 
 ### Error Handling Architecture
 
@@ -1488,33 +1171,29 @@ public class MachineVariabilityHandler
         string projectPath,
         IProgress<BuildPhase>? progress = null)
     {
-        // Phase 1: Validate environment
-        var validation = await ValidateEnvironmentAsync(projectPath);
-        if (validation.HasFatalIssues)
+        // Phase 1: Verify Embedded Environment
+        if (!_envValidator.ValidateEnvironment())
         {
-            return BuildResult.FailedValidation(validation);
+             return BuildResult.CriticalFailure("Embedded SDK is corrupted.");
         }
         
-        // Phase 2: Attempt restore
-        var restoreResult = await RestoreWithRetryAsync(projectPath);
+        // Phase 2: Attempt restore (In-Process)
+        var restoreResult = await _kernel.BuildAsync(projectPath, "Debug"); // Restore is part of build targets
         if (!restoreResult.Success)
         {
             // Try clearing cache + retry
-            if (restoreResult.ErrorType == ErrorType.NuGetCacheCorrupted)
+            if (restoreResult.HasNuGetConnectionError)
             {
                 _logger.LogInformation("Clearing NuGet cache...");
                 await ClearNuGetCacheAsync();
                 
-                restoreResult = await RestoreWithRetryAsync(projectPath);
+                restoreResult = await _kernel.BuildAsync(projectPath, "Debug");
                 if (!restoreResult.Success)
-                    return BuildResult.Failed(restoreResult);
+                    return restoreResult;
             }
         }
         
-        // Phase 3: Build with throttling
-        var buildResult = await BuildWithThrottlingAsync(projectPath);
-        
-        return buildResult;
+        return restoreResult;
     }
     
     private async Task<bool> ClearNuGetCacheAsync()
@@ -1789,37 +1468,57 @@ AI Engine generates code
   ↓
 Write files directly
   ↓
-Run dotnet build
+Run dotnet build (CLI)
   ↓
-Error! (no classification)
+Error! (unstructured output)
   ↓
 Retry with fresh generation
   ↓
 Overwrites good code
   ↓
-Cascading failures
-  ↓
-10 minutes later: Project broken
+Cascading failures (Project broken)
 ```
 
-**vs. With proper internalization:**
+**vs. With proper internalization (Embedded SDK):**
 
 ```
 AI Engine generates code
   ↓
-Transactional patch
+Transactional patch (Roslyn)
   ↓
-Run dotnet build (isolated)
+Run In-Process Build (Microsoft.Build)
   ↓
-Error! (classified: missing attribute)
+Error! (structured diagnostics)
   ↓
 Fix Agent patches (silent)
   ↓
-Run dotnet build again
+Run In-Process Build again
   ↓
 Success!
   ↓
 User sees: "Done ✅"
+```
+
+---
+
+## Part 11: Concurrency & Serialization Rules
+
+**Strict Execution Policy**:
+To ensure deterministic state and prevent race conditions in the embedded environment:
+
+**✅ Parallel Execution Allowed**:
+- Planning Layer (Task Graph creation)
+- AI Code Generation (LLM streaming)
+- Retrieval (Vector search, Read-only graph query)
+
+**🔒 Strictly Serialized (Single Thread)**:
+- **Patch Application** (Roslyn AST modification)
+- **Indexing** (Updating SQLite graph)
+- **Restore operations** (NuGet graph modification)
+- **Build execution** (MSBuild via BuildManager)
+- **Snapshot Commit** (Filesystem write)
+
+> **Visual Rule**: "Reads can be parallel. Writes must be serial."
 ```
 
 ---

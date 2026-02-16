@@ -63,9 +63,9 @@ Microsoft.Extensions.DependencyInjection (service container)
 ## Code Generation & Build
 
 ### XAML/C# Generation
-- **Roslyn**: For C# code generation and analysis
-- **StringBuilder**: For template-based generation
-- **Regex**: For code manipulation
+- **Roslyn**: For C# code generation and analysis (REQUIRED for all mutations)
+- **StringBuilder**: Allowed for *new* file templates only (NO existing file modification)
+- **Regex**: ❌ STRICTLY FORBIDDEN for code modification (Read-only analysis or text formatting only)
 
 ### Build System (Internal Bundled Services)
 - **MSBuild**: Local project compilation (abstracted service)

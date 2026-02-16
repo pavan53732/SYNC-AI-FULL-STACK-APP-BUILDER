@@ -278,6 +278,37 @@ private async void TransitionToPreviewReady()
 - → `BUILDING` (Retry clicked)
 - → `TYPING` (Modify Prompt clicked)
 
+### 🔷 State 8: INTERVENTION_REQUIRED (New)
+
+**Trigger**:
+- Safety Guard blocks mutation (Constraint Violation)
+- Impact radius exceeds safety threshold
+- Breaking change detected without fix
+
+**UI Presentation**:
+```xaml
+<InfoBar Severity="Warning"
+         IsOpen="True"
+         Title="Safety Guard Blocked this Change"
+         Message="This change would break dependencies [X, Y].">
+    <InfoBar.ActionButton>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Force Apply (Unsafe)" Click="{x:Bind ForceApply}"/>
+            <Button Content="Discard" Click="{x:Bind DiscardChange}"/>
+        </StackPanel>
+    </InfoBar.ActionButton>
+</InfoBar>
+```
+
+**Psychology**:
+- Explicit stop
+- Requires user decision
+- Educates about dependency impact
+
+**Transitions**:
+- → `BUILDING` (Force Apply)
+- → `EMPTY_IDLE` (Discard)
+
 ---
 
 ## 2. State Transition Diagram
@@ -323,10 +354,11 @@ private async void TransitionToPreviewReady()
 | `FIRST_LAUNCH` | N/A (no orchestrator instance) |
 | `EMPTY_IDLE` | `IDLE` |
 | `TYPING` | `IDLE` (no backend change) |
-| `BUILDING` | `SPEC_PARSED`, `TASK_GRAPH_READY`, `TASK_EXECUTING`, `VALIDATING`, `RETRYING` (attempts 1-3) |
+| `BUILDING` | `SPEC_PARSED`, `TASK_GRAPH_READY`, `MUTATION_GUARD`, `PATCHING`, `INDEXING`, `BUILDING`, `VALIDATING`, `RETRYING` (attempts 1-3) |
 | `PREVIEW_READY` | `COMPLETED` |
 | `SOFT_RECOVERY` | `RETRYING` (attempts 4+) |
 | `HARD_FAILURE` | `FAILED` |
+| `INTERVENTION_REQUIRED` | `GUARD_REJECTED` |
 
 **Implementation**:
 ```csharp
