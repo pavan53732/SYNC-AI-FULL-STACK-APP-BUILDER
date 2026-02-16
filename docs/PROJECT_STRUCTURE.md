@@ -517,3 +517,227 @@ CREATE TABLE ProjectHistory (
   }
 }
 ```
+
+---
+
+## .csproj File Examples
+
+### Main WinUI 3 Application (.csproj)
+
+**File**: `src/SyncAIAppBuilder/SyncAIAppBuilder.csproj`
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>SyncAIAppBuilder</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x86;x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
+    <PublishProfile>win-$(Platform).pubxml</PublishProfile>
+    <UseWinUI>true</UseWinUI>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Windows App SDK (WinUI 3) -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.5.240311000" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.22621.756" />
+    
+    <!-- Roslyn Code Analysis -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.9.2" />
+    
+    <!-- Dependency Injection -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
+    
+    <!-- SQLite Database -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.2" />
+    <PackageReference Include="Dapper" Version="2.1.28" />
+    
+    <!-- JSON Serialization -->
+    <PackageReference Include="System.Text.Json" Version="8.0.2" />
+    
+    <!-- AI SDK -->
+    <PackageReference Include="z-ai-web-dev-sdk" Version="1.0.0" />
+    
+    <!-- Community Toolkit -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="CommunityToolkit.WinUI.UI.Controls" Version="7.1.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Project References -->
+    <ProjectReference Include="..\SyncAIAppBuilder.Core\SyncAIAppBuilder.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- XAML Files -->
+    <Page Update="UI\MainWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Update="UI\Pages\EditorPage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Update="UI\Pages\PreviewPage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Update="UI\Pages\ProjectsPage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Update="UI\Pages\SettingsPage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Assets -->
+    <Content Include="Assets\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+</Project>
+```
+
+### Core Library (.csproj)
+
+**File**: `src/SyncAIAppBuilder.Core/SyncAIAppBuilder.Core.csproj`
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>SyncAIAppBuilder.Core</RootNamespace>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Roslyn Code Analysis -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.9.2" />
+    
+    <!-- Logging -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
+    
+    <!-- SQLite -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.2" />
+    <PackageReference Include="Dapper" Version="2.1.28" />
+    
+    <!-- JSON -->
+    <PackageReference Include="System.Text.Json" Version="8.0.2" />
+    
+    <!-- AI SDK -->
+    <PackageReference Include="z-ai-web-dev-sdk" Version="1.0.0" />
+  </ItemGroup>
+</Project>
+```
+
+### Unit Tests (.csproj)
+
+**File**: `tests/SyncAIAppBuilder.Tests/SyncAIAppBuilder.Tests.csproj`
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Testing Frameworks -->
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="3.2.2" />
+    <PackageReference Include="MSTest.TestFramework" Version="3.2.2" />
+    <PackageReference Include="coverlet.collector" Version="6.0.1" />
+    
+    <!-- Mocking -->
+    <PackageReference Include="Moq" Version="4.20.70" />
+    
+    <!-- Assertions -->
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Project References -->
+    <ProjectReference Include="..\..\src\SyncAIAppBuilder.Core\SyncAIAppBuilder.Core.csproj" />
+    <ProjectReference Include="..\..\src\SyncAIAppBuilder\SyncAIAppBuilder.csproj" />
+  </ItemGroup>
+</Project>
+```
+
+### Generated User Project (.csproj)
+
+**File**: `Workspaces/{ProjectId}/src/GeneratedApp.csproj`
+
+This is the .csproj file that the AI generates for user projects:
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>GeneratedApp</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x86;x64;ARM64</Platforms>
+    <UseWinUI>true</UseWinUI>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Windows App SDK -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.5.240311000" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.22621.756" />
+    
+    <!-- Community Toolkit (commonly used) -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="CommunityToolkit.WinUI.UI.Controls" Version="7.1.2" />
+    
+    <!-- SQLite (if database features requested) -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.2" />
+    
+    <!-- Additional packages added by AI as needed -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- XAML Files (generated by AI) -->
+    <Page Include="MainWindow.xaml" />
+    <!-- Additional XAML pages added by AI -->
+  </ItemGroup>
+</Project>
+```
+
+### Key .csproj Properties Explained
+
+| Property | Purpose | Value |
+|----------|---------|-------|
+| `TargetFramework` | .NET version + Windows SDK | `net8.0-windows10.0.19041.0` |
+| `TargetPlatformMinVersion` | Minimum Windows version | `10.0.17763.0` (Windows 10 1809) |
+| `UseWinUI` | Enable WinUI 3 support | `true` |
+| `EnableMsixTooling` | Enable MSIX packaging | `true` |
+| `Nullable` | Enable nullable reference types | `enable` |
+| `LangVersion` | C# language version | `latest` |
+| `Platforms` | Supported CPU architectures | `x86;x64;ARM64` |
+
+### Package Version Management
+
+All package versions are managed centrally. When the AI generates projects, it uses the same package versions as the builder application to ensure compatibility.
+
+**Version Pinning Strategy**:
+- Windows App SDK: `1.5.x` (latest stable)
+- .NET SDK: `8.0.x` (LTS)
+- Roslyn: `4.9.x` (matches .NET 8)
+- Community Toolkit: `8.x` (latest stable)
+
+---

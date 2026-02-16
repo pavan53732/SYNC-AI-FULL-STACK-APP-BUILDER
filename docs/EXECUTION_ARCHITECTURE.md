@@ -291,6 +291,302 @@ public class PathValidator
 #### Purpose
 Manage isolated .NET execution (MSBuild, NuGet, dotnet CLI) without exposing complexity to users.
 
+#### .NET SDK Version Requirements
+
+**Required SDK Version**: .NET 8.0 SDK (8.0.100 or later)
+
+**Minimum Supported**: .NET 8.0.100  
+**Recommended**: .NET 8.0.300 or later (for latest WinUI 3 support)  
+**Maximum Tested**: .NET 9.0 Preview (forward compatibility)
+
+##### Version Detection and Validation
+
+```csharp
+public class SdkVersionManager
+{
+    private readonly ILogger<SdkVersionManager> _logger;
+    
+    /// <summary>
+    /// Detects all installed .NET SDKs on the system.
+    /// </summary>
+    public async Task<List<SdkVersion>> DetectInstalledSdksAsync()
+    {
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = "--list-sdks",
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+        
+        process.Start();
+        var output = await process.StandardOutput.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        
+        // Parse output: "8.0.300 [C:\Program Files\dotnet\sdk]"
+        var sdks = new List<SdkVersion>();
+        foreach (var line in output.Split('\n'))
+        {
+            var match = Regex.Match(line, @"^(\d+\.\d+\.\d+)\s+\[(.+)\]");
+            if (match.Success)
+            {
+                sdks.Add(new SdkVersion
+                {
+                    Version = Version.Parse(match.Groups[1].Value),
+                    Path = match.Groups[2].Value
+                });
+            }
+        }
+        
+        return sdks;
+    }
+    
+    /// <summary>
+    /// Validates that a compatible .NET SDK is installed.
+    /// </summary>
+    public async Task<SdkValidationResult> ValidateSdkAsync()
+    {
+        var sdks = await DetectInstalledSdksAsync();
+        
+        // Check for .NET 8.0
+        var net8Sdks = sdks.Where(s => s.Version.Major == 8).ToList();
+        
+        if (!net8Sdks.Any())
+        {
+            return new SdkValidationResult
+            {
+                IsValid = false,
+                ErrorMessage = ".NET 8.0 SDK not found. Please install from https://dotnet.microsoft.com/download/dotnet/8.0",
+                RequiredVersion = "8.0.100",
+                InstalledSdks = sdks
+            };
+        }
+        
+        // Find highest .NET 8 version
+        var latestNet8 = net8Sdks.OrderByDescending(s => s.Version).First();
+        
+        // Check minimum version
+        var minimumVersion = new Version(8, 0, 100);
+        if (latestNet8.Version < minimumVersion)
+        {
+            return new SdkValidationResult
+            {
+                IsValid = false,
+                ErrorMessage = $".NET 8.0 SDK version {latestNet8.Version} is too old. Minimum required: {minimumVersion}",
+                RequiredVersion = minimumVersion.ToString(),
+                InstalledSdks = sdks
+            };
+        }
+        
+        return new SdkValidationResult
+        {
+            IsValid = true,
+            SelectedSdk = latestNet8,
+            InstalledSdks = sdks
+        };
+    }
+}
+
+public class SdkVersion
+{
+    public Version Version { get; set; }
+    public string Path { get; set; }
+}
+
+public class SdkValidationResult
+{
+    public bool IsValid { get; set; }
+    public string ErrorMessage { get; set; }
+    public string RequiredVersion { get; set; }
+    public SdkVersion SelectedSdk { get; set; }
+    public List<SdkVersion> InstalledSdks { get; set; }
+}
+```
+
+##### Handling Multiple .NET SDK Versions
+
+**Strategy**: Use `global.json` to pin SDK version per project.
+
+```csharp
+public class GlobalJsonManager
+{
+    /// <summary>
+    /// Creates or updates global.json to pin SDK version.
+    /// </summary>
+    public async Task PinSdkVersionAsync(string projectPath, string sdkVersion)
+    {
+        var globalJsonPath = Path.Combine(projectPath, "global.json");
+        
+        var globalJson = new
+        {
+            sdk = new
+            {
+                version = sdkVersion,
+                rollForward = "latestFeature" // Allow patch updates
+            }
+        };
+        
+        var json = JsonSerializer.Serialize(globalJson, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
+        
+        await File.WriteAllTextAsync(globalJsonPath, json);
+        
+        _logger.LogInformation("Pinned SDK version to {Version} in {Path}", 
+            sdkVersion, globalJsonPath);
+    }
+    
+    /// <summary>
+    /// Reads SDK version from global.json if it exists.
+    /// </summary>
+    public async Task<string> GetPinnedSdkVersionAsync(string projectPath)
+    {
+        var globalJsonPath = Path.Combine(projectPath, "global.json");
+        
+        if (!File.Exists(globalJsonPath))
+            return null;
+        
+        var json = await File.ReadAllTextAsync(globalJsonPath);
+        var doc = JsonDocument.Parse(json);
+        
+        if (doc.RootElement.TryGetProperty("sdk", out var sdkElement) &&
+            sdkElement.TryGetProperty("version", out var versionElement))
+        {
+            return versionElement.GetString();
+        }
+        
+        return null;
+    }
+}
+```
+
+##### SDK Version Fallback Strategy
+
+```
+1. Check global.json in project root
+   ↓ (if not found)
+2. Use latest installed .NET 8.x SDK
+   ↓ (if not found)
+3. Check for .NET 9.x SDK (forward compatibility)
+   ↓ (if not found)
+4. Show error dialog with download link
+   ↓
+5. User installs SDK
+   ↓
+6. Retry validation
+```
+
+##### Implementation in Execution Kernel
+
+```csharp
+public class ExecutionKernel
+{
+    private readonly SdkVersionManager _sdkManager;
+    private readonly GlobalJsonManager _globalJsonManager;
+    private SdkVersion _selectedSdk;
+    
+    public async Task InitializeAsync(string projectPath)
+    {
+        // Validate SDK
+        var validation = await _sdkManager.ValidateSdkAsync();
+        
+        if (!validation.IsValid)
+        {
+            throw new SdkNotFoundException(validation.ErrorMessage);
+        }
+        
+        _selectedSdk = validation.SelectedSdk;
+        
+        // Pin SDK version in global.json
+        await _globalJsonManager.PinSdkVersionAsync(
+            projectPath, 
+            _selectedSdk.Version.ToString());
+        
+        _logger.LogInformation("Initialized Execution Kernel with SDK {Version}", 
+            _selectedSdk.Version);
+    }
+    
+    /// <summary>
+    /// Builds project using the selected SDK version.
+    /// </summary>
+    public async Task<BuildResult> BuildAsync(string projectPath)
+    {
+        if (_selectedSdk == null)
+        {
+            throw new InvalidOperationException("Execution Kernel not initialized. Call InitializeAsync first.");
+        }
+        
+        // Ensure global.json exists
+        var pinnedVersion = await _globalJsonManager.GetPinnedSdkVersionAsync(projectPath);
+        if (pinnedVersion == null)
+        {
+            await _globalJsonManager.PinSdkVersionAsync(projectPath, _selectedSdk.Version.ToString());
+        }
+        
+        // Build using dotnet CLI
+        // ... (rest of build logic)
+    }
+}
+```
+
+##### User-Facing SDK Validation
+
+**On Application Startup**:
+```csharp
+public class App : Application
+{
+    protected override async void OnLaunched(LaunchActivatedEventArgs args)
+    {
+        var sdkManager = GetService<SdkVersionManager>();
+        var validation = await sdkManager.ValidateSdkAsync();
+        
+        if (!validation.IsValid)
+        {
+            // Show error dialog
+            var dialog = new ContentDialog
+            {
+                Title = ".NET SDK Required",
+                Content = new StackPanel
+                {
+                    Children =
+                    {
+                        new TextBlock { Text = validation.ErrorMessage },
+                        new HyperlinkButton
+                        {
+                            Content = "Download .NET 8.0 SDK",
+                            NavigateUri = new Uri("https://dotnet.microsoft.com/download/dotnet/8.0")
+                        }
+                    }
+                },
+                CloseButtonText = "Exit"
+            };
+            
+            await dialog.ShowAsync();
+            Application.Current.Exit();
+            return;
+        }
+        
+        // Continue with normal startup
+        base.OnLaunched(args);
+    }
+}
+```
+
+##### SDK Version Compatibility Matrix
+
+| SDK Version | WinUI 3 Support | Status |
+|-------------|-----------------|--------|
+| 8.0.100 | ✅ Full | Minimum Required |
+| 8.0.200 | ✅ Full | Supported |
+| 8.0.300+ | ✅ Full + Latest Features | **Recommended** |
+| 9.0.x Preview | ⚠️ Experimental | Forward Compatible |
+| 7.0.x | ❌ Not Supported | Too Old |
+
 #### Core Architecture
 
 ```csharp

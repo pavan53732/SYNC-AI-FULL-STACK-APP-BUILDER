@@ -17,7 +17,22 @@ Unlike traditional code generators or IDE plugins, SyncAI Explorer operates as a
 *   **Silent Error Fixing**: Internal validation loops catch and fix build errors before you see them.
 
 ## Documentation
-- [Architecture](docs/ARCHITECTURE.md)
-- [Design Philosophy](docs/DESIGN_PHILOSOPHY.md)
-- [User Workflow](docs/USER_WORKFLOW.md)
-- [Internal Specs](docs/ORCHESTRATOR_SPECIFICATION.md)
+
+### Core Architecture
+- [**Architecture**](docs/ARCHITECTURE.md) - Complete system architecture with 7-layer multi-agent design
+- [**Execution Architecture**](docs/EXECUTION_ARCHITECTURE.md) - 6 embedded subsystems & local deployment
+- [**Orchestrator Specification**](docs/ORCHESTRATOR_SPECIFICATION.md) - Deterministic state machine (critical foundation)
+
+### Design & Workflow
+- [**Design Philosophy**](docs/DESIGN_PHILOSOPHY.md) - UX principles: hide complexity, show results
+- [**User Workflow**](docs/USER_WORKFLOW.md) - Observable behavior & behind-the-scenes operations
+
+### Technical Specifications
+- [**API Contracts**](docs/API_CONTRACTS.md) - Internal service APIs & AI Engine output schemas
+- [**Technology Stack**](docs/TECHNOLOGY_STACK.md) - Complete tech stack breakdown
+- [**Project Structure**](docs/PROJECT_STRUCTURE.md) - Codebase organization
+- [**Features**](docs/FEATURES.md) - Feature roadmap & capabilities
+
+### Implementation
+- [**Development Guide**](docs/DEVELOPMENT_GUIDE.md) - Implementation guide for developers
+- [**Deployment**](docs/DEPLOYMENT.md) - Deployment strategies & configurations

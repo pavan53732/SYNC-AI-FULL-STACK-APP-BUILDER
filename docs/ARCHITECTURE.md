@@ -1166,6 +1166,205 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 
 ---
 
+## AI Engine Integration with Preview System
+
+### Overview
+
+The AI Engine generates code, but **never directly renders or displays it**. The Preview System is a separate layer that consumes AI-generated code and provides visual feedback to users.
+
+### Integration Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ User enters prompt in EditorPage                        │
+└────────────────────┬────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────┐
+│ Orchestrator receives GenerateProjectCommand            │
+│ - Validates prompt                                      │
+│ - Creates task graph                                    │
+└────────────────────┬────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────┐
+│ AI Engine (via z-ai-web-dev-sdk)                        │
+│ - Receives structured specification                     │
+│ - Returns JSON with code patches                        │
+│ - NO file writes, NO preview rendering                  │
+└────────────────────┬────────────────────────────────────┘
+                     │
+┌────────────────────▼────────────────────────────────────┐
+│ Roslyn Patch Engine                                     │
+│ - Applies patches to workspace files                    │
+│ - Validates syntax                                      │
+│ - Writes to disk                                        │
+└────────────────────┬────────────────────────────────────┘
+                     │
+                     ├─────────────────┬──────────────────┐
+                     │                 │                  │
+┌────────────────────▼──┐  ┌──────────▼──────┐  ┌────────▼────────┐
+│ Preview Mode 1:       │  │ Preview Mode 2: │  │ Preview Mode 3: │
+│ Embedded XAML         │  │ Code View       │  │ Full Launch     │
+│                       │  │                 │  │                 │
+│ - XamlReader.Load()   │  │ - Syntax        │  │ - MSBuild       │
+│ - Render in UI        │  │   highlighting  │  │ - Launch .exe   │
+└───────────────────────┘  └─────────────────┘  └─────────────────┘
+```
+
+### Data Flow During Preview
+
+#### Step 1: Code Generation
+```
+User Prompt
+    ↓
+Orchestrator (validates & structures)
+    ↓
+AI Engine API Call
+    ↓
+JSON Response: {
+    "patches": [
+        {
+            "operation": "ADD_CLASS",
+            "file": "MainWindow.xaml.cs",
+            "payload": { ... }
+        },
+        {
+            "operation": "UPDATE_XAML_NODE",
+            "file": "MainWindow.xaml",
+            "payload": { ... }
+        }
+    ]
+}
+```
+
+#### Step 2: Code Application
+```
+Roslyn Patch Engine
+    ↓
+Apply patches to workspace files
+    ↓
+Workspace files updated on disk
+    ↓
+Trigger PreviewService.RefreshAsync()
+```
+
+#### Step 3: Preview Rendering (3 Parallel Modes)
+
+**Mode 1: Embedded XAML Preview**
+```
+PreviewService.RenderXamlPreviewAsync()
+    ↓
+Read MainWindow.xaml from disk
+    ↓
+XamlReader.Load(xamlContent)
+    ↓
+UIElement rendered in PreviewPanel
+    ↓
+User sees live UI instantly
+```
+
+**Mode 2: Code View**
+```
+PreviewService.GetFormattedCodeAsync()
+    ↓
+Read all .cs and .xaml files
+    ↓
+Apply syntax highlighting
+    ↓
+Display in CodeViewer with file tree
+```
+
+**Mode 3: Full Launch**
+```
+PreviewService.LaunchFullPreviewAsync()
+    ↓
+BuildService.BuildAsync(projectPath)
+    ↓
+MSBuild compiles project
+    ↓
+Process.Start(generatedApp.exe)
+    ↓
+Separate window opens with running app
+```
+
+### Key Separation of Concerns
+
+| Component | Responsibility | Does NOT Do |
+|-----------|----------------|-------------|
+| **AI Engine** | Generate code patches (JSON) | ❌ Write files<br>❌ Render preview<br>❌ Run builds |
+| **Roslyn Engine** | Apply patches to files | ❌ Generate code<br>❌ Render preview<br>❌ Call AI |
+| **Preview Service** | Render/display code | ❌ Generate code<br>❌ Modify files<br>❌ Call AI |
+| **Build Service** | Compile projects | ❌ Generate code<br>❌ Render preview<br>❌ Modify files |
+| **Orchestrator** | Coordinate all layers | ❌ Generate code<br>❌ Apply patches<br>❌ Render preview |
+
+### Preview Update Triggers
+
+The Preview System automatically refreshes when:
+
+1. **After successful patch application**
+   ```csharp
+   await _patchEngine.ApplyPatchAsync(patch);
+   await _previewService.RefreshAsync(); // Auto-triggered
+   ```
+
+2. **User manually requests refresh**
+   ```csharp
+   // User clicks "Refresh Preview" button
+   await _previewService.RefreshAsync();
+   ```
+
+3. **Build completes successfully**
+   ```csharp
+   var buildResult = await _buildService.BuildAsync(projectPath);
+   if (buildResult.Success)
+   {
+       await _previewService.UpdateBuildStatusAsync(buildResult);
+   }
+   ```
+
+### Error Handling in Preview
+
+```
+AI generates invalid XAML
+    ↓
+Roslyn applies patch (syntax valid)
+    ↓
+Preview attempts to render
+    ↓
+XamlReader.Load() throws XamlParseException
+    ↓
+PreviewPanel shows error message
+    ↓
+User sees: "Preview Error: Invalid XAML at line 42"
+    ↓
+Orchestrator can retry with corrected code
+```
+
+### Performance Optimization
+
+**Debouncing**: Preview updates are debounced by 500ms to avoid excessive re-renders during rapid code changes.
+
+```csharp
+private CancellationTokenSource _debounceCts;
+
+public async Task RefreshAsync()
+{
+    _debounceCts?.Cancel();
+    _debounceCts = new CancellationTokenSource();
+    
+    try
+    {
+        await Task.Delay(500, _debounceCts.Token);
+        await RenderPreviewAsync();
+    }
+    catch (OperationCanceledException)
+    {
+        // Debounced, ignore
+    }
+}
+```
+
+---
+
 ## References
 
 For deeper technical details:

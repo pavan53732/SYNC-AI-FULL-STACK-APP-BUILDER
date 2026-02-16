@@ -1,0 +1,37 @@
+{
+  "name": "sync-ai-full-stack-app-builder",
+  "version": "1.0.0",
+  "description": "Autonomous Software Construction Environment for Windows - AI-powered WinUI 3 desktop application builder with multi-agent orchestration",
+  "author": "Pavan",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pavan53732/SYNC-AI-FULL-STACK-APP-BUILDER"
+  },
+  "keywords": [
+    "ai-app-builder",
+    "windows-desktop",
+    "winui3",
+    "autonomous-construction",
+    "multi-agent",
+    "code-generation",
+    "dotnet",
+    "csharp",
+    "orchestrator",
+    "roslyn"
+  ],
+  "scripts": {
+    "restore": "dotnet restore SyncAIAppBuilder.sln",
+    "build": "dotnet build SyncAIAppBuilder.sln --configuration Release",
+    "build:debug": "dotnet build SyncAIAppBuilder.sln --configuration Debug",
+    "clean": "dotnet clean SyncAIAppBuilder.sln",
+    "test": "dotnet test src/SyncAIAppBuilder.Tests/SyncAIAppBuilder.Tests.csproj",
+    "run": "dotnet run --project src/SyncAIAppBuilder/SyncAIAppBuilder.csproj",
+    "publish": "dotnet publish src/SyncAIAppBuilder/SyncAIAppBuilder.csproj -c Release -o ./publish",
+    "watch": "dotnet watch --project src/SyncAIAppBuilder/SyncAIAppBuilder.csproj"
+  },
+  "engines": {
+    "dotnet": ">=8.0.0"
+  }
+}
