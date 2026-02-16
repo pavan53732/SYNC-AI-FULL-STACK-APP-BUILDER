@@ -16,7 +16,9 @@ AI Patch Proposal → [Mutation Safety Guard] → Patch Engine
 ```
 
 ### Layer 1: Target Existence Validation
+
 **Checks**:
+
 - Does the target symbol actually exist?
 - Does the snapshot ID match the active snapshot?
 - Does the file hash match the expected state?
@@ -24,7 +26,9 @@ AI Patch Proposal → [Mutation Safety Guard] → Patch Engine
 **Action**: If any check fails → **REJECT** immediately (Stale Context).
 
 ### Layer 2: Impact Radius Calculation
+
 **Algorithm**:
+
 1. Query `symbol_edges` for the target symbol.
 2. Traverse **Outgoing** edges (depth=2).
 3. Traverse **Incoming** edges (depth=1).
@@ -33,7 +37,9 @@ AI Patch Proposal → [Mutation Safety Guard] → Patch Engine
 **Output**: `MutationScope` object.
 
 ### Layer 3: Breaking Change Detection
+
 **Logic**: If the patch modifies public contracts:
+
 - Method signatures
 - Interface definitions
 - Constructor parameters (Dependency Injection)
@@ -42,7 +48,9 @@ AI Patch Proposal → [Mutation Safety Guard] → Patch Engine
 **Action**: Simulate resolution of dependent symbols. If any become unresolved → **BLOCK**.
 
 ### Layer 4: AST Simulation (Dry Run)
+
 **Process**:
+
 1. Clone the SyntaxTree in memory.
 2. Apply the patch transformation.
 3. Build a temporary compilation context.
@@ -54,7 +62,9 @@ AI Patch Proposal → [Mutation Safety Guard] → Patch Engine
 **Action**: If compilation errors (diagnostics) appear → **REJECT**.
 
 ### Layer 5: Deterministic Snapshot Pre-Commit
+
 **Process**:
+
 1. Freeze graph state.
 2. Apply patch in a temp/sandbox directory.
 3. Run `dotnet build` (or design-time build).
@@ -90,6 +100,7 @@ What happens when the Mutation Guard REJECTS the AI's proposal?
 **Principle**: Single-Writer, Multi-Reader.
 
 ### Thread Roles
+
 - **Indexing Writer**: 1 Thread (Exclusive)
 - **Patch Writer**: 1 Thread (Exclusive)
 - **Build Runner**: 1 Thread (Exclusive)
@@ -97,7 +108,7 @@ What happens when the Mutation Guard REJECTS the AI's proposal?
 
 ### Locking Strategy
 
-1.  **Workspace Lock**: 
+1.  **Workspace Lock**:
     - Mutex: `Global\Workspace_{ProjectId}`
     - Ensures only one ExecutionSession (Orchestrator) active per project.
 
@@ -110,11 +121,13 @@ What happens when the Mutation Guard REJECTS the AI's proposal?
     - Prevents external edits (e.g., VS Code) from colliding.
 
 ### Execution Ordering Rule (Strict)
+
 ```
 PATCH → INDEX → BUILD → COMMIT
 ```
 
 **Forbidden States**:
+
 - ❌ Indexing while Patching
 - ❌ Building while Patching
 - ❌ Patching during Restore
@@ -126,16 +139,19 @@ PATCH → INDEX → BUILD → COMMIT
 **Goal**: Support large Windows apps without freezing the UI.
 
 ### A. Compilation Model Reuse
+
 - **Don't** create new `CSharpCompilation` for every patch.
 - **Do** utilize Roslyn's `CreateScriptCompilation` or standard incremental updates.
 - Replace only the changed `SyntaxTree` in the existing `Compilation`.
 
 ### B. Lazy Graph Traversal
+
 - **Limit** traversal depth (max 2-3 levels).
 - **Limit** symbol count per retrieval.
 - Only load semantic models for files in the `MutationScope`.
 
 ### C. SQLite Optimization
+
 - **Composite Indexes**:
   ```sql
   CREATE INDEX idx_edges_composite ON symbol_edges(from_id, type);
@@ -144,15 +160,18 @@ PATCH → INDEX → BUILD → COMMIT
 - **Weekly Vacuum**: Auto-maintenance task.
 
 ### D. Snapshot Compression
+
 - Store **Binary Diffs** or Git-style object storage instead of full file copies.
 - Only materialize full files on Restore.
 
 ### E. Symbol Caching Layer (RAM)
+
 - Cache frequently accessed symbols (e.g., `MainViewModel`, `App.xaml.cs`).
 - Cache hot dependency edges.
 - Invalidate cache entries on file modification.
 
 ### F. Retrieval Throttling
+
 - Hard Cap: Max 200 symbols per context.
 - Hard Cap: Max 8KB of source code per prompt.
 - Force AI to request "More Context" if needed, rather than dumping everything.
@@ -184,7 +203,9 @@ PATCH → INDEX → BUILD → COMMIT
     - No cycles, no gaps.
 
 ### Self-Healing Repair Strategy
+
 **If corruption detected**:
+
 1. Lock Workspace.
 2. Create "Safety Snapshot" (backup current state).
 3. **TRUNCATE** graph tables (files, symbols, edges).
@@ -200,16 +221,17 @@ PATCH → INDEX → BUILD → COMMIT
 
 By implementing these 4 systems, we move beyond "template generators" to a **Deterministic Windows-Native Construction Kernel**.
 
-| Feature | Hobby/Web Builder | Sync AI (Production) |
-| :--- | :--- | :--- |
-| **Mutation Check** | Regex/LLM Validation | 5-Layer Semantic Guard |
-| **Concurrency** | Race Conditions Probable | Single-Writer Mutex |
-| **Scaling** | Fails > 10K LOC | Optimized for 100K+ LOC |
-| **Reliability** | "It works often" | Automated Self-Healing |
+| Feature            | Hobby/Web Builder        | Sync AI (Production)    |
+| :----------------- | :----------------------- | :---------------------- |
+| **Mutation Check** | Regex/LLM Validation     | 5-Layer Semantic Guard  |
+| **Concurrency**    | Race Conditions Probable | Single-Writer Mutex     |
+| **Scaling**        | Fails > 10K LOC          | Optimized for 100K+ LOC |
+| **Reliability**    | "It works often"         | Automated Self-Healing  |
 
 ---
 
 ## References
-- [DATABASE_SCHEMA_SPECIFICATION.md](./DATABASE_SCHEMA_SPECIFICATION.md)
+
+- [DATABASE_SPECIFICATION.md](./DATABASE_SPECIFICATION.md)
 - [EXECUTION_LIFECYCLE_SPECIFICATION.md](./EXECUTION_LIFECYCLE_SPECIFICATION.md)
 - [INDEXING_ARCHITECTURE_SPECIFICATION.md](./INDEXING_ARCHITECTURE_SPECIFICATION.md)

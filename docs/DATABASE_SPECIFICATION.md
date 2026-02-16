@@ -93,21 +93,152 @@ CREATE INDEX idx_recent_prompts_date ON RecentPrompts(LastUsedDate DESC);
 
 ### 2.2 Project Graph Database (project_graph.db)
 
-> **SOURCE OF TRUTH**: The schema for the Semantic Graph (Files, Symbols, SyntaxNodes, Edges, XamlBindings) is authoritative in [DATABASE_SCHEMA_SPECIFICATION.md](./DATABASE_SCHEMA_SPECIFICATION.md).
->
-> Please refer to that document for the exact table definitions for:
-> - `files`
-> - `syntax_nodes`
-> - `symbols`
-> - `symbol_edges`
-> - `xaml_bindings`
->
-> The `project_graph.db` also includes:
+**Purpose**: Semantic graph for code intelligence — file tracking, syntax nodes, symbols, relationships, XAML bindings, snapshots, and versions.
+
+#### Enterprise Semantic Graph Architecture
+
+The project graph uses a **multi-layer graph model** normalized and indexed for performance:
+
+- **File Layer**: Physical file tracking
+- **Syntax Layer**: Roslyn syntax nodes
+- **Symbol Layer**: Semantic symbols
+- **Edge Layer**: Relationships (calls, inherits, etc.)
+- **XAML Layer**: UI bindings
+- **Version Layer**: Snapshots and history
+
+#### Table: files
+
+Tracks physical files in the workspace.
 
 ```sql
--- ============================================
--- NUGET PACKAGES (Package Management)
--- ============================================
+CREATE TABLE files (
+    id INTEGER PRIMARY KEY,
+    path TEXT NOT NULL UNIQUE,
+    hash TEXT NOT NULL,          -- SHA256 for incremental detection
+    last_modified_utc TEXT NOT NULL,
+    language TEXT NOT NULL,      -- 'cs', 'xaml', 'xml', 'json'
+    snapshot_id INTEGER NOT NULL -- Current snapshot ownership
+);
+
+CREATE INDEX idx_files_snapshot ON files(snapshot_id);
+CREATE INDEX idx_files_path ON files(path);
+```
+
+#### Table: syntax_nodes
+
+Stores structural nodes (Class, Method, Property) from Roslyn AST.
+
+```sql
+CREATE TABLE syntax_nodes (
+    id INTEGER PRIMARY KEY,
+    file_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,          -- 'ClassDeclaration', 'MethodDeclaration'
+    name TEXT,                   -- Simple name
+    span_start INTEGER,
+    span_end INTEGER,
+    parent_node_id INTEGER,
+    FOREIGN KEY(file_id) REFERENCES files(id)
+);
+
+CREATE INDEX idx_syntax_file ON syntax_nodes(file_id);
+CREATE INDEX idx_syntax_name ON syntax_nodes(name);
+```
+
+#### Table: symbols
+
+Semantic layer (Roslyn resolved symbols).
+
+```sql
+CREATE TABLE symbols (
+    id INTEGER PRIMARY KEY,
+    file_id INTEGER NOT NULL,
+    syntax_node_id INTEGER,
+    name TEXT NOT NULL,
+    fully_qualified_name TEXT NOT NULL, -- 'Namespace.Class.Method'
+    kind TEXT NOT NULL,          -- 'NamedType', 'Method', 'Property'
+    return_type TEXT,
+    accessibility TEXT,          -- 'Public', 'Private', 'Internal'
+    is_static INTEGER,           -- Boolean
+    is_abstract INTEGER,         -- Boolean
+    snapshot_id INTEGER NOT NULL,
+    FOREIGN KEY(file_id) REFERENCES files(id)
+);
+
+CREATE INDEX idx_symbols_fqn ON symbols(fully_qualified_name);
+CREATE INDEX idx_symbols_snapshot ON symbols(snapshot_id);
+```
+
+#### Table: symbol_edges
+
+Directed graph of semantic relationships.
+
+```sql
+CREATE TABLE symbol_edges (
+    id INTEGER PRIMARY KEY,
+    from_symbol_id INTEGER NOT NULL,
+    to_symbol_id INTEGER NOT NULL,
+    edge_type TEXT NOT NULL,     -- 'CALLS', 'INHERITS', 'IMPLEMENTS', 'REFERENCES', 'INJECTS'
+    snapshot_id INTEGER NOT NULL,
+    FOREIGN KEY(from_symbol_id) REFERENCES symbols(id),
+    FOREIGN KEY(to_symbol_id) REFERENCES symbols(id)
+);
+
+CREATE INDEX idx_symbol_edges_from ON symbol_edges(from_symbol_id);
+CREATE INDEX idx_symbol_edges_to ON symbol_edges(to_symbol_id);
+```
+
+#### Table: xaml_bindings
+
+Connects UI layer to Semantic layer.
+
+```sql
+CREATE TABLE xaml_bindings (
+    id INTEGER PRIMARY KEY,
+    xaml_file_id INTEGER NOT NULL,
+    viewmodel_symbol_id INTEGER NOT NULL,
+    binding_property TEXT NOT NULL, -- Property path in XAML
+    binding_target TEXT NOT NULL,   -- Target property on UI element
+    snapshot_id INTEGER NOT NULL,
+    FOREIGN KEY(xaml_file_id) REFERENCES files(id),
+    FOREIGN KEY(viewmodel_symbol_id) REFERENCES symbols(id)
+);
+
+CREATE INDEX idx_xaml_vm ON xaml_bindings(viewmodel_symbol_id);
+```
+
+#### Table: snapshots
+
+Tracks orchestration states.
+
+```sql
+CREATE TABLE snapshots (
+    id INTEGER PRIMARY KEY,
+    created_utc TEXT NOT NULL,
+    reason TEXT NOT NULL,        -- 'Pre-Generation', 'Post-Patch', 'Manual'
+    parent_snapshot_id INTEGER
+);
+```
+
+#### Table: versions
+
+User-facing timeline.
+
+```sql
+CREATE TABLE versions (
+    id INTEGER PRIMARY KEY,
+    snapshot_id INTEGER NOT NULL,
+    summary TEXT NOT NULL,       -- 'Added Authentication', 'Fixed Build Error'
+    build_status TEXT NOT NULL,  -- 'Success', 'Failed'
+    created_utc TEXT NOT NULL,
+    FOREIGN KEY(snapshot_id) REFERENCES snapshots(id)
+);
+```
+
+#### Table: NuGetPackages
+
+Package management tracking.
+
+```sql
 CREATE TABLE NuGetPackages (
     Id INTEGER PRIMARY KEY AUTOINCREMENT,
     PackageId TEXT NOT NULL,
@@ -119,7 +250,6 @@ CREATE TABLE NuGetPackages (
 
 CREATE INDEX idx_nuget_packages_id ON NuGetPackages(PackageId);
 ```
-
 
 ---
 
@@ -296,9 +426,171 @@ CREATE INDEX idx_perf_metrics_build ON PerformanceMetrics(BuildResultId);
 
 ---
 
-## 3. Database Access Layer
+## 3. Graph Update Algorithm
 
-### 3.1 Repository Pattern
+Must be **deterministic** and **transactional**.
+
+### Scenario A: On File Change (Single File Mutation)
+
+```csharp
+public async Task UpdateGraphForFileAsync(string filePath, string newContent)
+{
+    using var transaction = _connection.BeginTransaction();
+
+    try
+    {
+        // 1. Create new snapshot ID context
+        // (Assuming orchestrator already created snapshot record)
+
+        // 2. Clear old records for this file in current snapshot context
+        // Note: In a real system, we might version rows.
+        // For strict snapshot isolation, we treat specific snapshot_id as active set.
+        await ClearFileRecordsAsync(filePath, currentSnapshotId);
+
+        // 3. Parse with Roslyn
+        var syntaxTree = CSharpSyntaxTree.ParseText(newContent);
+        var root = await syntaxTree.GetRootAsync();
+
+        // 4. Extract & Insert Syntax Nodes
+        foreach (var node in root.DescendantNodes())
+        {
+            if (IsIndexable(node)) InsertSyntaxNode(node);
+        }
+
+        // 5. Resolve Semantic Model
+        var semanticModel = _compilation.GetSemanticModel(syntaxTree);
+
+        // 6. Insert Symbols
+        foreach (var symbol in ExtractSymbols(semanticModel))
+        {
+            InsertSymbol(symbol);
+        }
+
+        // 7. Resolve & Insert Edges
+        // Requires looking up other symbols in DB to find 'to_symbol_id'
+        foreach (var edge in ResolveEdges(semanticModel))
+        {
+            InsertEdge(edge);
+        }
+
+        // 8. Handle XAML (if applicable)
+        if (IsXaml(filePath))
+        {
+            UpdateXamlBindings(filePath, newContent);
+        }
+
+        transaction.Commit();
+    }
+    catch
+    {
+        transaction.Rollback();
+        throw;
+    }
+}
+```
+
+### Scenario B: On Snapshot Restore
+
+```
+1. Rollback file system (IO operation)
+2. Set Active Snapshot ID in Orchestrator
+3. DB remains untouched (historical data preserved)
+4. No re-indexing required (unless integrity check fails)
+```
+
+### Scenario C: Full Rebuild (Corruption Recovery)
+
+```
+1. Delete all graph records (TRUNCATE)
+2. Iterate all files in workspace
+3. Batch insert files
+4. Batch processing of syntax/semantics
+```
+
+---
+
+## 4. Incremental Indexing Strategy
+
+### Trigger Conditions
+
+- Orchestrator Startup (Check cleanliness)
+- Post-Patch Application
+- Manual User Trigger
+
+### A. Hash-Based Detection
+
+Before parsing logic:
+
+```csharp
+var currentHash = ComputeSha256(fileContent);
+var storedHash = await _db.GetFileHashAsync(filePath);
+
+if (currentHash == storedHash)
+{
+    return; // SKIP - No changes
+}
+```
+
+### B. Symbol Diff Strategy
+
+When a file is modified, we only update:
+
+1.  Symbols defined in **that file**
+2.  Incoming edges **to** those symbols (re-validation)
+
+### C. Dependency Revalidation
+
+If `Symbol A` is removed:
+
+1.  Query `symbol_edges` where `to_symbol_id == A`
+2.  Identify all `from_symbol_id` (Dependents)
+3.  Mark dependent files for **Semantic Re-Check**
+4.  (Optional) Block mutation if breaking change detected without fix.
+
+---
+
+## 5. AI Retrieval Pipeline
+
+Optimized for **Token Efficiency** and **Relevance**.
+
+### Stage 1: Intent Classification
+
+Input: "Fix bug in LoginViewModel"
+Output:
+
+- Target Symbol: `LoginViewModel`
+- Operation: `Modification`
+
+### Stage 2: Impact Analysis (Graph Traversal)
+
+```sql
+-- Incoming Edges (Who uses LoginViewModel?)
+SELECT from_symbol_id FROM symbol_edges
+WHERE to_symbol_id = @target_id AND depth <= 1;
+
+-- Outgoing Edges (What does LoginViewModel use?)
+SELECT to_symbol_id FROM symbol_edges
+WHERE from_symbol_id = @target_id AND depth <= 2;
+```
+
+### Stage 3: Context Assembly (Prioritized Order)
+
+1.  **System Rules** (WinUI constraints)
+2.  **Project Summary** (High-level architecture)
+3.  **Target Symbol Definition** (Full code of `LoginViewModel`)
+4.  **Direct Dependencies** (Interfaces, Services used)
+5.  **XAML Bindings** (Corresponding `LoginPage.xaml`)
+6.  **Error Context** (If in fix mode)
+
+### Stage 4: Token Trimming
+
+Stop adding dependencies when budget (e.g., 8000 tokens) is reached.
+
+---
+
+## 6. Database Access Layer
+
+### 6.1 Repository Pattern
 
 ```csharp
 public interface IRepository<T> where T : class
@@ -313,38 +605,38 @@ public interface IRepository<T> where T : class
 public class DapperRepository<T> : IRepository<T> where T : class
 {
     private readonly IDbConnection _connection;
-    
+
     public DapperRepository(IDbConnection connection)
     {
         _connection = connection;
     }
-    
+
     public async Task<T> GetByIdAsync(object id)
     {
         var tableName = typeof(T).Name + "s";
         var sql = $"SELECT * FROM {tableName} WHERE Id = @Id";
         return await _connection.QuerySingleOrDefaultAsync<T>(sql, new { Id = id });
     }
-    
+
     public async Task<IEnumerable<T>> GetAllAsync()
     {
         var tableName = typeof(T).Name + "s";
         var sql = $"SELECT * FROM {tableName}";
         return await _connection.QueryAsync<T>(sql);
     }
-    
+
     public async Task<T> AddAsync(T entity)
     {
         // Implementation using Dapper.Contrib or custom SQL
         await _connection.InsertAsync(entity);
         return entity;
     }
-    
+
     public async Task UpdateAsync(T entity)
     {
         await _connection.UpdateAsync(entity);
     }
-    
+
     public async Task DeleteAsync(object id)
     {
         var tableName = typeof(T).Name + "s";
@@ -354,7 +646,7 @@ public class DapperRepository<T> : IRepository<T> where T : class
 }
 ```
 
-### 3.2 Specialized Repositories
+### 6.2 Specialized Repositories
 
 ```csharp
 public interface IProjectRepository : IRepository<Project>
@@ -367,36 +659,36 @@ public interface IProjectRepository : IRepository<Project>
 public class ProjectRepository : DapperRepository<Project>, IProjectRepository
 {
     public ProjectRepository(IDbConnection connection) : base(connection) { }
-    
+
     public async Task<IEnumerable<Project>> GetRecentProjectsAsync(int count)
     {
         var sql = @"
-            SELECT * FROM Projects 
-            WHERE IsArchived = 0 
-            ORDER BY LastOpenedDate DESC 
+            SELECT * FROM Projects
+            WHERE IsArchived = 0
+            ORDER BY LastOpenedDate DESC
             LIMIT @Count";
-        
+
         return await _connection.QueryAsync<Project>(sql, new { Count = count });
     }
-    
+
     public async Task<Project> GetByWorkspacePathAsync(string path)
     {
         var sql = "SELECT * FROM Projects WHERE WorkspacePath = @Path";
         return await _connection.QuerySingleOrDefaultAsync<Project>(sql, new { Path = path });
     }
-    
+
     public async Task UpdateHealthStatusAsync(string projectId, string healthStatus)
     {
         var sql = @"
-            UPDATE Projects 
-            SET HealthStatus = @HealthStatus, ModifiedDate = @Now 
+            UPDATE Projects
+            SET HealthStatus = @HealthStatus, ModifiedDate = @Now
             WHERE Id = @ProjectId";
-        
-        await _connection.ExecuteAsync(sql, new 
-        { 
-            ProjectId = projectId, 
-            HealthStatus = healthStatus, 
-            Now = DateTime.UtcNow 
+
+        await _connection.ExecuteAsync(sql, new
+        {
+            ProjectId = projectId,
+            HealthStatus = healthStatus,
+            Now = DateTime.UtcNow
         });
     }
 }
@@ -404,9 +696,9 @@ public class ProjectRepository : DapperRepository<Project>, IProjectRepository
 
 ---
 
-## 4. Migration Strategy
+## 7. Migration Strategy
 
-### 4.1 Migration Framework
+### 7.1 Migration Framework
 
 ```csharp
 public interface IMigration
@@ -421,26 +713,26 @@ public class MigrationRunner
 {
     private readonly IDbConnection _connection;
     private readonly ILogger<MigrationRunner> _logger;
-    
+
     public async Task MigrateAsync()
     {
         // Ensure migrations table exists
         await EnsureMigrationsTableAsync();
-        
+
         // Get current version
         var currentVersion = await GetCurrentVersionAsync();
-        
+
         // Get all migrations
         var migrations = GetAllMigrations()
             .Where(m => m.Version > currentVersion)
             .OrderBy(m => m.Version);
-        
+
         // Apply migrations
         foreach (var migration in migrations)
         {
-            _logger.LogInformation("Applying migration {Version}: {Description}", 
+            _logger.LogInformation("Applying migration {Version}: {Description}",
                 migration.Version, migration.Description);
-            
+
             using var transaction = _connection.BeginTransaction();
             try
             {
@@ -456,7 +748,7 @@ public class MigrationRunner
             }
         }
     }
-    
+
     private async Task EnsureMigrationsTableAsync()
     {
         var sql = @"
@@ -465,40 +757,40 @@ public class MigrationRunner
                 Description TEXT NOT NULL,
                 AppliedDate DATETIME NOT NULL
             )";
-        
+
         await _connection.ExecuteAsync(sql);
     }
-    
+
     private async Task<int> GetCurrentVersionAsync()
     {
         var sql = "SELECT COALESCE(MAX(Version), 0) FROM Migrations";
         return await _connection.QuerySingleAsync<int>(sql);
     }
-    
+
     private async Task RecordMigrationAsync(int version, string description)
     {
         var sql = @"
-            INSERT INTO Migrations (Version, Description, AppliedDate) 
+            INSERT INTO Migrations (Version, Description, AppliedDate)
             VALUES (@Version, @Description, @Now)";
-        
-        await _connection.ExecuteAsync(sql, new 
-        { 
-            Version = version, 
-            Description = description, 
-            Now = DateTime.UtcNow 
+
+        await _connection.ExecuteAsync(sql, new
+        {
+            Version = version,
+            Description = description,
+            Now = DateTime.UtcNow
         });
     }
 }
 ```
 
-### 4.2 Example Migration
+### 7.2 Example Migration
 
 ```csharp
 public class Migration_001_InitialSchema : IMigration
 {
     public int Version => 1;
     public string Description => "Initial database schema";
-    
+
     public async Task UpAsync(IDbConnection connection)
     {
         // Create Projects table
@@ -511,12 +803,12 @@ public class Migration_001_InitialSchema : IMigration
                 CreatedDate DATETIME NOT NULL,
                 ModifiedDate DATETIME NOT NULL
             )");
-        
+
         // Create indexes
         await connection.ExecuteAsync(@"
             CREATE INDEX idx_projects_modified ON Projects(ModifiedDate DESC)");
     }
-    
+
     public async Task DownAsync(IDbConnection connection)
     {
         await connection.ExecuteAsync("DROP TABLE IF EXISTS Projects");
@@ -526,9 +818,9 @@ public class Migration_001_InitialSchema : IMigration
 
 ---
 
-## 5. Transaction Management
+## 8. Transaction Management
 
-### 5.1 Unit of Work Pattern
+### 8.1 Unit of Work Pattern
 
 ```csharp
 public interface IUnitOfWork : IDisposable
@@ -536,7 +828,7 @@ public interface IUnitOfWork : IDisposable
     IProjectRepository Projects { get; }
     ISymbolRepository Symbols { get; }
     ITaskRepository Tasks { get; }
-    
+
     Task<int> SaveChangesAsync();
     Task BeginTransactionAsync();
     Task CommitAsync();
@@ -547,11 +839,11 @@ public class UnitOfWork : IUnitOfWork
 {
     private readonly IDbConnection _connection;
     private IDbTransaction _transaction;
-    
+
     public IProjectRepository Projects { get; }
     public ISymbolRepository Symbols { get; }
     public ITaskRepository Tasks { get; }
-    
+
     public UnitOfWork(IDbConnection connection)
     {
         _connection = connection;
@@ -559,33 +851,33 @@ public class UnitOfWork : IUnitOfWork
         Symbols = new SymbolRepository(connection);
         Tasks = new TaskRepository(connection);
     }
-    
+
     public async Task BeginTransactionAsync()
     {
         _transaction = _connection.BeginTransaction();
     }
-    
+
     public async Task CommitAsync()
     {
         _transaction?.Commit();
         _transaction?.Dispose();
         _transaction = null;
     }
-    
+
     public async Task RollbackAsync()
     {
         _transaction?.Rollback();
         _transaction?.Dispose();
         _transaction = null;
     }
-    
+
     public async Task<int> SaveChangesAsync()
     {
         // For Dapper, changes are immediate
         // This method exists for interface compatibility
         return await Task.FromResult(0);
     }
-    
+
     public void Dispose()
     {
         _transaction?.Dispose();
@@ -595,9 +887,9 @@ public class UnitOfWork : IUnitOfWork
 
 ---
 
-## 6. Backup and Recovery
+## 9. Backup and Recovery
 
-### 6.1 Backup Strategy
+### 9.1 Backup Strategy
 
 ```csharp
 public class DatabaseBackupService
@@ -607,32 +899,32 @@ public class DatabaseBackupService
         // SQLite backup using VACUUM INTO
         using var connection = new SqliteConnection($"Data Source={databasePath}");
         await connection.OpenAsync();
-        
+
         var command = connection.CreateCommand();
         command.CommandText = $"VACUUM INTO '{backupPath}'";
         await command.ExecuteNonQueryAsync();
     }
-    
+
     public async Task RestoreBackupAsync(string backupPath, string databasePath)
     {
         // Close all connections first
         SqliteConnection.ClearAllPools();
-        
+
         // Copy backup to database location
         File.Copy(backupPath, databasePath, overwrite: true);
     }
-    
+
     public async Task CreateAutoBackupAsync(string projectId)
     {
         var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
         var backupDir = Path.Combine(GetProjectPath(projectId), ".builder", "backups");
         Directory.CreateDirectory(backupDir);
-        
+
         // Backup all databases
         await CreateBackupAsync(
             GetDatabasePath(projectId, "project_graph.db"),
             Path.Combine(backupDir, $"project_graph_{timestamp}.db"));
-        
+
         await CreateBackupAsync(
             GetDatabasePath(projectId, "orchestrator.db"),
             Path.Combine(backupDir, $"orchestrator_{timestamp}.db"));
@@ -642,22 +934,22 @@ public class DatabaseBackupService
 
 ---
 
-## 7. Performance Optimization
+## 10. Performance Optimization
 
-### 7.1 Indexing Strategy
+### 10.1 Indexing Strategy
 
 - **Primary Keys**: All tables have primary keys
 - **Foreign Keys**: Indexed automatically
 - **Query Patterns**: Indexes on frequently queried columns
 - **Composite Indexes**: For multi-column WHERE clauses
 
-### 7.2 Connection Pooling
+### 10.2 Connection Pooling
 
 ```csharp
 public class DatabaseConnectionFactory
 {
     private readonly ConcurrentDictionary<string, SqliteConnection> _connections = new();
-    
+
     public SqliteConnection GetConnection(string databasePath)
     {
         return _connections.GetOrAdd(databasePath, path =>
@@ -669,14 +961,14 @@ public class DatabaseConnectionFactory
                 Cache = SqliteCacheMode.Shared,
                 Pooling = true
             }.ToString();
-            
+
             return new SqliteConnection(connectionString);
         });
     }
 }
 ```
 
-### 7.3 Query Optimization
+### 10.3 Query Optimization
 
 ```csharp
 // Use parameterized queries
@@ -692,9 +984,21 @@ var sql = "SELECT EXISTS(SELECT 1 FROM Projects WHERE Id = @Id)";
 
 ---
 
+## 11. Why This Architecture?
+
+1.  **Roslyn-Backed**: Relies on compiler truth, not regex.
+2.  **Deterministic**: Same input always yields same graph state.
+3.  **Snapshot-Safe**: DB state aligns perfectly with file system snapshots.
+4.  **Token-Efficient**: Graph traversal prevents dumping entire codebases into LLM.
+5.  **WinUI-Specific**: First-class handling of XAML bindings prevents MVVM drift.
+
+---
+
 ## References
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
 - [ROSLYN_INTEGRATION_SPECIFICATION.md](ROSLYN_INTEGRATION_SPECIFICATION.md) - Symbol indexing
 - [ORCHESTRATOR_SPECIFICATION.md](ORCHESTRATOR_SPECIFICATION.md) - State machine persistence
 - [BUILD_SYSTEM_SPECIFICATION.md](BUILD_SYSTEM_SPECIFICATION.md) - Build history tracking
+- [INDEXING_ARCHITECTURE_SPECIFICATION.md](INDEXING_ARCHITECTURE_SPECIFICATION.md) - Indexing strategy
+- [BACKGROUND_SYSTEMS_SPECIFICATION.md](BACKGROUND_SYSTEMS_SPECIFICATION.md) - Background systems
