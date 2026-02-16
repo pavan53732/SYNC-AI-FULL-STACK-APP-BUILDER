@@ -11,7 +11,7 @@
 ### Core Libraries
 - **Orchestration**: Custom state machine (events, reducers, task dispatch)
 - **HTTP Client**: HttpClient (built-in, async-first)
-- **AI Integration**: Anthropic SDK for Claude API
+- **AI Integration**: AI Engine (via `z-ai-web-dev-sdk`)
 - **Code Analysis**: Roslyn (Microsoft.CodeAnalysis.* NuGet packages)
 - **Configuration**: Microsoft.Extensions.Configuration (.json files)
 - **Dependency Injection**: Microsoft.Extensions.DependencyInjection (service container)
@@ -48,10 +48,9 @@ Microsoft.Extensions.DependencyInjection (service container)
 
 ## AI Integration
 
-### LLM Providers
-- **Primary**: Anthropic Claude API (Claude 3+ models)
-- **Alternative**: OpenAI GPT-4 / GPT-4o
-- **Local Option**: Ollama + Llama 2/Mistral (for privacy)
+### AI Engine Provider
+- **Primary**: AI Engine via `z-ai-web-dev-sdk` (Built-in)
+- **Configuration**: Unified AI interface for all generation tasks.
 
 ### Prompting Strategy
 - System prompts for code generation
@@ -189,7 +188,7 @@ Microsoft.Extensions.DependencyInjection (service container)
 ┌──────────────────▼──────────────────────────────┐
 │      Backend (.NET 8 / C# Console)              │
 │    - Project Manager                            │
-│    - AI Integration (Claude API)                │
+│    - AI Integration (AI Engine API)                │
 │    - Code Generator (Roslyn)                    │
 └──────────────────┬──────────────────────────────┘
                    │

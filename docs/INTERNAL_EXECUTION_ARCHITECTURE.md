@@ -488,7 +488,7 @@ public enum ImpactLevel { Isolated, Low, Medium, High }
 ```
 
 ### Use Cases
-- **Smart Retrieval**: Know exactly which files to send to LLM
+- **Smart Retrieval**: Know exactly which files to send to AI Engine
 - **Impact Analysis**: Warn if change affects many files
 - **Safe Patching**: AST-aware modifications
 - **Conflict Detection**: Prevent overlapping changes
@@ -948,7 +948,7 @@ Minimum checklist:
 If you try to build without these subsystems:
 
 ```
-LLM generates code
+AI Engine generates code
   ↓
 Write files directly
   ↓
@@ -968,7 +968,7 @@ Cascading failures
 **vs. With proper internalization:**
 
 ```
-LLM generates code
+AI Engine generates code
   ↓
 Transactional patch
   ↓

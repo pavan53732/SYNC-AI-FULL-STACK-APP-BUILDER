@@ -240,7 +240,7 @@ You can:
 
 #### 1. **Complex Apps Generate in Reasonable Time**
 - 30-60 second typical
-- Suggests staged processing, not single LLM call
+- Suggests staged processing, not single AI Engine call
 - Likely: intent parsing, architecture, code gen, validation
 
 #### 2. **Updates Are Intelligent**
@@ -346,7 +346,7 @@ User says: "Change to dark mode"
 | Aspect | Basic Generator | Lovable-Style System |
 |--------|---|---|
 | **Output Format** | Templates, boilerplate | Real, editable code |
-| **Generation** | Single LLM call | Multi-stage pipeline |
+| **Generation** | Single AI Engine call | Multi-stage pipeline |
 | **Errors** | Shown to user | Fixed silently |
 | **Validation** | Manual user testing | Automatic pre-validation |
 | **Code Quality** | Inconsistent | High (validated) |

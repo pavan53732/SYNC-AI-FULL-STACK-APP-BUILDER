@@ -57,6 +57,8 @@ Output:
 - [x] **Integration Agent** - wires dependencies
 - [x] **Fix Agent** - repairs build errors
 
+All agents are powered by the **AI Engine** via `z-ai-web-dev-sdk`.
+
 Each agent produces structured patches, not full files.
 
 #### 5. Structured Patch Engine (AST-Based)
@@ -353,8 +355,8 @@ Phase 5: Compile → If errors → Fix agent → Retry
 ```
 User: "Add validation to Customer model"
 → Retrieve entire Customer.cs
-→ Send to LLM: "Rewrite this"
-→ LLM regenerates entire file  
+→ Send to AI Engine: "Rewrite this"
+→ AI Engine regenerates entire file  
 → Lose comments, formatting, developer notes
 → Risk introducing bugs
 ```
@@ -489,7 +491,7 @@ User types: "Add customer validation"
 
 ### Feature 6: Smart Code Retrieval & Context Management
 
-**Description**: Use semantic embeddings to intelligently retrieve only relevant code files, solving LLM context window limits.
+**Description**: Use semantic embeddings to intelligently retrieve only relevant code files, solving AI Engine context window limits.
 
 **Strategy**:
 ```
@@ -506,7 +508,7 @@ Get top 5 matches:
   - DataAnnotations setup (85%)
   - Error handling (75%)
 ↓
-Send ONLY these 5 files (~2000 lines) to LLM
+Send ONLY these 5 files (~2000 lines) to AI Engine
 ↓
 (Not the entire 10K-file project)
 ```
@@ -515,7 +517,7 @@ Send ONLY these 5 files (~2000 lines) to LLM
 - ✅ Stays within context limit
 - ✅ Semantic understanding (embeddings)
 - ✅ Scales as project grows
-- ✅ Faster LLM processing
+- ✅ Faster AI Engine processing
 
 ---
 
@@ -614,7 +616,7 @@ Generated Files:
 - Initial generation: 30-60 seconds typical
 - Refinements: 5-15 seconds
 - **Why**: Multi-stage pipeline (parsing → architecture → generation → validation)
-- **Not** a single LLM call (which would be slower)
+- **Not** a single AI Engine call (which would be slower)
 
 #### Behavior 2: Intelligent Incremental Updates
 - User: "Change button colors" → Only CSS/styles regenerate

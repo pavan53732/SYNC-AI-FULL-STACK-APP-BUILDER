@@ -336,9 +336,9 @@ For prompt: *"Add customer validation"*
 2. **Search embeddings** - Find related code sections
 3. **Rank by relevance** - Use similarity score
 4. **Include context** - Add dependent files
-5. **Build context window** - Only relevant code to LLM
+5. **Build context window** - Only relevant code to AI Engine
 
-Result: LLM never sees full project, only ~2-5 relevant files.
+Result: AI Engine never sees full project, only ~2-5 relevant files.
 
 ---
 
@@ -543,6 +543,8 @@ def orchestrate_generation(spec, task_graph):
     return results, build_result
 ```
 
+**Note**: All agent communications are handled through the `z-ai-web-dev-sdk`.
+
 ---
 
 ## 5️⃣ Structured Patch Engine (AST-Based)
@@ -556,8 +558,8 @@ User: "Add validation to Customer model"
 
 Old approach:
 - Retrieve entire Customer.cs file
-- Send to LLM with "rewrite this"
-- LLM regenerates entire file
+- Send to AI Engine with "rewrite this"
+- AI Engine regenerates entire file
 - Lose comments, formatting, developer notes
 - Risk introducing bugs
 ```
@@ -966,7 +968,7 @@ Don't allow:
 ## 9️⃣ Token & Context Strategy
 
 ### Problem
-LLM context windows are limited. Can't send entire 10K-file project.
+AI Engine context windows are limited. Can't send entire 10K-file project.
 
 ### Solution: Smart Retrieval
 
@@ -1090,7 +1092,7 @@ Total tokens sent: ~3000-4000 (well under limit)
 
 | Aspect | Simple Generator | Lovable-Style Multi-Agent |
 |--------|-------------------|--------------------------|
-| **Code Generation** | Single LLM call | Multi-stage orchestration |
+| **Code Generation** | Single AI Engine call | Multi-stage orchestration |
 | **Code Changes** | Full file rewrites | AST-based surgical patches |
 | **Project Context** | Entire file dump | Smart semantic retrieval |
 | **Error Handling** | Show errors to user | Silent auto-retry loop |
@@ -1213,7 +1215,6 @@ for attempt in range(max_retries):
 - AST patches preserve code quality
 - Silent retry loops hide failures
 - Memory layers preserve decisions
-- Smart context windows manage tokens
 
 **Every "magic" feature is engineered complexity, carefully hidden from the user.**
 

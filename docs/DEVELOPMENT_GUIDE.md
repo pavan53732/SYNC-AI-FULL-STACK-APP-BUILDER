@@ -11,7 +11,7 @@
   - Extension: Visual Studio Project System Tools (for WinUI 3)
 - **Windows App SDK**: Included via NuGet (Microsoft.WindowsAppSDK 1.5+)
 - **Git**: For version control
-- **API Key**: Anthropic (Claude API) or OpenAI
+- **AI Engine SDK**: Built-in `z-ai-web-dev-sdk` (pre-installed)
 
 ### IDE Setup for WinUI 3
 
@@ -64,9 +64,8 @@ Create `appsettings.json` in `src/SyncAIAppBuilder/`:
 ```json
 {
   "AI": {
-    "Provider": "anthropic",
-    "ApiKey": "your-api-key-here",
-    "Model": "claude-3-5-sonnet-20241022"
+    "Engine": "z-ai-web-dev-sdk",
+    "Logging": "verbose"
   },
   "Logging": {
     "Level": "Information"
@@ -155,7 +154,7 @@ var builder = new HostBuilder()
         services.AddSingleton<MainWindow>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<IEditorViewModel, EditorViewModel>();
-        services.AddSingleton<IAIClient, ClaudeAIClient>();
+        services.AddSingleton<IAIClient, EngineClient>();
         services.AddSingleton<CodeIntelligenceService>();
         // ... other services
     });
@@ -208,7 +207,7 @@ Since all execution happens on user's PC, you must handle:
 | **Antivirus interference** | Warn user, suggest temp exclusion |
 | **Low disk space** | Check free space, fail gracefully |
 | **Limited RAM** | Disable parallel build if <4GB available |
-| **Network issues (if using cloud LLM)** | Retry with exponential backoff |
+| **Network issues (if using cloud AI Engine)** | Retry with exponential backoff |
 
 ### Pre-Build Validation (Before Every Build)
 
@@ -478,8 +477,8 @@ public class CustomAgent : IAgent
         // 1. Build system prompt for this agent
         var systemPrompt = GetSystemPrompt();
         
-        // 2. Call LLM with structured input
-        var response = await _aiClient.GenerateAsync(new LLMRequest
+        // 2. Call AI Engine with structured input
+        var response = await _aiClient.GenerateAsync(new AI EngineRequest
         {
             SystemPrompt = systemPrompt,
             UserInput = JsonConvert.SerializeObject(input),
@@ -664,7 +663,7 @@ public class AutoFixEngine
             "CS0106" => new AddUsingFix(error),
             "CS1503" => new AddTypeConversionFix(error),
             "CS0103" => new AddPropertyFix(error),
-            _ => new GenericLLMFix(error)
+            _ => new GenericAI EngineFix(error)
         };
     }
 }
@@ -691,7 +690,7 @@ public class EmbeddingService
             
             foreach (var chunk in chunks)
             {
-                // Generate embedding via OpenAI/Claude
+                // Generate embedding via AI Engine
                 var embedding = await _embeddingClient.EmbedAsync(chunk);
                 
                 // Store in SQLite
@@ -840,7 +839,7 @@ src/SyncAIAppBuilder.Tests/
 ## Key Classes & Interfaces
 
 ### AIService
-Handles communication with Claude/GPT API.
+Handles communication with AI Engine API.
 
 ```csharp
 public interface IAIService
@@ -1137,7 +1136,7 @@ When adding features:
 
 - [WinUI 3 Documentation](https://learn.microsoft.com/en-us/windows/apps/winui/winui3/)
 - [.NET Documentation](https://docs.microsoft.com/en-us/dotnet/)
-- [Claude API Documentation](https://claude.ai/docs)
+- [AI Engine API Documentation](https://claude.ai/docs)
 - [MVVM Pattern Guide](https://docs.microsoft.com/en-us/archive/msdn-magazine/2009/february/patterns-wpf-apps-with-the-model-view-viewmodel-design-pattern)
 
 ---

@@ -255,10 +255,10 @@ Generate → Compile → [Errors?] → Auto-fix → Retry → Success
 ```
 
 ### 5. ✅ Project Indexing & Smart Retrieval
-**Benefit**: LLM context stays manageable as project grows
+**Benefit**: AI Engine context stays manageable as project grows
 - Embed all code sections
 - Semantic search on user prompts
-- Send only top 5 relevant files to LLM
+- Send only top 5 relevant files to AI Engine
 - Not the entire 10K-file project
 
 ### 6. ✅ Persistent Memory Layer
@@ -337,7 +337,7 @@ Generate → Compile → [Errors?] → Auto-fix → Retry → Success
 #### 2. ✅ Observable Generation Timing
 - Initial generation: 30-60 seconds typical
 - Refinements: 5-15 seconds
-- **Why**: Not a single LLM call; multi-stage pipeline
+- **Why**: Not a single AI Engine call; multi-stage pipeline
 - **Suggests**: Parsing → Architecture → Generation → Validation happening internally
 
 #### 3. ✅ Intelligent Incremental Updates
@@ -617,7 +617,7 @@ CREATE TABLE session_context (
 <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.8+" />
 
 <!-- Vector embeddings (semantic search) -->
-<PackageReference Include="Azure.AI.OpenAI" Version="1.0+" />
+<PackageReference Include="Azure.AI.AI Engine" Version="1.0+" />
 
 <!-- SQLite with vector support -->
 <PackageReference Include="System.Data.SQLite" Version="1.0.118+" />

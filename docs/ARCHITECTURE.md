@@ -15,6 +15,55 @@ A comprehensive AI-powered Windows native application builder that generates com
 
 🔴 **See [ORCHESTRATOR_SPECIFICATION.md](ORCHESTRATOR_SPECIFICATION.md) for the CRITICAL FOUNDATION: deterministic orchestrator that must be implemented FIRST.**
 
+---
+
+## 🏗 System Architecture (The Local Builder)
+
+You are building a **Windows‑native autonomous construction system**. The system is divided into four primary logical layers supported by the AI Engine.
+
+### High-Level Stack
+```
+┌────────────────────────────────────┐
+│ WinUI 3 Desktop App (Control UI)  │
+│ - Prompt Console                   │
+│ - Project Explorer                 │
+│ - Build Status Viewer              │
+│ - Logs & Diagnostics               │
+└────────────────────────────────────┘
+                ↓
+┌────────────────────────────────────┐
+│ Deterministic Orchestrator        │
+│ - State Machine                    │
+│ - Task Graph Executor              │
+│ - Retry Controller                 │
+│ - Event Log                        │
+└────────────────────────────────────┘
+                ↓
+┌────────────────────────────────────┐
+│ Execution Kernel (Local Only)     │
+│ - Roslyn Indexing Engine           │
+│ - Structured Patch Engine          │
+│ - MSBuild Runner                   │
+│ - NuGet Restore Manager            │
+│ - File Sandbox Manager             │
+│ - Snapshot + Rollback System       │
+└────────────────────────────────────┘
+                ↓
+┌────────────────────────────────────┐
+│ SQLite                             │
+│ - Project Graph                    │
+│ - Symbol Index                     │
+│ - Memory Layers                    │
+│ - Error History                    │
+└────────────────────────────────────┘
+                ↓
+      AI Engine (Built-in SDK Generation)
+```
+
+**AI Engine constraints**: It never writes files, executes code, runs builds, or accesses the filesystem directly. It only returns structured JSON generation output.
+
+---
+
 ## System Architecture
 
 ### 🔴 FOUNDATION: Deterministic Orchestrator (Must Implement First)
@@ -23,7 +72,9 @@ A comprehensive AI-powered Windows native application builder that generates com
 
 - **Responsibility**: Control all state transitions, ensure no implicit states, serialize all mutations
 - **Core**: State machine reducer (pure function, deterministic)
+- **State Machine Transitions**: `IDLE` → `SPEC_PARSED` → `TASK_GRAPH_READY` → `TASK_EXECUTING` → `VALIDATING` → `RETRYING` → `COMPLETED` / `FAILED`.
 - **Guarantee**: Perfect replay from event log, no silent corruption
+- **Rules**: One mutation task at a time, max retry budget per task, snapshot before every mutation, rollback on failure.
 - **Constraint**: Only 1 mutation task at time (no parallel patching)
 - **See**: [ORCHESTRATOR_SPECIFICATION.md](ORCHESTRATOR_SPECIFICATION.md) for complete details
 
@@ -83,6 +134,7 @@ Prompt → Result (30-60 seconds)
 - **Enables**: Smart retrieval, impact analysis, safe modifications
 - **Storage**: SQLite with embeddings for semantic search
 - **Tracks**: File index, dependency graph, route registry, schema map
+- **Internal Tables**: `files`, `symbols`, `references`, `dependencies`, `project_graph` (Incremental Index)
 
 #### Layer 4: Multi-Agent Generation
 - **Responsibility**: Decompose complex generation into specialized agents
@@ -100,17 +152,31 @@ Prompt → Result (30-60 seconds)
 - **Technology**: Roslyn for C# AST manipulation
 - **Benefit**: Preserves formatting, comments, developer notes
 - **vs. Traditional**: Surgical edits instead of full rewrites
+- **Operation Schema**: AI Engine returns structured JSON operations:
+```json
+{
+  "operation": "ADD_METHOD",
+  "targetFile": "CustomerService.cs",
+  "payload": { ... }
+}
+```
 
 #### Layer 6: Validation & Silent Retry Loop
 - **Responsibility**: Auto-detect and fix build errors
 - **Hidden**: All errors and retries from user
 - **Shows**: Only final success
 - **Loop**: Generate → Compile → Detect → Fix → Retry
+- **Error Sensitivity**: The system must classify specific errors (`CSxxxx` compile, `XDGxxxx` XAML, `NUxxxx` NuGet, `MSBxxxx` MSBuild) before attempting fixes.
+- **Rules**: Retry only allowed for patch-related failures. Snapshot taken before every attempt.
 
 #### Layer 7: Memory & State
 - **Responsibility**: Preserve architectural decisions and context
 - **Stores**: Project config, stack decisions, naming conventions, error patterns
 - **Enables**: Architectural consistency across iterations
+- **Key Tables**:
+    - `project_memory`: Stacks, architecture patterns, naming conventions
+    - `error_memory`: Error signatures, successful fixes, resolution history
+    - `decision_memory`: DI choices, DB providers, Auth modes, state management patterns
 
 ---
 
@@ -128,7 +194,7 @@ Prompt → Result (30-60 seconds)
 - **Deployment**: MSIX package (modern Windows app installer)
 
 ### Intent & Specification Service
-- **Technology**: Claude API + NLP
+- **Technology**: AI Engine (via `z-ai-web-dev-sdk`)
 - **Responsibility**: Convert prompt to structured spec
 - **Output Example**:
 ```json
@@ -151,10 +217,10 @@ Prompt → Result (30-60 seconds)
   - Embeddings (semantic code search)
   - Route registry (all API endpoints)
   - Schema map (database structure)
-- **Usage**: Smart file retrieval for LLM context
+- **Usage**: Smart file retrieval for AI Engine context
 
-### Multi-Agent Orchestrator
-- **Technology**: .NET + Claude API
+### AI Engine Orchestrator
+- **Technology**: .NET + `z-ai-web-dev-sdk`
 - **Responsibility**: Coordinate 6 specialized agents
 - **Strategy**: Sequential with parallelizable stages
 
@@ -210,7 +276,7 @@ Live Preview / Deploy
 ```
 
 **Key Insight**: What looks like "instant generation" is actually:
-- Multiple agents working in parallel
+- Multiple agents working in parallel via the **AI Engine**
 - Smart context retrieval (not full project dump)
 - Automatic error fixing (hidden from user)
 - Silent retries (only success shown)
@@ -224,8 +290,8 @@ Live Preview / Deploy
 
 ## Key Architectural Decisions
 
-### 1. Multi-Agent Over Monolithic LLM
-- **Why**: Specialized agents produce better code than single generalist LLM
+### 1. Multi-Agent Over Monolithic AI Engine
+- **Why**: Specialized agents produce better code than single generalist AI Engine
 - **Benefit**: Easier to control output, debug, test
 - **Tradeoff**: More orchestration complexity (but hidden from user)
 
@@ -239,7 +305,7 @@ Live Preview / Deploy
 - **Benefit**: Minimal diffs, merge-friendly, safer
 
 ### 4. Smart Retrieval Over Full Context
-- **Why**: Solves LLM context window limits
+- **Why**: Solves AI Engine context window limits
 - **Strategy**: Embed code → Search semantically → Send only relevant files
 - **Result**: Stable generation as project grows
 
@@ -248,8 +314,32 @@ Live Preview / Deploy
 - **How**: Auto-classify errors → Apply fixes → Retry until success
 
 ### 6. Persistent Memory Over Stateless Generation
-- **Why**: Ensures architectural consistency across iterations
 - **Stores**: Stack decisions, patterns, error solutions
+
+---
+
+## 🧱 Builder Project Structure
+The builder application itself is partitioned to ensure clean separation between the user interface, the deterministic engine, and the local execution kernel.
+
+```
+SyncAIAppBuilder/
+├── UI/                        # WinUI 3: Prompt Console, Explorer, Logs, Status
+├── Orchestrator/              # StateMachine.cs, TaskExecutor.cs, RetryController.cs
+├── Kernel/                    # BuildRunner.cs, RoslynIndexer.cs, PatchEngine.cs, SandboxManager.cs
+├── Memory/                    # DatabaseContext.cs, GraphRepository.cs (SQLite)
+├── Services/                  # IntentService.cs, PlanningService.cs
+├── Agents/                    # Specialized AI Agent logic for code generation
+└── Infrastructure/            # AI Engine Wrapper (z-ai-web-dev-sdk)
+```
+
+---
+
+## ⚠️ Critical Stability Constraints (Local-Only Handling)
+The kernel must detect and mitigate machine variability that cloud-based systems typically avoid:
+- **SDK Variability**: Detect missing .NET workloads or incompatible SDK versions.
+- **Resource Limits**: Monitor disk space and RAM (disable parallel builds if <4GB).
+- **External Interference**: Handle Antivirus blocking builds or NuGet cache corruption.
+- **Corruption Recovery**: Automated partial project corruption detection and rollback.
 
 ---
 
@@ -360,6 +450,7 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 
 For deeper technical details:
 - [INTERNAL_ARCHITECTURE.md](INTERNAL_ARCHITECTURE.md) - Complete multi-agent breakdown
+- [AI_ENGINE_OUTPUT_CONTRACTS.md](AI_ENGINE_OUTPUT_CONTRACTS.md) - Formal JSON output contracts
 - [FEATURES.md](FEATURES.md) - Feature roadmap
 - [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) - Implementation guide
 

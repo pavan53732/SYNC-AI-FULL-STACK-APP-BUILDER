@@ -363,7 +363,7 @@ Same design philosophy, different tech stack
 ### Pattern 1: Generation Takes Reasonable Time
 - Cold generation: 30-60 seconds
 - Refinements: 5-15 seconds
-- **Why**: Multiple stages (not just LLM call)
+- **Why**: Multiple stages (not just AI Engine call)
 - **Good sign**: Means validation is happening internally
 
 ### Pattern 2: No Errors Ever Shown

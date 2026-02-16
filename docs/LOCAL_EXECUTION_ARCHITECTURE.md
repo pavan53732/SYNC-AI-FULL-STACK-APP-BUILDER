@@ -94,7 +94,7 @@ Run entirely on user's PC. Zero cloud.
 | **Logging** | Centralized | Local persistence |
 | **Antivirus** | Managed | User's settings apply |
 | **Disk Requirements** | Server managed | User's available space |
-| **Network** | Internal to datacenter | User's connection (if using cloud LLM) |
+| **Network** | Internal to datacenter | User's connection (if using cloud AI Engine) |
 | **Code Execution** | Trusted (we control) | Untrusted (user generated) |
 | **Determinism** | Can hide infra issues | Must handle all variability |
 

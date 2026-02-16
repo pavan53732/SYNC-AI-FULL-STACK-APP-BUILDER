@@ -166,7 +166,7 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 │   │   │   │   └── ConfigService.cs             # Configuration
 │   │   │   │
 │   │   │   └── Infrastructure
-│   │   │       ├── AIClient.cs                  # Claude/GPT API wrapper
+│   │   │       ├── AIClient.cs                  # AI Engine wrapper (z-ai-web-dev-sdk)
 │   │   │       ├── LoggingService.cs            # Structured logging (Serilog)
 │   │   │       └── DatabaseService.cs           # SQLite backend (indexing, memory)
 │   │   │
@@ -317,7 +317,7 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 
 | Service | Responsibility |
 |---------|-----------------|
-| `AIService.cs` | Calls Claude/GPT APIs |
+| `AIService.cs` | Calls AI Engine API |
 | `CodeGeneratorService.cs` | Generates XAML/C# code |
 | `BuildService.cs` | Compiles projects to .exe |
 | `ProjectService.cs` | Manages project files |
