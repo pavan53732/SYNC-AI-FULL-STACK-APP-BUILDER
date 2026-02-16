@@ -5,8 +5,8 @@
 ### Language & Framework
 - **Primary Language**: C# (.NET 8.0+)
 - **Runtime**: .NET Runtime (managed, GC)
-- **IDE**: Visual Studio 2022 (primary), VS Code with C# Dev Kit
-- **Architecture**: Multi-layer with Orchestrator (deterministic state machine)
+- **IDE**: **None Required** (Fully self-contained autonomous environment)
+- **Architecture**: Multi-agent Autonomous Construction Environment (deterministic state machine)
 
 ### Core Libraries
 - **Orchestration**: Custom state machine (events, reducers, task dispatch)
@@ -67,10 +67,10 @@ Microsoft.Extensions.DependencyInjection (service container)
 - **StringBuilder**: For template-based generation
 - **Regex**: For code manipulation
 
-### Build System
-- **MSBuild**: .NET project compilation
-- **.NET CLI**: dotnet commands for building
-- **Project SDK**: Microsoft.NET.Sdk (modern format)
+### Build System (Internal Bundled Services)
+- **MSBuild**: Local project compilation (abstracted service)
+- **.NET CLI**: dotnet commands (managed via Execution Kernel)
+- **Project SDK**: Microsoft.NET.Sdk (modern project format)
 
 ### Package Management
 - **NuGet**: For dependency management
@@ -153,17 +153,13 @@ Microsoft.Extensions.DependencyInjection (service container)
 
 ## Summary Installation (WinUI 3)
 
-### Required for Development
+### Required for Operation (Self-Managed)
 ```
 - Windows 10 Build 22621+ or Windows 11
-- .NET 8.0 SDK or later
-- Visual Studio 2022 (Community/Professional/Enterprise)
-  - Workload: Windows Desktop Development with C++
-  - Extension: Windows App SDK templates
-  - Extension: XAML tooling for WinUI
-- Git
+- .NET 8.0 SDK (Detected/Guided by Builder on first run)
 - Administrator access (for MSIX installation/testing)
 ```
+*Note: Users do NOT need Visual Studio or manual SDK configuration.*
 
 ### Optional
 ```

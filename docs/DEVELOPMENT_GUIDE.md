@@ -1,11 +1,15 @@
 # Development Guide
 
+> [!NOTE]
+> This guide is for **contributors developing the SyncAI Explorer tool itself**. 
+> Users of the completed application do NOT need these tools, as the environment is autonomous and self-contained.
+
 ## Getting Started
 
-### Prerequisites (WinUI 3 Development)
+### Prerequisites (For Builder Development)
 - **OS**: Windows 10 Build 22621+ or Windows 11
-- **.NET SDK**: .NET 8.0.x or later
-- **Visual Studio 2022**: Community/Professional/Enterprise
+- **.NET SDK**: .NET 8.0.x or later (Required for compiling the builder)
+- **Visual Studio 2022**: For contributing to the builder's C# and XAML codebase.
   - Workload: "Windows Desktop Development with C++"
   - Workload: "Desktop Development with .NET"
   - Extension: Visual Studio Project System Tools (for WinUI 3)

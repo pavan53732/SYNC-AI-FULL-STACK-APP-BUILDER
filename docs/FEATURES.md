@@ -1,6 +1,6 @@
 # Features & Roadmap
 
-**Core Design Philosophy**: Hide complexity, show results. Multi-agent orchestration, structured specifications, and silent error fixing to deliver a seamless AI app building experience.
+**Core Design Philosophy**: Hide complexity, show results. A fully self-contained **Autonomous Software Construction Environment** leveraging multi-agent orchestration and silent error fixing to replace the need for an external IDE.
 
 See [DESIGN_PHILOSOPHY.md](DESIGN_PHILOSOPHY.md) for UX principles and [INTERNAL_ARCHITECTURE.md](INTERNAL_ARCHITECTURE.md) for technical implementation.
 
@@ -105,12 +105,19 @@ Each agent produces structured patches, not full files.
 - [x] Version snapshots
 - [x] Recent projects list
 
-#### 11. Real Code Export & Portability
+#### 11. Environment Bootstrapping & Self-Repair
+- [x] Automatic .NET SDK detection
+- [x] Guided SDK installation/setup
+- [x] NuGet cache corruption detection
+- [x] "Self-repair" strategy for build environments
+- [x] Low-resource (RAM/Disk) mitigation strategies
+
+#### 12. Real Code Export & Portability (Post-Construction)
 - [x] Generate real, editable C# code (not templates)
 - [x] Generate real, editable XAML (not proprietary format)
 - [x] Download as ZIP (full project, all source)
 - [x] GitHub sync (create repo, push code automatically)
-- [x] Visual Studio integration (open project directly)
+- [x] Visual Studio compatibility (open project directly for manual dev)
 - [x] Standalone execution (code runs anywhere)
 - [x] Continue development post-export (code not locked)
 

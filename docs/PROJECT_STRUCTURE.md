@@ -1,8 +1,10 @@
-# Project Structure (WinUI 3)
+# Project Layout & Subsystems
 
-## User Workspace Directory Structure (Response 7 - Local Execution)
+## User Workspace Directory Structure (Local Execution)
 
-All generated projects live in user's workspace:
+This document outlines the directory layout for the **SyncAI Explorer** project. The structure is designed to separate the **Autonomous Construction Engine** from the user interface and the generated project sandbox.
+
+### User Workspace Layout
 
 ```
 C:\YourBuilder\Workspaces\
@@ -40,7 +42,7 @@ C:\YourBuilder\Workspaces\
     └── nuget_packages_*.cache       # NuGet package cache
 ```
 
-**Key Points** (Response 7):
+**Key Points**:
 - User code lives in `src/` (version controllable, visible)
 - Builder metadata in `.builder/` (hidden, internal management)
 - Snapshots created BEFORE each task (not after)
@@ -57,12 +59,20 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 │
 ├── docs/                              # Documentation
 │   ├── ARCHITECTURE.md                # System architecture
+│   ├── INTERNAL_ARCHITECTURE.md       # Multi-agent system details
+│   ├── INTERNAL_EXECUTION_ARCHITECTURE.md # Internal subsystems
+│   ├── LOCAL_EXECUTION_ARCHITECTURE.md # Local-only deployment
+│   ├── ORCHESTRATOR_SPECIFICATION.md  # Deterministic orchestrator
 │   ├── TECHNOLOGY_STACK.md            # Tech choices (WinUI 3)
 │   ├── FEATURES.md                    # Feature roadmap
 │   ├── PROJECT_STRUCTURE.md           # This file
 │   ├── DEVELOPMENT_GUIDE.md           # Development setup
 │   ├── API_DOCUMENTATION.md           # API specs
-│   └── DEPLOYMENT.md                  # Deployment guide (MSIX)
+│   ├── DEPLOYMENT.md                  # Deployment guide (MSIX)
+│   ├── DESIGN_PHILOSOPHY.md           # UX design principles
+│   ├── USER_WORKFLOW.md               # User behavior & workflow
+│   ├── FEEDBACK_INTEGRATION_SUMMARY.md # Feedback integration
+│   └── AI_ENGINE_OUTPUT_CONTRACTS.md  # AI Engine output schemas
 │
 ├── src/                               # Source code
 │   │
@@ -206,7 +216,6 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 │   │   │   └── ValidationHelper.cs
 │   │   │
 │   │   └── appsettings.json           # Configuration
-
 │   │
 │   ├── SyncAIAppBuilder.Tests/        # Unit tests
 │   │   ├── SyncAIAppBuilder.Tests.csproj

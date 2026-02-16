@@ -14,6 +14,7 @@ Based on evidence from production AI app builders like Lovable.dev
 > 
 > Smooth UX does not mean the system is simple.
 > It means the system is sophisticated AND the UI abstracts away the details.
+> **The Goal**: A completely autonomous construction environment where the user never needs to touch an IDE, CLI, or compiler logs.
 
 **What Users See** vs **What Happens Internally**:
 
@@ -158,10 +159,11 @@ System reality:
 ### Principle 1: Fail Silently, Succeed Loudly
 
 **Implementation**:
-- Internal errors? Classify and auto-fix
-- Still broken after 5 retries? Fallback to simpler generation
-- Only show success states to user
-- Never show compile logs
+- **Internal errors?** Classify and auto-fix.
+- **Still broken after 5 retries?** Fallback to simpler generation.
+- **Missing SDK/Tooling?** Auto-bootstrap or guide silently.
+- **Only show success states** to the user.
+- **Never show compile logs** or raw MSBuild output.
 
 **Example**:
 ```

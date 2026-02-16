@@ -11,13 +11,15 @@ This document describes what users actually see and experience, plus what's happ
 **Lovable.dev Is NOT**:
 - ❌ A visual drag-and-drop no-code builder
 - ❌ A template-based generator
+- ❌ A plugin or extension for Visual Studio/IDE
 - ❌ A low-code platform with proprietary format
 
-**Lovable.dev IS**:
-- ✅ An AI system that generates real, editable source code
-- ✅ Produces frontend (React) + backend + database + auth
-- ✅ Exports as real code (GitHub sync, download, etc.)
-- ✅ Users can take code and continue development elsewhere
+**SyncAI Explorer IS**:
+- ✅ A self-contained **Autonomous Software Construction Environment**
+- ✅ An AI system that generates real, editable source code without requiring an IDE
+- ✅ Produces frontend (WinUI 3) + backend + database + auth
+- ✅ Exports as real code but manages the entire lifecycle locally
+- ✅ Users can take code and continue development elsewhere if they choose
 
 ---
 
@@ -53,11 +55,10 @@ Input: "Build a CRM app with customer management and analytics"
 ```
 
 **User Doesn't See:**
-- Parsing stages
-- Compilation steps
-- Validation loops
-- Error fixing attempts
-- Dependency resolution
+- .NET SDK checks or NuGet restoration
+- Parsing stages or compilation steps
+- Validation loops or MSBuild error logs
+- Error fixing attempts or dependency resolution
 
 ---
 
@@ -139,7 +140,8 @@ Retry Attempt 2 of 5...
 
 **Why It Matters:**
 - Users get a *working app* not broken code
-- Errors are fixed automatically
+- **NO IDE dependency**: No need to open Visual Studio or run `dotnet`
+- Errors are fixed automatically and silently
 - No debugging burden on user
 - Feels like "magic"
 

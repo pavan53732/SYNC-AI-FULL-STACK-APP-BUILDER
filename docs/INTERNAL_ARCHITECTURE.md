@@ -1,6 +1,6 @@
-# Internal Architecture - Multi-Agent System
+# Internal Architecture - Multi-Agent System (Autonomous Construction Env)
 
-**Based on Production Analysis of Lovable & Similar AI Builders**
+**Mission**: A fully self-contained **Windows-native autonomous software construction environment** where all build and execution logic is local, requiring no external IDE or user-managed developer tooling.
 
 This document details the **hidden complexity** that makes AI app builders feel seamless. The smoothness is not from simplicity—it's from sophisticated orchestration hidden from the user.
 

@@ -1,7 +1,7 @@
 # Windows Native App Builder - Architecture
 
 ## Project Overview
-A comprehensive AI-powered Windows native application builder that generates complete Windows desktop applications end-to-end using natural language prompts. This system leverages **multi-agent orchestration**, **structured specifications**, and **silent retry loops** to deliver a seamless, production-grade experience.
+A comprehensive AI-powered **Windows-native autonomous software construction environment** that generates complete Windows desktop applications end-to-end using natural language prompts. This system leverages **multi-agent orchestration**, **structured specifications**, and **silent retry loops** to deliver a seamless, production-grade experience.
 
 **See [INTERNAL_ARCHITECTURE.md](INTERNAL_ARCHITECTURE.md) for detailed technical breakdown of the multi-agent system.**
 
@@ -77,6 +77,16 @@ You are building a **Windows‑native autonomous construction system**. The syst
 - **Rules**: One mutation task at a time, max retry budget per task, snapshot before every mutation, rollback on failure.
 - **Constraint**: Only 1 mutation task at time (no parallel patching)
 - **See**: [ORCHESTRATOR_SPECIFICATION.md](ORCHESTRATOR_SPECIFICATION.md) for complete details
+
+---
+
+## 🚫 The "No IDE Required" Philosophy
+The system is built as an **autonomous software construction environment**, not a developer utility.
+
+*   **Zero Tooling Exposure**: Users never open Visual Studio, run `dotnet build`, or manage NuGet manually.
+*   **Embedded Services**: The .NET SDK, MSBuild, and Roslyn are **internal bundled services**, not external user tools.
+*   **Developer-Free Workflow**: The Orchestrator and Patch Engine handle all file edits and debugging silently.
+*   **The Goal**: A self-contained constructor where the only external dependency is the Cloud AI reasoning.
 
 ---
 
@@ -336,10 +346,11 @@ SyncAIAppBuilder/
 
 ## ⚠️ Critical Stability Constraints (Local-Only Handling)
 The kernel must detect and mitigate machine variability that cloud-based systems typically avoid:
-- **SDK Variability**: Detect missing .NET workloads or incompatible SDK versions.
-- **Resource Limits**: Monitor disk space and RAM (disable parallel builds if <4GB).
-- **External Interference**: Handle Antivirus blocking builds or NuGet cache corruption.
-- **Corruption Recovery**: Automated partial project corruption detection and rollback.
+- **Environment Bootstrapping**: Automatically detect missing .NET SDKs and **guide the user through installation** or install automatically.
+- **SDK Variability**: Detect missing .NET workloads (WinUI 3, XAML) and handle version mismatches.
+- **Resource Intelligence**: Monitor disk space and RAM (disable parallel builds if <4GB); warn when system resources are critically low.
+- **External Interference**: Detect and handle Antivirus blocking builds or NuGet cache corruption with "self-repair" strategies.
+- **Corruption Recovery**: Automated partial project corruption detection and rollback via the snapshot system.
 
 ---
 

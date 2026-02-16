@@ -6,13 +6,13 @@
 
 ---
 
-## Core Principle
+## Core Principle: The Autonomous Construction Environment
 
 > "Fully internal" does NOT mean "no tools exist"
 > 
-> It means: All tools are embedded services, abstracted from users.
-> Users never touch IDE, CLI, or external build systems.
-> Everything happens inside your platform.
+> It means: All tools are **embedded services**, not user-facing developer utilities.
+> Users never open an IDE, run CLI commands, or manage build systems.
+> The builder acts as a self-contained **Autonomous Software Construction Environment**.
 
 ---
 
@@ -35,7 +35,7 @@ Your Windows builder must do the same:
 - Wrap XAML compilation
 - Control NuGet restoration
 
-**Users never see these tools.**
+**Users never see or interact with these tools directly.** They are managed entirely by the orchestrator. This "No IDE Required" model ensures that the complexity of the .NET ecosystem is fully abstracted.
 
 ---
 
