@@ -21,20 +21,33 @@ public class PreviewService
     private readonly CodeHighlightService _codeHighlighter;
     
     // Mode 1: Quick XAML Preview (Embedded)
+    // ⚠️ LIMITATION: Only works for simple XAML without code-behind/ViewModels
     public async Task<UIElement> RenderXamlPreviewAsync(string xamlContent)
     {
-        try
+        UIElement element = null;
+        Exception parseException = null;
+        
+        // CRITICAL: XamlReader.Load MUST run on UI thread (WinUI 3 thread affinity)
+        await _dispatcherQueue.EnqueueAsync(() =>
         {
-            // Parse XAML string to UIElement
-            var element = await Task.Run(() => 
-                XamlReader.Load(xamlContent) as UIElement);
-            
-            return element;
-        }
-        catch (XamlParseException ex)
+            try
+            {
+                // Parse XAML string to UIElement
+                element = XamlReader.Load(xamlContent) as UIElement;
+            }
+            catch (XamlParseException ex)
+            {
+                parseException = ex;
+                _logger.LogError(ex, "XAML parse failed at line {Line}", ex.LineNumber);
+            }
+        });
+        
+        if (parseException != null)
         {
-            throw new PreviewException($"XAML parsing failed: {ex.Message}", ex);
+            throw new PreviewException($"XAML parsing failed: {parseException.Message}", parseException);
         }
+        
+        return element;
     }
     
     // Mode 2: Code View (Syntax Highlighted)
@@ -49,9 +62,18 @@ public class PreviewService
     }
     
     // Mode 3: Full Launch (Compiled App)
+    // ⚠️ SECURITY: Requires user consent before launching AI-generated code
     public async Task<Process> LaunchFullPreviewAsync(string projectPath)
     {
-        // Step 1: Build the project
+        // SECURITY STEP 1: Show consent dialog
+        var consent = await ShowSecurityConsentDialogAsync();
+        if (!consent)
+        {
+            _logger.LogInformation("User declined to launch generated application");
+            return null;
+        }
+        
+        // Step 2: Build the project
         var buildResult = await _buildService.BuildAsync(projectPath);
         
         if (!buildResult.Success)
@@ -59,20 +81,63 @@ public class PreviewService
             throw new BuildException("Build failed", buildResult.Errors);
         }
         
-        // Step 2: Get executable path
+        // Step 3: Get executable path
         var exePath = Path.Combine(
             projectPath, 
             "bin/Debug/net8.0-windows/GeneratedApp.exe");
         
-        // Step 3: Launch process
+        // Step 4: Launch process with limited privileges
         var process = Process.Start(new ProcessStartInfo
         {
             FileName = exePath,
-            UseShellExecute = true,
-            WorkingDirectory = Path.GetDirectoryName(exePath)
+            UseShellExecute = false,  // More secure
+            WorkingDirectory = Path.GetDirectoryName(exePath),
+            CreateNoWindow = false
         });
         
+        _logger.LogInformation("Launched generated application: {ExePath}", exePath);
         return process;
+    }
+    
+    /// <summary>
+    /// Shows security consent dialog before launching AI-generated code.
+    /// </summary>
+    private async Task<bool> ShowSecurityConsentDialogAsync()
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "Security Warning",
+            Content = new StackPanel
+            {
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = "This will run AI-generated code on your computer.",
+                        TextWrapping = TextWrapping.Wrap,
+                        FontWeight = FontWeights.SemiBold
+                    },
+                    new TextBlock
+                    {
+                        Text = "Only proceed if you trust the generated application.",
+                        TextWrapping = TextWrapping.Wrap
+                    },
+                    new InfoBar
+                    {
+                        Severity = InfoBarSeverity.Warning,
+                        IsOpen = true,
+                        Message = "Future versions will support Windows Sandbox for isolated execution."
+                    }
+                }
+            },
+            PrimaryButtonText = "I Understand, Launch",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close
+        };
+        
+        var result = await dialog.ShowAsync();
+        return result == ContentDialogResult.Primary;
     }
 }
 ```
@@ -277,6 +342,35 @@ public sealed partial class PreviewPanel : UserControl
 | **Use Case** | Quick UI checks | Code review | Final testing |
 | **Build Required** | No | No | Yes |
 | **Separate Window** | No | No | Yes |
+
+---
+
+### Embedded XAML Preview Limitations
+
+> **IMPORTANT**: `XamlReader.Load()` can only parse **simple XAML** without compiled dependencies.
+
+| XAML Feature | Supported | Reason |
+|--------------|-----------|--------|
+| Basic layouts (Grid, StackPanel, etc.) | ✅ Yes | Built-in WinUI 3 controls |
+| Standard controls (Button, TextBox, etc.) | ✅ Yes | Built-in WinUI 3 controls |
+| Static resources (colors, styles) | ✅ Yes | Can be parsed from XAML |
+| Simple data binding (`{Binding}`) | ⚠️ Partial | Works if DataContext set manually |
+| **Custom controls** | ❌ No | Types not available at runtime |
+| **Code-behind event handlers** | ❌ No | Requires compilation |
+| **x:Bind (compiled bindings)** | ❌ No | Compile-time only |
+| **ViewModels** | ❌ No | Requires compiled assembly |
+| **Custom converters** | ❌ No | Types not available |
+
+**Fallback Strategy**:
+```
+1. Try Embedded Preview (XamlReader.Load)
+   ↓ (if XamlParseException)
+2. Show Code View with syntax highlighting
+   ↓ (user can request)
+3. Full Launch (Mode 3) - always works (100% accurate)
+```
+
+**Recommendation**: Use Embedded Preview for **quick layout checks** only. For full testing, use **Full Launch** (Mode 3).
 
 ---
 

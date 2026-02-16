@@ -473,7 +473,7 @@ CREATE TABLE Projects (
     TemplateName TEXT,
     CreatedDate DATETIME,
     ModifiedDate DATETIME,
-    ProjectPath TEXT NOT NULL
+    WorkspacePath TEXT NOT NULL
 );
 
 -- Project History
@@ -500,7 +500,7 @@ CREATE TABLE ProjectHistory (
   },
   "Build": {
     "OutputDirectory": "./output",
-    "CleanBeforeBuild": true
+    "CleanBeforeBuild": false
   },
   "Logging": {
     "Level": "Information"

@@ -38,9 +38,10 @@ Your Windows builder must do the same:
 
 ---
 
-## Part 2: Local-Only Model Architecture
 
-### Core Architecture Shift: Local-Only Model
+## Part 2: Local-First Build Model Architecture
+
+### Core Architecture Shift: Local-First Build Model
 
 #### Previous Assumption (Cloud-Based)
 Similar to Lovable, Budibase, or other web builders:
@@ -49,14 +50,40 @@ Similar to Lovable, Budibase, or other web builders:
 - Build infrastructure centralized
 - Infra complexity hidden
 
-#### New Reality (Local-Only Model with WinUI 3)
-All execution on user's PC:
+#### New Reality (Local-First Build Model with WinUI 3)
+All **build and execution** on user's PC:
 - WinUI 3 desktop application (modern Windows UI)
 - All build operations local (MSBuild, .NET SDK embedded)
 - User controls infrastructure
 - Complexity is visible and managed by orchestrator
 
+### Cloud Dependencies Clarification
+
+> **IMPORTANT**: "Local-First" refers to the **build infrastructure**, not all components.
+
+**Local Components** (Zero Cloud Dependency):
+- ✅ Build system (MSBuild, .NET SDK)
+- ✅ File system operations (snapshots, rollback)
+- ✅ Preview rendering (XAML, code view)
+- ✅ Application execution (generated .exe runs locally)
+- ✅ Database (SQLite, local storage)
+- ✅ Roslyn code analysis (AST parsing, symbol indexing)
+
+**Cloud Components** (Requires Internet):
+- ☁️ AI code generation (GPT-4 API calls)
+- ☁️ AI SDK (z-ai-web-dev-sdk)
+- ☁️ NuGet package downloads (first-time only, then cached)
+
+**Accurate Description**: 
+> "Local-First **Build Infrastructure** with Cloud-Powered **Intelligence**"
+
+**User Impact**:
+- ✅ Can build and run existing projects **offline**
+- ❌ Cannot generate new code **offline** (requires AI API)
+- ✅ NuGet packages cached locally after first download
+
 ### Two-Layer Architecture (Single WinUI 3 App)
+
 
 ```
 ┌─────────────────────────────────────────┐

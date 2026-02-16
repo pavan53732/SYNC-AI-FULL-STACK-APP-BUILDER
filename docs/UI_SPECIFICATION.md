@@ -611,7 +611,150 @@ public partial class App : Application
 
 ---
 
-## 4. UI → Orchestrator Contract
+## 4. Progressive Disclosure Pattern (Lovable-Style UX)
+
+### Philosophy
+
+> **"Powerful internal system, minimal visible complexity"**
+
+The UI follows a **progressive disclosure** pattern where advanced features are hidden by default, presenting a clean, calm interface to users while maintaining full power for developers who need it.
+
+### Default View (Simple Mode)
+
+**Always Visible**:
+- ✅ Prompt input (EditorPage)
+- ✅ Generate button
+- ✅ Preview tabs (XAML Preview, Code View, Full Launch)
+- ✅ Export button
+- ✅ Status bar (minimal info: Orchestrator state, SDK status, error count)
+
+**Hidden by Default**:
+- ❌ Build Monitor panel (detailed orchestrator state)
+- ❌ Task graph visualization
+- ❌ Raw build logs
+- ❌ Retry attempt details
+- ❌ Snapshot history
+- ❌ Advanced build settings
+
+### Developer Mode Toggle
+
+Users can enable **"Developer Mode"** in Settings to reveal advanced features:
+
+```csharp
+public class MainViewModel : ObservableObject
+{
+    private bool _developerModeEnabled;
+    
+    [ObservableProperty]
+    public bool DeveloperModeEnabled
+    {
+        get => _developerModeEnabled;
+        set
+        {
+            SetProperty(ref _developerModeEnabled, value);
+            UpdateUIVisibility();
+        }
+    }
+    
+    private void UpdateUIVisibility()
+    {
+        if (DeveloperModeEnabled)
+        {
+            // Show BuildMonitorPanel in navigation
+            // Show detailed status bar info
+            // Enable advanced settings
+        }
+        else
+        {
+            // Hide advanced features
+            // Show only essential UI elements
+        }
+    }
+}
+```
+
+### Settings Toggle UI
+
+```xaml
+<!-- SettingsPage.xaml - Add this section -->
+<Expander Header="Developer Options">
+    <StackPanel Spacing="12" Padding="12">
+        <ToggleSwitch x:Name="DeveloperModeToggle"
+                      Header="Developer Mode"
+                      IsOn="{x:Bind ViewModel.DeveloperModeEnabled, Mode=TwoWay}"
+                      OnContent="Enabled"
+                      OffContent="Disabled">
+            <ToggleSwitch.Description>
+                Show advanced features like build logs, task graphs, and retry statistics.
+            </ToggleSwitch.Description>
+        </ToggleSwitch>
+        
+        <InfoBar Severity="Informational"
+                 IsOpen="True"
+                 Message="Developer Mode is recommended only for debugging. Most users should keep this disabled for a cleaner experience."/>
+    </StackPanel>
+</Expander>
+```
+
+### Navigation Visibility
+
+```csharp
+// MainWindow.xaml.cs
+private void UpdateNavigationItems()
+{
+    var navItems = new List<NavigationViewItem>
+    {
+        new() { Content = "Projects", Icon = new SymbolIcon(Symbol.Folder), Tag = "projects" },
+        new() { Content = "Editor", Icon = new SymbolIcon(Symbol.Edit), Tag = "editor" },
+        new() { Content = "Preview", Icon = new SymbolIcon(Symbol.View), Tag = "preview" },
+        new() { Content = "Settings", Icon = new SymbolIcon(Symbol.Setting), Tag = "settings" }
+    };
+    
+    // Only show Build Monitor if Developer Mode enabled
+    if (ViewModel.DeveloperModeEnabled)
+    {
+        navItems.Insert(3, new NavigationViewItem 
+        { 
+            Content = "Build Monitor", 
+            Icon = new SymbolIcon(Symbol.RepeatAll), 
+            Tag = "build" 
+        });
+    }
+    
+    NavView.MenuItems.Clear();
+    foreach (var item in navItems)
+    {
+        NavView.MenuItems.Add(item);
+    }
+}
+```
+
+### Error Display Strategy
+
+**Simple Mode** (Default):
+```
+❌ We encountered an issue while building your app.
+   Retrying automatically...
+```
+
+**Developer Mode** (Enabled):
+```
+❌ Build Error: CS0246
+   File: MainViewModel.cs, Line 42
+   Message: The type or namespace name 'ObservableObject' could not be found
+   
+   [Show Stack Trace] [View Build Log]
+```
+
+### Benefits
+
+1. **New Users**: Clean, unintimidating interface (Lovable-style)
+2. **Power Users**: Full access to diagnostics when needed
+3. **Best of Both Worlds**: Simple by default, powerful when required
+
+---
+
+## 5. UI → Orchestrator Contract
 
 ### Command Pattern
 
