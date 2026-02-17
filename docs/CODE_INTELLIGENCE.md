@@ -70,6 +70,8 @@ File.WriteAllText("MyClass.cs", formatted.ToFullString());
 >
 > **You are building**: Deep semantic + deterministic + local execution
 
+**Enterprise-Level (Sync AI)**: Deep semantic + deterministic + local execution
+
 **Different scale. Different guarantees.**
 
 ### Hybrid Architecture (Recommended)
@@ -386,6 +388,7 @@ CREATE TABLE Projects (
     TargetFramework TEXT
 );
 CREATE INDEX idx_projects_modified ON Projects(ModifiedDate DESC);
+CREATE INDEX idx_projects_health ON Projects(HealthStatus);
 
 CREATE TABLE Settings (
     Key TEXT PRIMARY KEY,
@@ -403,6 +406,7 @@ CREATE TABLE RecentPrompts (
     ProjectId TEXT,
     FOREIGN KEY (ProjectId) REFERENCES Projects(Id) ON DELETE SET NULL
 );
+CREATE INDEX idx_recent_prompts_date ON RecentPrompts(LastUsedDate DESC);
 ```
 
 ### Project Graph Database (project_graph.db)
@@ -420,6 +424,12 @@ CREATE TABLE files (
     snapshot_id INTEGER NOT NULL
 );
 
+    parent_node_id INTEGER,
+    FOREIGN KEY(file_id) REFERENCES files(id)
+);
+CREATE INDEX idx_files_snapshot ON files(snapshot_id);
+CREATE INDEX idx_files_path ON files(path);
+
 -- Syntax layer (Roslyn AST nodes)
 CREATE TABLE syntax_nodes (
     id INTEGER PRIMARY KEY,
@@ -431,6 +441,8 @@ CREATE TABLE syntax_nodes (
     parent_node_id INTEGER,
     FOREIGN KEY(file_id) REFERENCES files(id)
 );
+CREATE INDEX idx_syntax_file ON syntax_nodes(file_id);
+CREATE INDEX idx_syntax_name ON syntax_nodes(name);
 
 -- Symbol layer (Roslyn resolved symbols)
 CREATE TABLE symbols (
@@ -459,6 +471,9 @@ CREATE TABLE symbol_edges (
     FOREIGN KEY(from_symbol_id) REFERENCES symbols(id),
     FOREIGN KEY(to_symbol_id) REFERENCES symbols(id)
 );
+CREATE INDEX idx_symbols_snapshot ON symbols(snapshot_id);
+CREATE INDEX idx_symbol_edges_from ON symbol_edges(from_symbol_id);
+CREATE INDEX idx_symbol_edges_to ON symbol_edges(to_symbol_id);
 
 -- XAML binding layer
 CREATE TABLE xaml_bindings (
@@ -471,6 +486,7 @@ CREATE TABLE xaml_bindings (
     FOREIGN KEY(xaml_file_id) REFERENCES files(id),
     FOREIGN KEY(viewmodel_symbol_id) REFERENCES symbols(id)
 );
+CREATE INDEX idx_xaml_vm ON xaml_bindings(viewmodel_symbol_id);
 
 -- NuGet packages
 CREATE TABLE NuGetPackages (
@@ -481,6 +497,7 @@ CREATE TABLE NuGetPackages (
     AddedDate DATETIME NOT NULL,
     UNIQUE(PackageId, Version)
 );
+CREATE INDEX idx_nuget_packages_id ON NuGetPackages(PackageId);
 
 -- Snapshots & versions
 CREATE TABLE snapshots (
@@ -511,6 +528,7 @@ CREATE TABLE OrchestratorStates (
     PreviousStateId INTEGER,
     FOREIGN KEY (PreviousStateId) REFERENCES OrchestratorStates(Id)
 );
+CREATE INDEX idx_orchestrator_states_time ON OrchestratorStates(Timestamp DESC);
 
 CREATE TABLE Tasks (
     Id TEXT PRIMARY KEY,
@@ -528,6 +546,9 @@ CREATE TABLE Tasks (
     Result TEXT,
     FOREIGN KEY (ParentTaskId) REFERENCES Tasks(Id) ON DELETE CASCADE
 );
+CREATE INDEX idx_tasks_status ON Tasks(Status);
+CREATE INDEX idx_tasks_created ON Tasks(CreatedDate DESC);
+CREATE INDEX idx_tasks_parent ON Tasks(ParentTaskId);
 
 CREATE TABLE TaskEvents (
     Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -537,6 +558,8 @@ CREATE TABLE TaskEvents (
     EventData TEXT,
     FOREIGN KEY (TaskId) REFERENCES Tasks(Id) ON DELETE CASCADE
 );
+CREATE INDEX idx_task_events_task ON TaskEvents(TaskId);
+CREATE INDEX idx_task_events_time ON TaskEvents(Timestamp DESC);
 
 CREATE TABLE RetryHistory (
     Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -548,6 +571,7 @@ CREATE TABLE RetryHistory (
     FixAttempt TEXT,
     FOREIGN KEY (TaskId) REFERENCES Tasks(Id) ON DELETE CASCADE
 );
+CREATE INDEX idx_retry_history_task ON RetryHistory(TaskId);
 
 CREATE TABLE Snapshots (
     Id TEXT PRIMARY KEY,
@@ -559,6 +583,8 @@ CREATE TABLE Snapshots (
     IsCommitted INTEGER DEFAULT 0,
     FOREIGN KEY (TaskId) REFERENCES Tasks(Id) ON DELETE SET NULL
 );
+CREATE INDEX idx_snapshots_task ON Snapshots(TaskId);
+CREATE INDEX idx_snapshots_committed ON Snapshots(IsCommitted);
 ```
 
 ### Build History Database (build_history.db)
@@ -576,6 +602,8 @@ CREATE TABLE BuildResults (
     ExitCode INTEGER,
     BuildLog TEXT
 );
+CREATE INDEX idx_build_results_time ON BuildResults(StartTime DESC);
+CREATE INDEX idx_build_results_success ON BuildResults(Success);
 
 CREATE TABLE BuildErrors (
     Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -589,6 +617,19 @@ CREATE TABLE BuildErrors (
     ColumnNumber INTEGER,
     FOREIGN KEY (BuildResultId) REFERENCES BuildResults(Id) ON DELETE CASCADE
 );
+CREATE INDEX idx_build_errors_result ON BuildErrors(BuildResultId);
+CREATE INDEX idx_build_errors_code ON BuildErrors(ErrorCode);
+CREATE INDEX idx_build_errors_type ON BuildErrors(ErrorType);
+
+CREATE TABLE PerformanceMetrics (
+    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+    BuildResultId TEXT NOT NULL,
+    MetricName TEXT NOT NULL,
+    MetricValue REAL NOT NULL,
+    Unit TEXT NOT NULL,
+    FOREIGN KEY (BuildResultId) REFERENCES BuildResults(Id) ON DELETE CASCADE
+);
+CREATE INDEX idx_perf_metrics_build ON PerformanceMetrics(BuildResultId);
 
 CREATE TABLE ErrorPatterns (
     Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -601,15 +642,8 @@ CREATE TABLE ErrorPatterns (
     LastSeen DATETIME NOT NULL,
     UNIQUE(ErrorCode, Pattern)
 );
+CREATE INDEX idx_error_patterns_code ON ErrorPatterns(ErrorCode);
 
-CREATE TABLE PerformanceMetrics (
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    BuildResultId TEXT NOT NULL,
-    MetricName TEXT NOT NULL,
-    MetricValue REAL NOT NULL,
-    Unit TEXT NOT NULL,
-    FOREIGN KEY (BuildResultId) REFERENCES BuildResults(Id) ON DELETE CASCADE
-);
 ```
 
 ---
@@ -912,6 +946,47 @@ The AI does NOT get infinite retries:
 2. **Attempt 2 (Hard Rejection)** — Return "Breaking Change Detected" with impact path
 3. **Attempt 3 (Barrier Failure)** — **STOP AUTOMATION**. Transition to `INTERVENTION_REQUIRED`. Prompt user: "Should I: (A) Force apply? (B) Revert? (C) Create new file instead?"
 
+4. **Attempt 3 (Barrier Failure)** — **STOP AUTOMATION**. Transition to `INTERVENTION_REQUIRED`. Prompt user: "Should I: (A) Force apply? (B) Revert? (C) Create new file instead?"
+
+---
+
+## 10. Concurrency Safety Model
+
+**Principle**: Single-Writer, Multi-Reader.
+
+### Thread Roles
+
+- **Indexing Writer**: 1 Thread (Exclusive)
+- **Patch Writer**: 1 Thread (Exclusive)
+- **Build Runner**: 1 Thread (Exclusive)
+- **Readers (UI/AI)**: Concurrent allowed
+
+### Locking Strategy
+
+1.  **Workspace Lock**:
+    - Mutex: `Global\Workspace_{ProjectId}`
+    - Ensures only one ExecutionSession (Orchestrator) active per project.
+
+2.  **Graph Write Lock**:
+    - SQLite: `BEGIN IMMEDIATE TRANSACTION`
+    - Blocks other writers, allows readers (WAL mode).
+
+3.  **File Locking**:
+    - Patch Engine locks target file during read-modify-write cycle.
+    - Prevents external edits (e.g., VS Code) from colliding.
+
+### Execution Ordering Rule (Strict)
+
+```
+PATCH → INDEX → BUILD → COMMIT
+```
+
+**Forbidden States**:
+
+- ❌ Indexing while Patching
+- ❌ Building while Patching
+- ❌ Patching during Restore
+
 ---
 
 ## 10. Impact Analysis Engine
@@ -980,7 +1055,7 @@ Optimized for **token efficiency** and **relevance**.
 
 ### Deterministic Context Builder
 
-```csharp
+````csharp
 public async Task<string> PrepareEnterpriseAIContextAsync(string prompt, string projectId)
 {
     var context = new StringBuilder();
@@ -1004,7 +1079,51 @@ public async Task<string> PrepareEnterpriseAIContextAsync(string prompt, string 
     // 4. Strict token budgeting
     return await _tokenManager.TrimContextAsync(context.ToString(), maxTokens: 8000);
 }
+
+### Hybrid Retrieval Model (Lovable vs Enterprise)
+
+**Lovable-Level (Lightweight)**:
+- Shallow metadata index
+- Regex-based symbol extraction
+- Retrieval-friendly JSON summaries
+
+```csharp
+public async Task<string> PrepareAIContextAsync(string prompt, string projectId)
+{
+    var context = new StringBuilder();
+
+    // 1. Inject system constraints
+    context.AppendLine("System: React + Supabase builder");
+    context.AppendLine("Constraints: Use functional components, TypeScript, Tailwind CSS");
+
+    // 2. Inject project_summary
+    var summary = await _database.GetProjectSummaryAsync(projectId);
+    context.AppendLine($"Project: {JsonSerializer.Serialize(summary)}");
+
+    // 3. Retrieve relevant symbols
+    var relevantSymbols = await _retriever.GetRelevantSymbolsAsync(prompt);
+    foreach (var symbol in relevantSymbols)
+    {
+        context.AppendLine($"Symbol: {symbol.Name} ({symbol.Kind})");
+    }
+
+    // 4. Retrieve relevant files
+    var relevantFiles = await _retriever.GetRelevantFilesAsync(prompt);
+    foreach (var file in relevantFiles)
+    {
+        var content = await File.ReadAllTextAsync(file.Path);
+        context.AppendLine($"File: {file.Path}");
+        context.AppendLine(content);
+    }
+
+    // 5. Send minimal context (DO NOT send full project)
+    return context.ToString();
+}
 ```
+
+**Enterprise-Level (Sync AI)**: Deep semantic + deterministic + local execution
+
+
 
 ### Project Summary Builder
 
@@ -1259,9 +1378,23 @@ public interface IPatchEngine
 
 ---
 
+## 16. System Maturity Level
+
+By implementing these systems, we move beyond "template generators" to a **Deterministic Windows-Native Construction Kernel**.
+
+| Feature            | Hobby/Web Builder        | Sync AI (Production)    |
+| :----------------- | :----------------------- | :---------------------- |
+| **Mutation Check** | Regex/LLM Validation     | 5-Layer Semantic Guard  |
+| **Concurrency**    | Race Conditions Probable | Single-Writer Mutex     |
+| **Scaling**        | Fails > 10K LOC          | Optimized for 100K+ LOC |
+| **Reliability**    | "It works often"         | Automated Self-Healing  |
+
+---
+
 ## References
 
 - [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 7-layer overview, deployment model
 - [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) — State machine, build system, retry logic
 - [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) — UI components, visual state machine
 - [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) — Preview rendering
+````
