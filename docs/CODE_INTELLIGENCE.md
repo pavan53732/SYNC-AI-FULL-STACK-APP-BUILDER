@@ -195,42 +195,6 @@ CREATE TABLE project_summary (
 }
 ```
 
-## 2.2 Project Summary (AI Context)
-
-The "First Thing AI Sees" to understand the project stack.
-
-### Schema
-
-```sql
-CREATE TABLE project_summary (
-    id INTEGER PRIMARY KEY CHECK (id = 1), -- Singleton
-    framework TEXT NOT NULL,      -- 'React', 'WinUI', 'Blazor'
-    auth_type TEXT,               -- 'Supabase', 'Firebase', 'Identity'
-    database_type TEXT,           -- 'PostgreSQL', 'SQLite'
-    entities TEXT,                -- JSON Array: ['User', 'Product']
-    routes TEXT,                  -- JSON Array: ['/login', '/dashboard']
-    api_endpoints TEXT,           -- JSON Array: ['GET /api/users']
-    ui_pages TEXT,                -- JSON Array: ['LoginPage', 'Dashboard']
-    last_updated DATETIME
-);
-```
-
-### JSON Example
-
-```json
-{
-  "framework": "React + Vite",
-  "auth_type": "Supabase (Email/Password)",
-  "database_type": "PostgreSQL",
-  "entities": ["Users", "Projects", "Tasks"],
-  "routes": ["/login", "/dashboard", "/projects/:id"],
-  "api_endpoints": ["GET /api/projects", "POST /api/tasks"],
-  "ui_pages": ["LoginPage", "DashboardLayout", "TaskDetail"]
-}
-```
-
----
-
 ## 3. Roslyn Compilation Model
 
 ### Full Compilation Builder
@@ -609,7 +573,6 @@ CREATE TABLE ProjectMetadata (
     Name TEXT NOT NULL,
     LastAccessed DATETIME,
     FrameworkVersion TEXT,
-    FrameworkVersion TEXT,
     FOREIGN KEY (Id) REFERENCES Projects(Id) ON DELETE CASCADE
 );
 
@@ -884,8 +847,8 @@ CREATE TABLE TaskSnapshots (
     IsCommitted INTEGER DEFAULT 0,
     FOREIGN KEY (TaskId) REFERENCES Tasks(Id) ON DELETE SET NULL
 );
-CREATE INDEX idx_snapshots_task ON Snapshots(TaskId);
-CREATE INDEX idx_snapshots_committed ON Snapshots(IsCommitted);
+CREATE INDEX idx_snapshots_task ON TaskSnapshots(TaskId);
+CREATE INDEX idx_snapshots_committed ON TaskSnapshots(IsCommitted);
 ````
 
 ### Build History Database (build_history.db)
@@ -972,7 +935,7 @@ public class VectorEmbedding
 Track evolution of the project graph over time.
 
 ```sql
-CREATE TABLE GraphSnapshots (
+CREATE TABLE CommitSnapshots (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
     commit_hash TEXT NOT NULL,
@@ -981,8 +944,8 @@ CREATE TABLE GraphSnapshots (
     edge_count INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX idx_graph_snapshots_project ON GraphSnapshots(project_id);
-CREATE INDEX idx_graph_snapshots_commit ON GraphSnapshots(commit_hash);
+CREATE INDEX idx_commit_snapshots_project ON CommitSnapshots(project_id);
+CREATE INDEX idx_commit_snapshots_commit ON CommitSnapshots(commit_hash);
 ```
 
 ---
@@ -1132,10 +1095,10 @@ public class PatchEngine : IPatchEngine
         // 4. Apply transformation based on operation type
         var newRoot = patch.OperationType switch
         {
-            PatchOperationType.ADD_CLASS => ApplyAddClass(root, payload),
-            PatchOperationType.ADD_METHOD => ApplyAddMethod(root, payload),
-            PatchOperationType.MODIFY_METHOD_BODY => ApplyModifyMethodBody(root, payload),
-            PatchOperationType.ADD_PROPERTY => ApplyAddProperty(root, payload),
+            PatchOperationType.ADD_CLASS => ApplyAddClass(root, (AddClassPayload)patch.Payload),
+            PatchOperationType.ADD_METHOD => ApplyAddMethod(root, (AddMethodPayload)patch.Payload),
+            PatchOperationType.MODIFY_METHOD_BODY => ApplyModifyMethodBody(root, (ModifyMethodBodyPayload)patch.Payload),
+            PatchOperationType.ADD_PROPERTY => ApplyAddProperty(root, (AddPropertyPayload)patch.Payload),
             _ => throw new NotSupportedException()
         };
 
@@ -1364,17 +1327,19 @@ public async Task ApplyPatch_AddMethod_Success()
     // Arrange
     var code = "public class Foo {}";
     var patch = new PatchOperation {
-        Type = PatchType.AddMethod,
-        TargetClass = "Foo",
+        OperationType = PatchOperationType.ADD_METHOD,
+        TargetFile = "Foo.cs",
         Payload = new AddMethodPayload {
+            TargetClass = "Foo",
             MethodName = "Bar",
             ReturnType = "void",
-            Modifiers = "public"
+            Modifiers = "public",
+            MethodBody = "Console.WriteLine();"
         }
     };
 
     // Act
-    var result = await _patchEngine.ApplyPatchAsync(code, patch);
+    var result = await _patchEngine.ApplyPatchAsync(patch);
 
     // Assert
     Assert.True(result.Success);
@@ -1393,6 +1358,8 @@ public async Task ApplyPatch_FileHashMismatch_Fails()
     var originalHash = "abc123hash";
     var patch = new PatchOperation {
         TargetFile = "Foo.cs",
+        OperationType = PatchOperationType.MODIFY_METHOD_BODY,
+        Payload = new ModifyMethodBodyPayload(),
         ExpectedFileHash = "old_hash_xyz" // Deliberately wrong
     };
 
@@ -1697,7 +1664,7 @@ public class ImpactAnalyzer
         // Recursive CTE for graph traversal
         var results = await _database.QueryAsync<string>(@"
             WITH RECURSIVE affected AS (
-                SELECT to_symbol_id FROM symbol_edges WHERE from_symbol_id = @symbolId
+                SELECT to_symbol_id FROM symbol_edges WHERE from_symbol_id = @symbolId AND snapshot_id = @snapshotId
                 UNION
                 SELECT e.to_symbol_id FROM symbol_edges e
                 INNER JOIN affected a ON e.from_symbol_id = a.to_symbol_id
@@ -1840,7 +1807,7 @@ public class ProjectSummaryBuilder
 
 ---
 
-### 13.4 Retrieval Throttling Rules
+### 11.3 Retrieval Throttling Rules
 
 - Hard Cap: Max 200 symbols per context
 - Hard Cap: Max 8KB of source code per prompt
@@ -1962,6 +1929,11 @@ public class MigrationRunner
                 await migration.UpAsync(_connection);
                 await RecordMigrationAsync(migration.Version, migration.Description);
                 transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
             }
         }
     }

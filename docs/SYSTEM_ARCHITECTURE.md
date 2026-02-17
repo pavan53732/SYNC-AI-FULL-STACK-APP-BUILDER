@@ -492,6 +492,9 @@ graph TD
 
 #### Layer 6: Orchestrator Engine
 
+> **Constraint**: Only 1 mutation task at time (Priority Mandate).
+> **Invariant**: No parallel patching. No concurrent filesystem writes.
+
 **Purpose**: The brain — deterministic state machine governing all operations.
 
 **Purpose**: The brain — deterministic state machine governing all operations.
@@ -1060,6 +1063,19 @@ stateDiagram-v2
     FAILED --> IDLE: Reset
 ```
 
+#### 6.1.1 State Definitions (Formal)
+
+| State                | Description                        | Allowed Transitions        |
+| :------------------- | :--------------------------------- | :------------------------- |
+| **IDLE**             | System waiting for user input.     | `SPEC_PARSED`              |
+| **SPEC_PARSED**      | Intent understood, spec generated. | `TASK_GRAPH_READY`         |
+| **TASK_GRAPH_READY** | DAG created, ready to execute.     | `TASK_EXECUTING`           |
+| **TASK_EXECUTING**   | Agent/Compiler working.            | `VALIDATING`               |
+| **VALIDATING**       | Checks (Tests, Build) running.     | `RETRYING`, `COMPLETED`    |
+| **RETRYING**         | Error found, attempting fix.       | `TASK_EXECUTING`, `FAILED` |
+| **COMPLETED**        | Success.                           | `IDLE`                     |
+| **FAILED**           | Max retries exhausted.             | `IDLE`                     |
+
 **Key Responsibilities**:
 
 - **Concurrency Control**: Enforces "One Mutation at a Time" rule.
@@ -1140,6 +1156,17 @@ User Prompt → Orchestrator → AI Engine (Patches) → Roslyn Engine (Apply) �
 
 ## 8. Validation and Silent Retry Loop
 
+### 8.X Numeric Retry Policy Contract
+
+| Category                  | Limit                    |
+| :------------------------ | :----------------------- |
+| Silent retries per task   | **3**                    |
+| Total retries per session | **10**                   |
+| Build timeout             | **5 minutes**            |
+| AI correction attempts    | **2** per schema failure |
+
+> **INVARIANT**: Retry budgets are deterministic and must never be dynamically increased without orchestrator version change.
+
 ### Purpose
 
 Transform potential errors into invisible internal retries, surfacing only final success to the user.
@@ -1168,6 +1195,13 @@ public enum ErrorType
 - **Syntax Error**: Insert missing `;` via AST patch.
 - **Missing Using**: Add `using Namespace;` if symbol not found.
 - **Build Failure**: Running `dotnet add package` for missing nugets.
+
+### 8.9 Failure Escalation Policy
+
+1.  **Level 1 (Silent)**: Syntax errors, missing dependencies. -> **Auto-Fix** (User sees nothing).
+2.  **Level 2 (Retry)**: Logic errors, test failures. -> **Re-Plan** (User sees spinner).
+3.  **Level 3 (Soft Failure)**: Ambiguous requirements. -> **Clarification Request** (User sees question).
+4.  **Level 4 (Hard Failure)**: System crash, disk full. -> **Error Dialog** (Stop).
 
 ---
 
@@ -1843,7 +1877,177 @@ public class ProcessSandbox
 
 ---
 
-### 11. Execution Lifecycle
+#### 10.4 Transactional Patch Engine (Deep Dive)
+
+**Overview**:
+The Patch Engine performs safe, reversible code mutations using AST manipulation. It guarantees that no syntax errors are introduced by using Roslyn's typed syntax factories instead of string concatenation.
+
+**Key Responsibilities**:
+
+- **Atomic Operations**: Apply all changes or none.
+- **Conflict Detection**: Verify file hashes before modification.
+- **Minimal Diffs**: Touch only the specific nodes requested.
+
+#### 10.4.1 Minimal AST Mutation Demonstration
+
+**The 5-Step AST Mutation Guarantee**:
+
+Every code mutation MUST follow this explicit 5-step process:
+
+| Step | Action | Guarantee |
+|------|--------|-----------|
+| **1. Identify Node** | Locate exact target node in AST | No accidental modifications |
+| **2. Generate Minimal Diff** | Create smallest possible change | Minimal diffs, merge-friendly |
+| **3. Preserve Formatting** | Maintain whitespace, indentation | Code style unchanged |
+| **4. Preserve Comments** | Keep all doc comments, inline comments | Documentation intact |
+| **5. Recompile AST** | Convert modified AST back to source | Valid, compilable output |
+
+**Incorrect (String Replace)**:
+
+```csharp
+// BAD: Destroys comments and formatting
+var text = File.ReadAllText("Foo.cs");
+text = text.Replace("class Foo", "class Foo : Bar");
+File.WriteAllText("Foo.cs", text);
+```
+
+**Correct (Roslyn AST)**:
+
+```csharp
+// GOOD: Preserves structure, formatting, and comments
+var tree = CSharpSyntaxTree.ParseText(code);
+var root = tree.GetRoot();
+var classParams = root.DescendantNodes().OfType<ClassDeclarationSyntax>().First();
+
+var newClass = classParams.AddBaseListTypes(
+    SimpleBaseType(ParseTypeName("Bar"))
+);
+
+var newRoot = root.ReplaceNode(classParams, newClass);
+// Result: Existing comments/whitespace preserved exactly.
+```
+
+---
+
+## 11. Execution Lifecycle
+
+### 11.X ExecutionSession Schema (Authoritative)
+
+**Canonical Schema**:
+
+```csharp
+public class ExecutionSession
+{
+    Guid Id;
+    string ProjectId;
+    string Prompt;
+    DateTime StartTime;
+
+    int RetryCount;
+    int RetryBudgetPerTask;
+    int TotalRetryBudget;
+
+    CancellationTokenSource CancellationToken;
+    ExecutionState CurrentState;
+}
+```
+
+> **INVARIANTS**:
+>
+> - Default `RetryBudgetPerTask` = 3
+> - Default `TotalRetryBudget` = 10
+> - `CancellationToken` is mandatory for all worker threads
+> - Session must be persisted in SQLite before execution begins
+
+### 11.Y Full 6-Phase Execution Lifecycle
+
+> **Core Principle**: User sees "Building...", System runs 6 phases with deterministic state transitions.
+
+#### Phase 0: Pre-Execution Guard (UI Thread)
+
+- **Action**: User clicks "Generate"
+- **Validation**: Check Orchestrator State (must be IDLE)
+- **Lock**: Acquire Workspace Mutex
+- **Session**: Create persisted `ExecutionSession`
+- **Transition**: `IDLE` -> `AI_PLANNING`
+
+#### Phase 1: AI Planning (AI Worker)
+
+- **Context**: Prepare trimmed context (Code + Metadata)
+- **Generate**: Call AI for Task Graph (Spec Mode)
+- **Validate**: Check JSON Schema of Task Graph
+- **Persist**: Save Task Graph to SQLite
+- **Transition**: `AI_PLANNING` -> `TASK_GRAPH_READY`
+
+#### Phase 2: Task Execution Loop (Orchestrator)
+
+- **Sort**: Topological sort of tasks
+- **Loop**: For each task:
+  1. **Snapshot**: Create pre-task snapshot
+  2. **Patch**: Apply AST patch (atomic)
+  3. **Index**: Update Roslyn Index (incremental)
+  4. **Build**: Run `dotnet build` (isolated)
+  5. **Verify**: Check exit code & error log
+  6. **Commit**: Mark snapshot as committed on success
+
+#### Phase 3: Patch Application (Patch Worker)
+
+- **Load**: Read file text
+- **Parse**: Gen SyntaxTree
+- **Mutate**: Apply specific `PatchOperation`
+- **Validate**: Check for syntax errors
+- **Format**: Roslyn Formatter
+- **Write**: Atomic file write
+- **Graph**: Update dependency graph
+
+#### Phase 4: Build Execution (Build Worker)
+
+- **Command**: `dotnet build --no-restore`
+- **Isolation**: New Process per build
+- **Timeout**: Hard 5-minute limit
+- **Capture**: Stdout/Stderr parsing
+- **Result**: Success or Structured Error
+
+#### Phase 5: Silent Retry Loop (AI Fix Worker)
+
+- **Trigger**: Build failure
+- **Budget**: Check `RetryBudgetPerTask`
+- **AI**: Generate Fix Patch based on error
+- **Apply**: Apply fix patch
+- **Retry**: Re-run Phase 4
+- **Escalate**: If budget exhausted -> Fail Session
+
+#### Phase 6: Finalization (Orchestrator)
+
+- **Snapshot**: Final "Completed" snapshot
+- **Version**: Add to Project Timeline
+- **Metadata**: Update Project Stats
+- **Unlock**: Release Workspace Mutex
+- **Notify**: `PREVIEW_READY` event
+- **UI**: Switch to Preview View
+
+### 11.Z Boot Safety Enforcement
+
+**Stage 1: App Startup (UI)**
+
+- Visual: Splash Screen "Preparing environment..."
+- Action: Async init call
+
+**Stage 2: Environment Validation (Background)**
+
+- **Check 1**: .NET SDK Availability (Critical) - _Must exist_
+- **Check 2**: MSBuild Accessibility (Critical) - _Must run_
+- **Check 3**: NuGet Source Integrity (Warning)
+- **Check 4**: Disk Space (>1GB) (Warning)
+- **Check 5**: SQLite DB Connection (Critical)
+
+> **SAFETY**: If Critical checks fail, App MUST halt at Splash with Error Panel. It cannot proceed to Editor.
+
+**Stage 3: Project Registry Load**
+
+- Scan: `~/.syncai/workspaces/*`
+- Validate: Check `.metadata.json` integrity
+- Repair: Auto-fix corrupted snapshots if possible
 
 ### 11.1 Environment Validation Detail
 
@@ -3257,22 +3461,140 @@ public class TokenBudgetGuard
 }
 ```
 
-### What the User Should NEVER See (Normal Mode)
+### 12.6 Hidden Mode Contract (Strict)
 
-- ❌ Task graph
-- ❌ Patch operations
-- ❌ Roslyn AST tree
-- ❌ MSBuild raw output
-- ❌ NuGet logs
-- ❌ Snapshot IDs
-- ❌ Retry counts
-- ❌ File diffs by default
+> **Principle**: The user sees the _App_, not the _Factory_.
 
-**All of this exists. But hidden.**
+#### 12.6.1 Forbidden User-Facing Elements (Complete Enumeration)
 
----
+The following internal implementation details must **NEVER** be exposed to users in Normal Mode:
+
+**Build & Compilation**
+- ❌ **Raw Build Logs**: Never show MSBuild output text. Use "Building... (45%)" sliders.
+- ❌ **Compiler Error Codes**: CS#### codes are internal. Translate to user-friendly descriptions.
+- ❌ **NuGet Restore Output**: Package installation logs are hidden. Show only "Installing dependencies...".
+- ❌ **Build Warnings**: Non-fatal warnings are silently logged, never surfaced.
+- ❌ **Project File XML**: .csproj contents are never shown. Use visual property editors.
+
+**Internal State**
+- ❌ **Snapshot IDs**: Internal UUIDs must never leak to UI. Use timestamps like "2 minutes ago".
+- ❌ **Retry Counts**: Silent retries are hidden. Only "Hard Failures" surface after budget exhausted.
+- ❌ **Session IDs**: ExecutionSession UUIDs are internal tracking only.
+- ❌ **State Machine Names**: `TASK_EXECUTING`, `VALIDATING` etc. are never shown.
+
+**Code Internals**
+- ❌ **AST Visualization**: Roslyn trees are for the Agent, not the Human.
+- ❌ **File Diffs**: Diffs are for the Agent to review. Users just see the updated code.
+- ❌ **Symbol Tables**: Symbol indexes, dependency graphs - all internal.
+- ❌ **Patch JSON**: The patch engine's JSON format is never exposed.
+
+**AI Internals**
+- ❌ **Prompt Templates**: System prompts sent to AI are never shown.
+- ❌ **Context Trimming**: Token budget decisions are invisible.
+- ❌ **Agent Names**: Users don't know about "SchemaAgent", "FixAgent" etc.
+- ❌ **AI Response Raw JSON**: Always parsed and presented as code, never raw.
+
+**Filesystem**
+- ❌ **Temp File Paths**: `.tmp` files are never shown.
+- ❌ **Sandbox Root**: The `%AppData%/SyncAI` path is never exposed directly.
+- ❌ **Lock Files**: Workspace lock files are invisible.
+
+**Database**
+- ❌ **SQLite Queries**: Database operations are never exposed.
+- ❌ **Table Names**: Internal schema is hidden.
+- ❌ **Migration History**: Database versioning is internal.
+
+**Exceptions**: In **Advanced Mode** (Section 12.7), some elements become visible via developer tools.
+
+### 12.7 Advanced Mode (The "Eject" Button)
+
+While Sync AI abstracts complexity, power users can "eject" to standard tools:
+
+- **Open VS Code**: Opens the `{WorkspaceRoot}`.
+- **Open Terminal**: Opens PowerShell at `{WorkspaceRoot}`.
+- **Reveal in Explorer**: Opens Windows Explorer.
+
+> **Contract**: The built-in orchestrator _pauses_ efficiently when external tools modify files, treating them as "User Edits" upon resumption.
+
+### 12.8 Normal vs Advanced Mode Log Exposure Contract
+
+The system operates in two distinct modes with different logging and visibility characteristics:
+
+#### Mode Comparison Matrix
+
+| Category | Internal Element | Normal Mode | Advanced Mode |
+|----------|------------------|------------|---------------|
+| **Build** | MSBuild Output | ❌ Hidden | ✅ Visible (tab) |
+| **Build** | Error Codes (CS####) | ❌ Translated | ✅ Raw |
+| **Build** | Warning Count | ❌ Hidden | ✅ Badge |
+| **Build** | Build Duration | ✅ "Done in 3s" | ✅ Precise ms |
+| **AI** | Token Usage | ❌ Hidden | ✅ Visible |
+| **AI** | Model Selection | ❌ Hidden | ✅ Configurable |
+| **AI** | Context Files | ❌ Hidden | ✅ List shown |
+| **AI** | Retry Attempts | ❌ Hidden | ✅ Counter shown |
+| **State** | Orchestrator State | ❌ Spinner only | ✅ State name |
+| **State** | Task Graph | ❌ Hidden | ✅ Visual DAG |
+| **State** | Session ID | ❌ Hidden | ✅ Copyable |
+| **Files** | Snapshot List | ✅ Timestamps | ✅ Full IDs |
+| **Files** | Diff View | ❌ Hidden | ✅ Side-by-side |
+| **Files** | File Hashes | ❌ Hidden | ✅ Visible |
+| **Database** | Symbol Count | ❌ Hidden | ✅ Stats shown |
+| **Database** | Query Times | ❌ Hidden | ✅ Visible |
+
+#### Advanced Mode Activation
+
+Users can activate Advanced Mode via:
+
+1. **Keyboard Shortcut**: `Ctrl+Shift+D` (Developer Mode toggle)
+2. **Settings Toggle**: "Enable Developer Tools" in Settings
+3. **Menu Command**: View → Advanced → Developer Tools
+
+#### Advanced Mode Panel Layout
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ [Normal UI]                               [Advanced Panel] │
+│ ┌────────────────────────────┐          ┌────────────────┐ │
+│ │                            │          │ Build Output   │ │
+│ │     Main Preview Area      │          │ ────────────── │ │
+│ │                            │          │ CS0103: ...    │ │
+│ │                            │          │                │ │
+│ └────────────────────────────┘          │ AI Context     │ │
+│ ┌────────────────────────────┐          │ ────────────── │ │
+│ │ Prompt Console             │          │ Files: 5       │ │
+│ └────────────────────────────┘          │ Tokens: 4,521  │ │
+│                                         │                │ │
+│                                         │ State Machine  │ │
+│                                         │ ────────────── │ │
+│                                         │ BUILDING       │ │
+│                                         │ Retries: 2     │ │
+│                                         └────────────────┘ │
+└────────────────────────────────────────────────────────────┘
+```
+
+#### Log Retention Policy
+
+| Log Type | Normal Mode | Advanced Mode | Retention |
+|----------|-------------|---------------|-----------|
+| Build Logs | Not stored | Stored | 7 days |
+| AI Context | Not stored | Stored | 24 hours |
+| State Transitions | Not stored | Stored | 3 days |
+| Error Stack Traces | Not stored | Stored | 7 days |
+| Performance Metrics | Aggregated | Detailed | 30 days |
+
+> **INVARIANT**: Advanced Mode logs are stored locally only, never transmitted. Logs auto-purge on retention expiry.
 
 ### 13. Threading and Concurrency Model
+
+### 13.X Deterministic Mutation Rules
+
+- **Reads may run in parallel** (e.g., Roslyn Indexing, Preview Rendering)
+- **Writes MUST be serialized**
+- **Only one mutation task at a time**
+- **Only one snapshot write at a time**
+- **Patch + build must be atomic** within orchestrator control
+
+> **INVARIANT**: No parallel patching. No concurrent filesystem writes. No mutation outside orchestrator control. This restores the "Reads Parallel / Writes Serial" doctrine.
 
 ### 13.1 Threading Diagram
 
@@ -3304,6 +3626,95 @@ graph TD
 1.  **Single-Writer, Multi-Reader**: Only one thread (Patch Engine) can modify the graph/files at a time. Multiple threads (UI, AI) can read.
 2.  **Workspace Lock**: Uses a global mutex `Global\Workspace_{ProjectId}` to prevent multiple app instances from opening the same project.
 3.  **Strict Ordering**: `PATCH → INDEX → BUILD → COMMIT`. No overlapping steps.
+
+### 13.3 Workspace Mutex Pattern (Authoritative)
+
+**Purpose**: Prevent concurrent access to the same workspace across process boundaries.
+
+**Implementation**:
+
+```csharp
+public class WorkspaceMutex : IDisposable
+{
+    private Mutex? _mutex;
+    private readonly string _projectId;
+    private bool _isAcquired;
+
+    public WorkspaceMutex(string projectId)
+    {
+        _projectId = projectId;
+    }
+
+    /// <summary>
+    /// Acquire global mutex for workspace. Returns false if another process holds the lock.
+    /// </summary>
+    public async Task<bool> AcquireAsync(TimeSpan timeout)
+    {
+        // Global mutex name - visible across all processes on same machine
+        var mutexName = $"Global\\SyncAI_Workspace_{_projectId}";
+
+        _mutex = new Mutex(initiallyOwned: false, mutexName, out var createdNew);
+
+        try
+        {
+            // Wait with timeout
+            _isAcquired = _mutex.WaitOne(timeout);
+            return _isAcquired;
+        }
+        catch (AbandonedMutexException)
+        {
+            // Previous owner crashed - we can still acquire safely
+            _isAcquired = true;
+            return true;
+        }
+    }
+
+    public void Release()
+    {
+        if (_isAcquired && _mutex != null)
+        {
+            _mutex.ReleaseMutex();
+            _isAcquired = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        Release();
+        _mutex?.Dispose();
+    }
+}
+```
+
+**Usage in Orchestrator**:
+
+```csharp
+public class Orchestrator
+{
+    public async Task<SessionResult> ExecuteSessionAsync(ExecutionSession session)
+    {
+        // 1. Acquire workspace lock (blocks if another process has it)
+        using var workspaceLock = new WorkspaceMutex(session.ProjectId);
+        
+        if (!await workspaceLock.AcquireAsync(TimeSpan.FromSeconds(30)))
+        {
+            return SessionResult.Failed("Workspace is locked by another process");
+        }
+
+        // 2. Safe to proceed with mutations
+        try
+        {
+            return await ExecuteInternalAsync(session);
+        }
+        finally
+        {
+            // Lock released by Dispose
+        }
+    }
+}
+```
+
+> **INVARIANT**: No mutation operation may proceed without acquiring the workspace mutex first. This applies across ALL processes (including advanced mode external editors).
 
 ### WinUI 3 Threading Pattern
 
@@ -3345,6 +3756,41 @@ In Lovable-style mode, the following must remain hidden:
 ---
 
 ## 14. Security and Isolation
+
+### 14.X Hard Execution Prohibitions (Non-Negotiable)
+
+❌ **No arbitrary shell execution**
+
+- `cmd.exe`, `powershell.exe`, `bash.exe` are strictly forbidden.
+
+❌ **No elevated privilege escalation**
+
+- No `runas` or Admin requests.
+
+❌ **No registry modification**
+
+- Registry writes are blocked.
+
+❌ **No filesystem traversal outside sandbox root**
+
+- Any path containing `..` or absolute paths outside `%AppData%/SyncAI` must throw a violation.
+
+❌ **No dynamic command execution from AI output**
+
+- AI cannot generate shell scripts to be executed.
+
+✅ **Whitelist-only command model**
+
+**AllowedCommands**:
+
+- `dotnet restore`
+- `dotnet build`
+- `dotnet run`
+- `dotnet publish`
+- `dotnet test`
+- `dotnet clean`
+
+> **INVARIANT**: All execution must pass through whitelist validation. Any attempt to execute non-whitelisted commands must throw a fatal orchestrator violation.
 
 ### 14.1 Challenge: Generated Code Is Untrusted
 
@@ -3711,7 +4157,39 @@ The kernel must detect and mitigate machine variability that cloud-based systems
 
 ---
 
+## 15. Machine Variability Handling
+
+### 15.1 Infrastructure Variability Matrix
+
+| Feature         | Local Machine (Sync AI) | Cloud Container (Lovable)  |
+| :-------------- | :---------------------- | :------------------------- |
+| **CPU/RAM**     | **Variable** (User HW)  | **Fixed** (e.g., 2 vCPU)   |
+| **Disk I/O**    | **Variable** (SSD/HDD)  | **Fast** (Datacenter)      |
+| **Network**     | **Unreliable** (Home)   | **Stable** (Backbone)      |
+| **OS Security** | **Strict** (Antivirus)  | **Permissive** (Container) |
+| **Persistence** | **Permanent**           | **Ephemeral**              |
+| **Tooling**     | **Embedded**            | **Pre-installed**          |
+
+### 15.2 Resource Adaptation Strategy
+
+1.  **Dynamic Throttling**: Use `ResourceMonitor` to pause background indexing if CPU > 80%.
+2.  **Disk Awareness**: Prune snapshots aggressively if disk space < 1GB.
+3.  **Network Resilience**: Retry NuGet restore with exponential backoff for flaky connections.
+
+---
+
 ## 16. Deployment Model
+
+### 16.2 Cloud vs. Local Precision
+
+| Dimension      | Cloud Containers (Lovable)     | Sync AI (Local Native)             |
+| :------------- | :----------------------------- | :--------------------------------- |
+| **OS API**     | Linux (Emulated/Containerized) | **Windows Native** (Exact Target)  |
+| **Filesystem** | Virtual/Ephemeral              | **NTFS** (Real Persistence)        |
+| **SDK**        | Pre-installed Image            | **User's SDK** (Exact Compilation) |
+| **Fidelity**   | "Works on my machine" issues   | **WYSIWYG** (Runs where it builds) |
+
+> **Implication**: Sync AI builds are **deployment-ready binaries**, not just prototypes.
 
 ### Detailed Comparison: Cloud vs. Local Build Model
 
@@ -5047,6 +5525,49 @@ graph TD
 | **Critical** | System-level failure  | Red with alert      | Immediate attention  |
 
 ### 29.3 Detailed Error Classification
+
+#### 29.3.1 Domain-Level Error Taxonomy (Complete)
+
+**Category 1: Build Domain Errors**
+
+| Sub-Domain | Error Code Range | Examples | Auto-Fixable |
+|------------|------------------|----------|--------------|
+| **C# Syntax** | CS1000-CS1999 | Missing semicolons, unmatched braces | ✅ Yes |
+| **C# Semantic** | CS0001-CS0999 | Type mismatches, missing references | ✅ Yes |
+| **C# Nullability** | CS8600-CS8999 | Nullable reference warnings | ⚠️ Partial |
+| **XAML Parse** | XDG0001-XDG0999 | Malformed XAML, missing attributes | ✅ Yes |
+| **XAML Binding** | XDG1000-XDG1999 | Invalid bindings, missing DataContext | ⚠️ Partial |
+| **NuGet** | NU0001-NU9999 | Package not found, version conflicts | ✅ Yes |
+| **MSBuild** | MSB0001-MSB9999 | Project file errors, target failures | ⚠️ Partial |
+
+**Category 2: AI Domain Errors**
+
+| Sub-Domain | Error Type | Examples | Auto-Fixable |
+|------------|------------|----------|--------------|
+| **API** | Network | Timeout, connection refused | ✅ Yes (retry) |
+| **API** | Auth | Invalid key, quota exceeded | ❌ No |
+| **Response** | Parse | Malformed JSON, schema mismatch | ✅ Yes (re-request) |
+| **Response** | Content | Policy violation, empty response | ⚠️ Partial |
+
+**Category 3: Filesystem Domain Errors**
+
+| Sub-Domain | Error Type | Examples | Auto-Fixable |
+|------------|------------|----------|--------------|
+| **IO** | Access | Permission denied, file locked | ⚠️ Partial |
+| **IO** | Space | Disk full | ❌ No |
+| **Sandbox** | Security | Path traversal, restricted file | ❌ No (fatal) |
+| **Snapshot** | Corruption | Checksum mismatch | ✅ Yes (rollback) |
+
+**Category 4: Orchestrator Domain Errors**
+
+| Sub-Domain | Error Type | Examples | Auto-Fixable |
+|------------|------------|----------|--------------|
+| **State** | Invalid | Invalid state transition | ❌ No (bug) |
+| **Session** | Timeout | Build exceeded 5 min limit | ✅ Yes (retry) |
+| **Retry** | Exhausted | Max retries exceeded | ❌ No (escalate) |
+| **Lock** | Conflict | Workspace already locked | ❌ No (user action) |
+
+> **INVARIANT**: Errors marked ❌ No must surface to user. Errors marked ✅ Yes are silently handled. Errors marked ⚠️ Partial require context-dependent handling.
 
 #### Build Error Types
 
