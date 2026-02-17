@@ -860,6 +860,144 @@ async def orchestrate_generation(spec, task_graph):
             await patch_engine.commit(candidate)
 ```
 
+### 5.3 Detailed Agent Orchestration Flow
+
+**Stage 1: Planning & Structure**
+```python
+arch_output = architect_agent(spec)
+results['architecture'] = arch_output
+```
+
+**Stage 2: Parallel Generation (tasks with no deps)**
+```python
+schema_output = schema_agent(spec)
+auth_output = backend_agent(spec, auth_tasks)
+results['schema'] = schema_output
+results['auth'] = auth_output
+```
+
+**Stage 3: UI Generation (needs auth context)**
+```python
+ui_output = frontend_agent(spec, auth_output)
+results['ui'] = ui_output
+```
+
+**Stage 4: Integration (wires everything)**
+```python
+integration_output = integration_agent(results)
+results['integration'] = integration_output
+```
+
+**Stage 5: Build & Validate**
+```python
+build_result = validate_and_build()
+```
+
+**Stage 6: Auto-fix if needed**
+```python
+if build_result.has_errors:
+    for error in build_result.errors:
+        fix_output = fix_agent(error, results)
+        apply_fix(fix_output)
+    # Retry build
+    build_result = validate_and_build()
+
+return results, build_result
+```
+
+**Note**: All agent communications are handled through the `z-ai-web-dev-sdk`.
+
+### 5.4 Agent Input/Output Contracts
+
+#### Architect Agent Contract
+**Input Schema:**
+```json
+{
+  "spec": {
+    "projectType": "windows-desktop-app",
+    "features": [...],
+    "stack": {...}
+  },
+  "task": "design-project-structure"
+}
+```
+
+**Output Schema:**
+```json
+{
+  "project_structure": {
+    "Models": ["Customer.cs", "Contact.cs"],
+    "Services": ["CustomerService.cs", "AuthService.cs"],
+    "UI": ["MainWindow.xaml", "CustomerPage.xaml"],
+    "Database": ["DbContext.cs"]
+  },
+  "design_patterns": ["MVVM", "Repository", "Dependency Injection"],
+  "naming_conventions": {
+    "models": "PascalCase",
+    "private_fields": "_camelCase"
+  }
+}
+```
+
+#### Schema Agent Contract
+**Input Schema:**
+```json
+{
+  "entities": [
+    {
+      "name": "Customer",
+      "properties": [
+        {"name": "id", "type": "int", "pk": true},
+        {"name": "name", "type": "string"}
+      ]
+    }
+  ]
+}
+```
+
+**Output Schema:**
+```csharp
+// Generated Customer.cs
+[Table("customers")]
+public class Customer
+{
+    [Key]
+    public int Id { get; set; }
+    
+    [Required]
+    [StringLength(200)]
+    public string Name { get; set; }
+}
+```
+
+#### Fix Agent Contract
+**Input Schema:**
+```json
+{
+  "error": "CS1503: Cannot convert type 'string' to 'int'",
+  "file": "Models/Customer.cs",
+  "line": 15,
+  "context": "public int CustomerId { get; set; } = customerId;"
+}
+```
+
+**Output Schema:**
+```json
+{
+  "fix_type": "type_conversion",
+  "suggestions": [
+    {
+      "code": "public int CustomerId { get; set; } = int.Parse(customerId);",
+      "confidence": 0.85
+    },
+    {
+      "code": "public int CustomerId { get; set; } = Convert.ToInt32(customerId);",
+      "confidence": 0.90
+    }
+  ]
+}
+```
+
 ---
 
 ## 6. Data Flow and Orchestration
@@ -1594,8 +1732,7 @@ public class ProcessSandbox
 
 ### 11. Execution Lifecycle
 
-````markdown
-### Environment Validation Detail
+### 11.1 Environment Validation Detail
 
 ```csharp
 public async Task<ValidationResult> ValidateEnvironmentAsync()
@@ -1636,13 +1773,422 @@ public async Task<ValidationResult> ValidateEnvironmentAsync()
     return new ValidationResult(results);
 }
 ```
-````
 
-### Task Execution Lifecycle (Generate Command)
-
-### 11.1 Full Hidden Background Execution Lifecycle
+### 11.2 Full Hidden Background Execution Lifecycle
 
 When user types a prompt and hits "Generate", the system executes a 6-phase lifecycle. Phases 1-5 run on background threads.
+
+### 11.3 Six-Thread Architecture
+
+The system uses a deterministic threading model with 6 specialized thread types:
+
+#### Thread Types and Responsibilities
+
+**🟢 1. UI Thread (DispatcherQueue)**
+- **Handles**: Rendering, button clicks, ViewModel updates, animations, status updates
+- **Never blocks**: All heavy operations offloaded to worker threads
+- **Implementation**:
+```csharp
+// All UI updates must use DispatcherQueue
+private async Task UpdateUIAsync(Action action)
+{
+    await _dispatcherQueue.EnqueueAsync(action);
+}
+```
+
+**🔵 2. Orchestrator Thread**
+- **Single background thread** responsible for:
+  - State machine transitions
+  - Task queue management
+  - Retry controller
+  - Lock control
+- **Must be sequential** - No parallel task execution
+- **Implementation**:
+```csharp
+public class Orchestrator
+{
+    private readonly Thread _orchestratorThread;
+    private readonly BlockingCollection<ExecutionSession> _executionQueue;
+    
+    public Orchestrator()
+    {
+        _executionQueue = new BlockingCollection<ExecutionSession>();
+        
+        _orchestratorThread = new Thread(OrchestratorLoop)
+        {
+            Name = "Orchestrator",
+            IsBackground = true,
+            Priority = ThreadPriority.AboveNormal
+        };
+        
+        _orchestratorThread.Start();
+    }
+    
+    private void OrchestratorLoop()
+    {
+        foreach (var session in _executionQueue.GetConsumingEnumerable())
+        {
+            try
+            {
+                ExecuteSessionAsync(session).Wait();
+            }
+            catch (Exception ex)
+            {
+                HandleExecutionErrorAsync(session, ex).Wait();
+            }
+        }
+    }
+}
+```
+
+**🟣 3. AI Worker Thread Pool**
+- **Used for**: SDK API calls, context preparation, JSON validation
+- **Parallel safe** (but limit concurrency to 2 max)
+- **Implementation**:
+```csharp
+private static readonly SemaphoreSlim _aiConcurrencyLimit = new(2, 2);
+
+public async Task<AIResponse> CallAIAsync(AIRequest request)
+{
+    await _aiConcurrencyLimit.WaitAsync();
+    
+    try
+    {
+        return await Task.Run(async () =>
+        {
+            return await _aiClient.GenerateAsync(request);
+        });
+    }
+    finally
+    {
+        _aiConcurrencyLimit.Release();
+    }
+}
+```
+
+**🟡 4. Patch Worker Thread**
+- **Handles**: Roslyn parsing, AST transformations, graph updates
+- **Single-threaded** to prevent file race conditions
+- **Implementation**:
+```csharp
+public class PatchEngine
+{
+    private readonly SemaphoreSlim _patchLock = new(1, 1);
+    
+    public async Task<PatchResult> ApplyPatchAsync(Patch patch)
+    {
+        await _patchLock.WaitAsync();
+        
+        try
+        {
+            return await Task.Run(async () =>
+            {
+                // Roslyn operations here
+                return await ApplyPatchInternalAsync(patch);
+            });
+        }
+        finally
+        {
+            _patchLock.Release();
+        }
+    }
+}
+```
+
+**🔴 5. Build Worker Thread**
+- **Handles**: dotnet restore, dotnet build, log parsing
+- **Must run isolated. Must be killable.**
+- **Implementation**:
+```csharp
+public class BuildKernel
+{
+    private Process _currentBuildProcess;
+    
+    public async Task<BuildResult> BuildProjectAsync(string projectPath)
+    {
+        return await Task.Run(async () =>
+        {
+            _currentBuildProcess = new Process { /* ... */ };
+            
+            try
+            {
+                return await ExecuteBuildAsync();
+            }
+            finally
+            {
+                _currentBuildProcess = null;
+            }
+        });
+    }
+    
+    public void CancelBuild()
+    {
+        _currentBuildProcess?.Kill();
+    }
+}
+```
+
+**⚪ 6. Background Maintenance Thread**
+- **Low priority thread**:
+  - Snapshot pruning
+  - SQLite vacuum
+  - Disk usage monitoring
+  - Index consistency check
+- **Runs when idle only**
+- **Implementation**:
+```csharp
+public class BackgroundMaintenance
+{
+    private readonly Timer _maintenanceTimer;
+    
+    public void StartMaintenance()
+    {
+        _maintenanceTimer = new Timer(
+            callback: RunMaintenanceAsync,
+            state: null,
+            dueTime: TimeSpan.FromMinutes(5),
+            period: TimeSpan.FromMinutes(10)
+        );
+    }
+    
+    private async void RunMaintenanceAsync(object state)
+    {
+        // Only run if orchestrator is idle
+        if (_orchestrator.CurrentState != OrchestratorState.IDLE)
+            return;
+        
+        await Task.Run(async () =>
+        {
+            await _snapshotPruner.PruneOldSnapshotsAsync();
+            await _database.VacuumAsync();
+            await _resourceMonitor.CheckDiskUsageAsync();
+            await _indexer.ValidateConsistencyAsync();
+        });
+    }
+}
+```
+
+### 11.4 Thread Communication Model
+
+**Use**:
+- Channels or BlockingCollection
+- Immutable command objects
+- Event-driven architecture
+- CancellationToken everywhere
+
+**Never**:
+- Share mutable state across threads
+- Allow patch + build concurrently
+- Allow two builds at once
+
+**Implementation**:
+```csharp
+// Immutable command
+public record GenerateCommand(string Prompt, string ProjectId);
+
+// Event-driven
+public class EventAggregator
+{
+    private readonly ConcurrentDictionary<Type, List<Delegate>> _subscribers = new();
+    
+    public void Subscribe<T>(Action<T> handler)
+    {
+        _subscribers.GetOrAdd(typeof(T), _ => new List<Delegate>()).Add(handler);
+    }
+    
+    public async Task PublishAsync<T>(T @event)
+    {
+        if (_subscribers.TryGetValue(typeof(T), out var handlers))
+        {
+            foreach (var handler in handlers.Cast<Action<T>>())
+            {
+                await Task.Run(() => handler(@event));
+            }
+        }
+    }
+}
+```
+
+### 11.5 Complete Boot Sequence (6 Stages)
+
+When user launches the app:
+
+#### Stage 1: App Startup (UI Thread)
+```csharp
+protected override async void OnLaunched(LaunchActivatedEventArgs args)
+{
+    // 1. Initialize WinUI window
+    _window = new MainWindow();
+    
+    // 2. Show splash screen
+    _window.Content = new SplashScreen { Status = "Preparing environment…" };
+    _window.Activate();
+    
+    // 3. Start background initialization
+    await InitializeApplicationAsync();
+}
+```
+
+#### Stage 2: Environment Validation (Background Thread)
+```csharp
+private async Task<ValidationResult> ValidateEnvironmentAsync()
+{
+    var results = new List<ValidationIssue>();
+    
+    // 1. Check .NET SDK availability
+    var sdkVersion = await GetDotNetSdkVersionAsync();
+    if (sdkVersion == null)
+    {
+        results.Add(new ValidationIssue(".NET SDK not found", Severity.Critical));
+    }
+    
+    // 2. Validate MSBuild path
+    var msbuildPath = await FindMSBuildAsync();
+    if (msbuildPath == null)
+    {
+        results.Add(new ValidationIssue("MSBuild not accessible", Severity.Critical));
+    }
+    
+    // 3. Verify NuGet integrity
+    var nugetValid = await ValidateNuGetAsync();
+    if (!nugetValid)
+    {
+        results.Add(new ValidationIssue("NuGet configuration issue", Severity.Warning));
+    }
+    
+    // 4. Check disk space
+    var availableGB = GetAvailableDiskSpace();
+    if (availableGB < 1.0)
+    {
+        results.Add(new ValidationIssue("Low disk space", Severity.Warning));
+    }
+    
+    // 5. Validate workspace folder
+    if (!Directory.Exists(_workspacePath))
+    {
+        Directory.CreateDirectory(_workspacePath);
+    }
+    
+    // 6. Initialize SQLite connection
+    await _database.InitializeAsync();
+    
+    return new ValidationResult(results);
+}
+```
+
+#### Stage 3: Load Project Registry (Background Thread)
+```csharp
+private async Task LoadProjectRegistryAsync()
+{
+    // 1. Read Workspaces directory
+    var projectDirs = Directory.GetDirectories(_workspacePath);
+    
+    foreach (var projectDir in projectDirs)
+    {
+        // 2. Load metadata.json
+        var metadataPath = Path.Combine(projectDir, ".metadata.json");
+        
+        if (File.Exists(metadataPath))
+        {
+            var metadata = await JsonSerializer.DeserializeAsync<ProjectMetadata>(
+                File.OpenRead(metadataPath)
+            );
+            
+            // 3. Validate snapshots
+            var snapshotsValid = await ValidateSnapshotsAsync(metadata.Id);
+            
+            // 4. Validate graph integrity
+            var graphValid = await ValidateGraphIntegrityAsync(metadata.Id);
+            
+            if (!snapshotsValid || !graphValid)
+            {
+                // Attempt auto-repair
+                await AttemptAutoRepairAsync(metadata.Id);
+            }
+            
+            // Add to registry
+            _projectRegistry.Add(metadata);
+        }
+    }
+}
+```
+
+#### Stage 4: Initialize Services
+```csharp
+private void InitializeServices()
+{
+    // Orchestrator
+    _orchestrator = new Orchestrator(_database, _eventAggregator);
+    
+    // RoslynIndexer
+    _roslynIndexer = new RoslynIndexer(_database);
+    
+    // PatchEngine
+    _patchEngine = new PatchEngine(_roslynIndexer, _database);
+    
+    // BuildKernel
+    _buildKernel = new BuildKernel();
+    
+    // SnapshotManager
+    _snapshotManager = new SnapshotManager(_database, _workspacePath);
+    
+    // AIClient (z-ai-web-dev-sdk)
+    _aiClient = new AIClient(apiKey: _configuration["AI:ApiKey"]);
+    
+    // ResourceMonitor
+    _resourceMonitor = new ResourceMonitor(_workspacePath);
+    _resourceMonitor.StartMonitoring();
+}
+```
+
+#### Stage 5: Warm-Up Index
+```csharp
+private async Task WarmUpIndexAsync()
+{
+    var lastProject = await _database.GetLastOpenedProjectAsync();
+    
+    if (lastProject != null)
+    {
+        // 1. Pre-load symbol graph
+        await _roslynIndexer.IndexProjectAsync(lastProject.WorkspacePath);
+        
+        // 2. Pre-cache dependency tree
+        await _database.CacheDependencyTreeAsync(lastProject.Id);
+        
+        // 3. Prepare AI context
+        await _aiContextCache.PrepareContextAsync(lastProject.WorkspacePath);
+        
+        // This reduces first-generation latency
+    }
+}
+```
+
+#### Stage 6: UI Ready
+```csharp
+private async Task FinalizeBootAsync()
+{
+    // 1. Fade out splash
+    await SplashScreen.FadeOutAsync(duration: 300);
+    
+    // 2. Show main window
+    _window.Content = new MainPage();
+    
+    // 3. Set initial state
+    var lastProject = await _database.GetLastOpenedProjectAsync();
+    
+    if (lastProject != null)
+    {
+        await _uiStateManager.TransitionToAsync(UIState.PREVIEW_READY);
+        await LoadProjectAsync(lastProject.Id);
+    }
+    else
+    {
+        await _uiStateManager.TransitionToAsync(UIState.EMPTY_IDLE);
+    }
+}
+```
+
+### 11.6 Execution Phases
 
 #### Phase 0: Pre-Execution Guard (UI Thread)
 
@@ -1713,7 +2259,7 @@ sequenceDiagram
     Orch->>UI: Phase 6: Finalize (Update Preview)
 ```
 
-### Crash Recovery
+### 11.7 Crash Recovery Flow
 
 If the application previously crashed mid-build:
 
@@ -1739,6 +2285,65 @@ private async Task HandleCrashRecoveryAsync(ExecutionSession incompleteSession)
     );
 }
 ```
+
+### 11.8 Safety Controls During Boot
+
+**Must enforce**:
+
+```csharp
+private async Task EnforceSafetyControlsAsync()
+{
+    // 1. No orphan build processes
+    await KillOrphanBuildProcessesAsync();
+    
+    // 2. Clean leftover lock files
+    CleanLockFiles();
+    
+    // 3. Terminate stale sessions
+    await TerminateStaleSessionsAsync();
+    
+    // 4. Validate last incomplete execution
+    var incompleteSession = await _database.GetIncompleteSessionAsync();
+    
+    if (incompleteSession != null)
+    {
+        // 5. Rollback partial snapshot if crash occurred
+        await HandleCrashRecoveryAsync(incompleteSession);
+    }
+}
+```
+
+### 11.9 Detailed State Machine Transitions
+
+```mermaid
+stateDiagram-v2
+    [*] --> IDLE
+    IDLE --> AI_PLANNING: Submit Prompt
+    AI_PLANNING --> SPEC_PARSED: Parse Complete
+    SPEC_PARSED --> TASK_GRAPH_READY: Graph Built
+    TASK_GRAPH_READY --> TASK_EXECUTING: Dispatch Task
+    TASK_EXECUTING --> VALIDATING: Patch Applied
+    VALIDATING --> RETRYING: Error Detected
+    RETRYING --> TASK_EXECUTING: Fix Applied
+    VALIDATING --> COMPLETED: Build Success
+    RETRYING --> FAILED: Max Retries Exceeded
+    COMPLETED --> IDLE: Ready
+    FAILED --> IDLE: Reset
+```
+
+**State Descriptions**:
+
+| State | Description | User Visible? |
+|-------|-------------|---------------|
+| `IDLE` | Waiting for user input | Yes (empty state) |
+| `AI_PLANNING` | Generating task graph from prompt | No (shows "Thinking...") |
+| `SPEC_PARSED` | Structured specification ready | No |
+| `TASK_GRAPH_READY` | DAG of tasks prepared | No |
+| `TASK_EXECUTING` | Applying patches, generating code | No (shows "Building...") |
+| `VALIDATING` | Running build, checking output | No |
+| `RETRYING` | Auto-fixing errors | No (shows "Optimizing..." after 3 attempts) |
+| `COMPLETED` | Success, ready for preview | Yes (shows preview) |
+| `FAILED` | Retry budget exhausted | Yes (shows error message) |
 
 ### 11.2 Execution Session Management
 
@@ -1787,7 +2392,7 @@ private async Task EnforceSafetyControlsAsync()
 
 > These systems run invisibly. The user never knows they exist.
 
-### A. Continuous Indexer
+### 12.1 Continuous Indexer
 
 **Runs**: After every successful patch or build
 **Purpose**: Keep the symbol graph up-to-date for AI context
@@ -1825,7 +2430,69 @@ public class ContinuousIndexer
 }
 ```
 
-### B. Snapshot Pruning
+### 12.2 Project Graph Synchronization
+
+**Purpose**: Ensure SQLite graph matches file system
+
+**Implementation**:
+```csharp
+public class ProjectGraphSync
+{
+    private FileSystemWatcher _watcher;
+    
+    public void StartWatching(string projectPath)
+    {
+        _watcher = new FileSystemWatcher(projectPath)
+        {
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
+            Filter = "*.cs",
+            IncludeSubdirectories = true
+        };
+        
+        _watcher.Changed += OnFileChanged;
+        _watcher.Created += OnFileCreated;
+        _watcher.Deleted += OnFileDeleted;
+        
+        _watcher.EnableRaisingEvents = true;
+    }
+    
+    private async void OnFileChanged(object sender, FileSystemEventArgs e)
+    {
+        // Reconcile state silently
+        await _database.UpdateFileMetadataAsync(e.FullPath);
+        await _indexer.IncrementalIndexFileAsync(e.FullPath);
+    }
+}
+```
+
+### 12.3 AI Context Preparation & Caching
+
+**Purpose**: Pre-build retrieval data for faster AI calls
+
+**Implementation**:
+```csharp
+public class AIContextCache
+{
+    public async Task PrepareContextAsync(string projectPath)
+    {
+        // Cache relevant files
+        var relevantFiles = await _indexer.GetRelevantFilesAsync(projectPath);
+        _cache.Set($"relevant_files_{projectPath}", relevantFiles);
+        
+        // Cache symbol references
+        var symbols = await _indexer.GetSymbolGraphAsync();
+        _cache.Set($"symbols_{projectPath}", symbols);
+        
+        // Pre-trim tokens
+        var trimmedContext = await _tokenManager.TrimContextAsync(relevantFiles);
+        _cache.Set($"trimmed_context_{projectPath}", trimmedContext);
+        
+        // So AI call is fast
+    }
+}
+```
+
+### 12.4 Snapshot Pruning Automation
 
 **Runs**: Every 30 minutes or when disk usage exceeds threshold
 **Purpose**: Prevent unbounded disk growth
@@ -1853,10 +2520,30 @@ public class SnapshotPruner
             }
         }
     }
+    
+    public async Task ArchiveOldSnapshotsAsync(string projectId)
+    {
+        var snapshots = await _database.GetSnapshotsAsync(projectId);
+        
+        if (snapshots.Count > MaxSnapshots)
+        {
+            var toArchive = snapshots
+                .OrderBy(s => s.Timestamp)
+                .Take(snapshots.Count - MaxSnapshots);
+            
+            foreach (var snapshot in toArchive)
+            {
+                await ArchiveSnapshotAsync(snapshot.Id);
+            }
+            
+            // Silent operation
+            _logger.LogInformation("Archived {Count} old snapshots", toArchive.Count());
+        }
+    }
 }
 ```
 
-### C. Resource Monitor
+### 12.5 Resource Monitoring System
 
 **Runs**: Continuous background thread
 **Purpose**: Watch system resources and throttle operations
@@ -1865,16 +2552,29 @@ public class SnapshotPruner
 public class ResourceMonitor
 {
     private readonly Timer _timer;
-
-    public ResourceMonitor(string workspacePath)
+    private readonly string _workspaceRoot;
+    
+    public ResourceMonitor(string workspaceRoot)
     {
+        _workspaceRoot = workspaceRoot;
         _timer = new Timer(CheckResources, null, TimeSpan.Zero, TimeSpan.FromSeconds(30));
     }
 
     private void CheckResources(object? state)
     {
+        // Check disk space
+        var driveInfo = new DriveInfo(Path.GetPathRoot(_workspaceRoot));
+        var availableGB = driveInfo.AvailableFreeSpace / (1024.0 * 1024 * 1024);
+        
+        if (availableGB < 1.0)
+        {
+            // Surface to user
+            _uiStateManager.ShowLowDiskSpaceWarning();
+        }
+        
+        // Check memory
         var memoryUsage = GC.GetTotalMemory(forceFullCollection: false);
-        var diskSpace = new DriveInfo(Path.GetPathRoot(_workspacePath)).AvailableFreeSpace;
+        var diskSpace = new DriveInfo(Path.GetPathRoot(_workspaceRoot)).AvailableFreeSpace;
 
         if (memoryUsage > 1_500_000_000) // 1.5GB
         {
@@ -1886,6 +2586,24 @@ public class ResourceMonitor
         {
             _eventAggregator.Publish(new LowDiskSpaceEvent());
         }
+        
+        // Check memory
+        var memoryMB = memoryUsage / (1024.0 * 1024);
+        
+        if (memoryMB > 1000)
+        {
+            // Log internally, don't show to user yet
+            _logger.LogWarning("High memory usage: {MemoryMB} MB", memoryMB);
+        }
+        
+        // Check SDK
+        var sdkValid = await ValidateSdkAsync();
+        if (!sdkValid)
+        {
+            _uiStateManager.ShowSdkIssueWarning();
+        }
+        
+        // All checks run silently unless threshold crossed
     }
 }
 ```
@@ -1999,11 +2717,11 @@ BuildPercentage = 45;
 
 ## 14. Security and Isolation
 
-### Challenge: Generated Code Is Untrusted
+### 14.1 Challenge: Generated Code Is Untrusted
 
 The builder generates code that runs on the user's PC. Security boundaries must be enforced.
 
-### Explicit Constraints
+### 14.2 Explicit Constraints
 
 | ❌ FORBIDDEN                                            | ✅ ALLOWED                          |
 | ------------------------------------------------------- | ----------------------------------- |
@@ -2012,7 +2730,7 @@ The builder generates code that runs on the user's PC. Security boundaries must 
 | Registry writes                                         | Isolated file access within project |
 | Directory traversal (`../../`)                          | Path validation within sandbox      |
 
-### Implementation
+### 14.3 Security Boundary Implementation
 
 ```csharp
 public class SecurityBoundary
@@ -2046,7 +2764,7 @@ public class SecurityBoundary
 }
 ```
 
-### 14.2 Operation Whitelist (LLM Constraints)
+### 14.4 Operation Whitelist (LLM Constraints)
 
 To prevent "jailbreak" attempts by the LLM, we enforce a strict whitelist of allowed operations. The LLM cannot execute arbitrary code or shell commands.
 
@@ -2068,6 +2786,105 @@ public class OperationWhitelist
     {
         return AllowedOperations.Contains(operation);
     }
+    
+    public bool IsDependencySafe(string packageName)
+    {
+        // Check against known safe packages
+        // Reject packages with known vulnerabilities
+        return _safetyChecker.IsPackageSafe(packageName);
+    }
+}
+```
+
+### 14.5 Dry-Run Patch Validation
+
+**Before applying patch**: Simulate AST modification, validate syntax tree, check node existence
+
+**Implementation**:
+```csharp
+public async Task<bool> ValidatePatchAsync(Patch patch)
+{
+    // Simulate AST modification
+    var tree = await CSharpSyntaxTree.ParseTextAsync(File.ReadAllText(patch.FilePath));
+    var root = await tree.GetRootAsync();
+    
+    try
+    {
+        var modifiedRoot = ApplyPatchToNode(root, patch);
+        
+        // Validate syntax tree
+        var diagnostics = modifiedRoot.GetDiagnostics();
+        if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
+        {
+            return false;
+        }
+        
+        // Check node existence
+        if (patch.Operation == PatchOperation.MODIFY_METHOD)
+        {
+            var method = FindMethod(root, patch.MethodName);
+            if (method == null)
+            {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+    catch
+    {
+        return false;
+    }
+}
+```
+
+### 14.6 Retry Budget Controller
+
+**Prevents**: Infinite AI retry loops, endless build cycles, resource exhaustion
+
+**Implementation**:
+```csharp
+public class RetryController
+{
+    private const int SilentRetryLimit = 3;
+    private const int TotalRetryLimit = 10;
+    
+    public async Task<BuildResult> BuildWithRetryAsync(string projectPath)
+    {
+        for (int attempt = 1; attempt <= TotalRetryLimit; attempt++)
+        {
+            var result = await _buildKernel.BuildProjectAsync(projectPath);
+            
+            if (result.Success)
+            {
+                // Silent success
+                _logger.LogInformation("Build succeeded on attempt {Attempt}", attempt);
+                return result;
+            }
+            
+            // Log internally
+            _logger.LogWarning("Build failed on attempt {Attempt}: {Error}", attempt, result.Error);
+            
+            // Update UI state based on attempt count
+            if (attempt > SilentRetryLimit)
+            {
+                // Show "Optimizing build…" to user
+                _uiStateManager.TransitionTo(UIState.SOFT_RECOVERY);
+            }
+            
+            // Get AI fix
+            var fix = await _aiEngine.GenerateFixAsync(result.Error);
+            
+            // Apply patch
+            await _patchEngine.ApplyPatchAsync(fix.Patch);
+            
+            // Exponential backoff
+            await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt - 1)));
+        }
+        
+        // Retry budget exhausted
+        return BuildResult.Failed("Retry limit exceeded");
+    }
 }
 ```
 
@@ -2085,7 +2902,7 @@ public class OperationWhitelist
 
 ## 15. Machine Variability Handling
 
-### The Local-Only Challenge
+### 15.1 The Local-Only Challenge
 
 Unlike cloud environments with fixed infrastructure, local execution must handle:
 
@@ -2100,7 +2917,99 @@ Unlike cloud environments with fixed infrastructure, local execution must handle
 | **Slow disk**                  | Use smaller snapshots, avoid full ZIP     |
 | **Power loss during build**    | Snapshot before = safe recovery           |
 
-### Error Handling with Fallbacks
+### 15.2 Embedded Runtime Validation
+
+**Implementation**:
+```csharp
+public class EmbeddedEnvironmentValidator
+{
+    private readonly string _embeddedSdkPath;
+
+    public bool ValidateEnvironment()
+    {
+        // 1. Verify MSBuild assemblies are present
+        if (!File.Exists(Path.Combine(_embeddedSdkPath, "Microsoft.Build.dll")))
+            return false;
+
+        // 2. Verify .NET Runtime is functional
+        // (Self-check handled by app startup)
+
+        return true;
+    }
+}
+```
+
+### 15.3 Antivirus Interference Handling
+
+**Problem**: Antivirus software may block MSBuild or NuGet operations
+
+**Solutions**:
+1. **Sign binaries with trusted certificate**
+2. **Provide user guidance for exclusions**
+3. **Detect and retry with delays**
+
+**Implementation**:
+```csharp
+public class AntivirusAwareBuildService
+{
+    public async Task<BuildResult> BuildWithRetryAsync(string projectPath)
+    {
+        var maxRetries = 3;
+        var delay = TimeSpan.FromSeconds(2);
+        
+        for (int i = 0; i < maxRetries; i++)
+        {
+            try
+            {
+                return await _buildKernel.BuildAsync(projectPath);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                // Possibly antivirus blocking
+                _logger.LogWarning("Build blocked (attempt {Attempt}): {Error}", i + 1, ex.Message);
+                
+                if (i < maxRetries - 1)
+                {
+                    await Task.Delay(delay);
+                    delay = TimeSpan.FromSeconds(delay.TotalSeconds * 2); // Exponential backoff
+                }
+            }
+        }
+        
+        // Suggest user add exclusion
+        return BuildResult.Failed("Build blocked. Consider adding an antivirus exclusion for the workspace.");
+    }
+}
+```
+
+### 15.4 Resource-Based Adaptive Builds
+
+**Implementation**:
+```csharp
+public class AdaptiveBuildService
+{
+    public async Task<BuildResult> BuildWithAdaptiveSettingsAsync(string projectPath)
+    {
+        // Get system resources
+        var availableMemoryGB = GC.GetTotalMemory(false) / (1024.0 * 1024 * 1024);
+        var processorCount = Environment.ProcessorCount;
+        var driveInfo = new DriveInfo(Path.GetPathRoot(projectPath));
+        var availableDiskGB = driveInfo.AvailableFreeSpace / (1024.0 * 1024 * 1024);
+        
+        // Adjust build parameters based on resources
+        var buildSettings = new BuildSettings
+        {
+            MaxParallelTasks = availableMemoryGB < 4 ? 1 : Math.Max(1, processorCount - 1),
+            EnableIncrementalBuild = availableDiskGB < 10,
+            UseSparseSnapshots = availableDiskGB < 5
+        };
+        
+        return await _buildKernel.BuildAsync(projectPath, buildSettings);
+    }
+}
+```
+
+### 15.5 Error Handling with Fallbacks
 
 ```csharp
 public class MachineVariabilityHandler
@@ -2109,7 +3018,50 @@ public class MachineVariabilityHandler
         string projectPath,
         IProgress<BuildPhase>? progress = null)
     {
-        // ... (implementation hidden)
+        // Phase 1: Verify Embedded Environment
+        if (!_envValidator.ValidateEnvironment())
+        {
+             return BuildResult.CriticalFailure("Embedded SDK is corrupted.");
+        }
+
+        // Phase 2: Attempt restore (In-Process)
+        var restoreResult = await _kernel.BuildAsync(projectPath, "Debug"); // Restore is part of build targets
+        if (!restoreResult.Success)
+        {
+            // Try clearing cache + retry
+            if (restoreResult.HasNuGetConnectionError)
+            {
+                _logger.LogInformation("Clearing NuGet cache...");
+                await ClearNuGetCacheAsync();
+
+                restoreResult = await _kernel.BuildAsync(projectPath, "Debug");
+                if (!restoreResult.Success)
+                    return restoreResult;
+            }
+        }
+
+        return restoreResult;
+    }
+
+    private async Task<bool> ClearNuGetCacheAsync()
+    {
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var nugetCache = Path.Combine(localAppData, "NuGet", "v3-cache");
+
+        try
+        {
+            if (Directory.Exists(nugetCache))
+            {
+                Directory.Delete(nugetCache, recursive: true);
+                _logger.LogInformation("NuGet cache cleared");
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning($"Failed to clear NuGet cache: {ex.Message}");
+            return false;
+        }
     }
 }
 ```
@@ -2165,6 +3117,156 @@ The kernel must detect and mitigate machine variability that cloud-based systems
 | **Orchestrator** | Pluggable (local or cloud)            |
 | **Execution**    | Local default, cloud option for scale |
 | **Database**     | Local cache + cloud sync              |
+
+### 16.1 Detailed Local vs Cloud Comparison
+
+**Latency Analysis**:
+```
+Cloud Build:
+- Network RTT: 50-200ms
+- Container Boot: 2-5s
+- Cold Start: 5-10s
+- Total: 7-15s overhead
+
+Local Build:
+- Process Spawn: 50-100ms
+- MSBuild Init: 200-500ms
+- Total: 250-600ms overhead
+```
+
+**Cost Analysis**:
+```
+Cloud Build (per user/month):
+- Compute: $20-50
+- Storage: $5-10
+- Network: $2-5
+- Total: $27-65/user/month
+
+Local Build:
+- Compute: $0 (user hardware)
+- Storage: $0 (user disk)
+- Network: $0 (only AI API)
+- Total: $0 + AI API costs
+```
+
+### 16.2 Hybrid Architecture Details
+
+**Implementation**:
+```csharp
+public class HybridExecutionService
+{
+    private readonly IExecutionService _localService;
+    private readonly IExecutionService _cloudService;
+    
+    public async Task<BuildResult> ExecuteAsync(BuildRequest request)
+    {
+        // Determine execution location based on:
+        // 1. Project size
+        // 2. Available local resources
+        // 3. User preference
+        // 4. Network connectivity
+        
+        var location = DetermineExecutionLocation(request);
+        
+        return location switch
+        {
+            ExecutionLocation.Local => await _localService.ExecuteAsync(request),
+            ExecutionLocation.Cloud => await _cloudService.ExecuteAsync(request),
+            ExecutionLocation.Hybrid => await ExecuteHybridAsync(request),
+            _ => await _localService.ExecuteAsync(request)
+        };
+    }
+    
+    private async Task<BuildResult> ExecuteHybridAsync(BuildRequest request)
+    {
+        // AI planning in cloud
+        var plan = await _cloudService.PlanAsync(request);
+        
+        // Local execution
+        var result = await _localService.ExecuteAsync(plan);
+        
+        // Sync state to cloud
+        await _cloudService.SyncStateAsync(result);
+        
+        return result;
+    }
+}
+```
+
+### 16.3 Update Distribution Mechanisms
+
+**MSIX Auto-Update**:
+```csharp
+public class UpdateService
+{
+    private readonly HttpClient _httpClient;
+    private readonly string _updateUrl = "https://api.syncai.app/updates";
+    
+    public async Task<UpdateInfo> CheckForUpdatesAsync()
+    {
+        var currentVersion = Assembly.GetExecutingAssembly().GetName().Version;
+        
+        var response = await _httpClient.GetAsync($"{_updateUrl}/check?version={currentVersion}");
+        var updateInfo = await response.Content.ReadFromJsonAsync<UpdateInfo>();
+        
+        return updateInfo;
+    }
+    
+    public async Task DownloadAndInstallAsync(UpdateInfo update)
+    {
+        // Download MSIX bundle
+        var bundlePath = await DownloadBundleAsync(update.DownloadUrl);
+        
+        // Verify signature
+        if (!await VerifySignatureAsync(bundlePath))
+        {
+            throw new SecurityException("Invalid update signature");
+        }
+        
+        // Trigger MSIX update
+        var process = Process.Start(new ProcessStartInfo
+        {
+            FileName = "msixmgr.exe",
+            Arguments = $"-AddPackage {bundlePath}",
+            UseShellExecute = true
+        });
+        
+        await process.WaitForExitAsync();
+    }
+}
+```
+
+**Update Channels**:
+```csharp
+public enum UpdateChannel
+{
+    Stable,      // Production releases
+    Beta,        // Pre-release testing
+    Canary       // Latest development builds
+}
+
+public class UpdateChannelService
+{
+    public UpdateChannel GetCurrentChannel()
+    {
+        return _configuration.GetValue<UpdateChannel>("UpdateChannel");
+    }
+    
+    public async Task<IEnumerable<UpdateInfo>> GetAvailableUpdatesAsync()
+    {
+        var channel = GetCurrentChannel();
+        var url = channel switch
+        {
+            UpdateChannel.Stable => "https://api.syncai.app/updates/stable",
+            UpdateChannel.Beta => "https://api.syncai.app/updates/beta",
+            UpdateChannel.Canary => "https://api.syncai.app/updates/canary",
+            _ => "https://api.syncai.app/updates/stable"
+        };
+        
+        return await _httpClient.GetFromJsonAsync<IEnumerable<UpdateInfo>>(url);
+    }
+}
+```
 
 ### WinUI 3 Stack
 
@@ -2453,11 +3555,170 @@ Complete stack when fully internalized:
 
 ## 22. Performance Considerations
 
-- **Semantic Caching**: Store embeddings, reuse for similar prompts
-- **Parallel Agents**: Execute independent agents concurrently
-- **Incremental Builds**: Only recompile changed modules
-- **Smart Retrieval**: Send ~2-5 relevant files, not entire project
+### 22.1 Semantic Caching Strategy
 
+**Purpose**: Store embeddings, reuse for similar prompts
+
+**Implementation**:
+```csharp
+public class SemanticCache
+{
+    private readonly ConcurrentDictionary<string, CacheEntry> _cache = new();
+    
+    public async Task<T> GetOrGenerateAsync<T>(
+        string key,
+        Func<Task<T>> generator,
+        TimeSpan? expiration = null)
+    {
+        if (_cache.TryGetValue(key, out var entry) && !entry.IsExpired)
+        {
+            return (T)entry.Value;
+        }
+        
+        var value = await generator();
+        _cache[key] = new CacheEntry(value, expiration ?? TimeSpan.FromMinutes(30));
+        
+        return value;
+    }
+}
+```
+
+### 22.2 Parallel Agent Execution
+
+**Purpose**: Execute independent agents concurrently
+
+**Implementation**:
+```csharp
+public async Task<Dictionary<string, AgentOutput>> ExecuteAgentsInParallelAsync(
+    List<IAgent> agents)
+{
+    var results = new Dictionary<string, AgentOutput>();
+    var tasks = new List<Task<(string Name, AgentOutput Output)>>();
+    
+    foreach (var agent in agents)
+    {
+        tasks.Add(Task.Run(async () =>
+        {
+            var output = await agent.ExecuteAsync();
+            return (agent.Name, output);
+        }));
+    }
+    
+    var completed = await Task.WhenAll(tasks);
+    
+    foreach (var (name, output) in completed)
+    {
+        results[name] = output;
+    }
+    
+    return results;
+}
+```
+
+### 22.3 Incremental Build Patterns
+
+**Purpose**: Only recompile changed modules
+
+**Implementation**:
+```csharp
+public class IncrementalBuildService
+{
+    private readonly Dictionary<string, DateTime> _fileTimestamps = new();
+    
+    public async Task<BuildResult> BuildIncrementalAsync(string projectPath)
+    {
+        var changedFiles = GetChangedFiles(projectPath);
+        
+        if (changedFiles.Count == 0)
+        {
+            return BuildResult.Skipped("No changes detected");
+        }
+        
+        // Only rebuild affected projects
+        var affectedProjects = GetAffectedProjects(changedFiles);
+        
+        foreach (var project in affectedProjects)
+        {
+            await BuildProjectAsync(project);
+        }
+        
+        UpdateTimestamps(changedFiles);
+        
+        return BuildResult.Success();
+    }
+    
+    private List<string> GetChangedFiles(string projectPath)
+    {
+        var changedFiles = new List<string>();
+        var allFiles = Directory.GetFiles(projectPath, "*.cs", SearchOption.AllDirectories);
+        
+        foreach (var file in allFiles)
+        {
+            var lastWrite = File.GetLastWriteTimeUtc(file);
+            
+            if (!_fileTimestamps.TryGetValue(file, out var timestamp) || lastWrite > timestamp)
+            {
+                changedFiles.Add(file);
+            }
+        }
+        
+        return changedFiles;
+    }
+}
+```
+
+### 22.4 Smart Context Retrieval
+
+**Purpose**: Send ~2-5 relevant files, not entire project
+
+**Implementation**:
+```csharp
+public class SmartContextRetrieval
+{
+    private const int MaxContextFiles = 5;
+    private const int MaxTokensPerFile = 2000;
+    
+    public async Task<List<string>> GetRelevantContextAsync(
+        string query,
+        string projectPath)
+    {
+        // 1. Parse query for key terms
+        var keyTerms = ExtractKeyTerms(query);
+        
+        // 2. Query symbol graph for relevant files
+        var relevantSymbols = await _database.QuerySymbolsAsync(keyTerms);
+        
+        // 3. Rank by relevance
+        var rankedFiles = relevantSymbols
+            .GroupBy(s => s.FilePath)
+            .OrderByDescending(g => g.Count())
+            .Take(MaxContextFiles)
+            .Select(g => g.Key)
+            .ToList();
+        
+        // 4. Trim each file to relevant sections
+        var context = new List<string>();
+        foreach (var file in rankedFiles)
+        {
+            var content = await GetRelevantSectionsAsync(file, keyTerms);
+            context.Add(TrimToTokenLimit(content, MaxTokensPerFile));
+        }
+        
+        return context;
+    }
+}
+```
+
+### 22.5 Performance Optimization Summary
+
+| Strategy | Benefit | Implementation Complexity |
+|----------|---------|--------------------------|
+| **Semantic Caching** | Reduces AI API calls by 40-60% | Medium |
+| **Parallel Agents** | 2-3x faster generation | Low |
+| **Incremental Builds** | 5-10x faster rebuilds | High |
+| **Smart Retrieval** | Stays within token limits | Medium |
+| **Background Indexing** | Instant context availability | Medium |
+| **Connection Pooling** | Reduces database overhead | Low |
 ---
 
 ## 23. Comparison with Traditional Approaches
@@ -2875,4 +4136,786 @@ Optimized for token efficiency.
 *   **Validation**: Run `BuildKernelValidator` before every build.
 *   **Logs**: Use structured logging (`Serilog`) for tracing deterministic flows.
 
+```
+
+---
+
+## 28. Implementation Roadmap
+
+### 28.1 Phase 1: Core Infrastructure (Weeks 1-4)
+
+- [ ] **Project Setup**
+  - Initialize WinUI 3 project structure
+  - Configure MSIX packaging
+  - Set up CI/CD pipeline
+
+- [ ] **Database Layer**
+  - Design SQLite schema
+  - Implement `ProjectRegistry`
+  - Create migration system
+
+- [ ] **Basic UI Shell**
+  - Main window layout
+  - Navigation framework
+  - Theme system
+
+### 28.2 Phase 2: AI Integration (Weeks 5-8)
+
+- [ ] **SDK Integration**
+  - Integrate `z-ai-web-dev-sdk`
+  - Implement retry logic
+  - Add token budget management
+
+- [ ] **Agent System**
+  - Implement `ArchitectAgent`
+  - Implement `SchemaAgent`
+  - Implement `BackendAgent`
+  - Implement `FrontendAgent`
+  - Implement `IntegrationAgent`
+  - Implement `FixAgent`
+
+- [ ] **Context System**
+  - Implement `RoslynIndexer`
+  - Create context retrieval logic
+  - Build dependency graph
+
+### 28.3 Phase 3: Build System (Weeks 9-12)
+
+- [ ] **Build Kernel**
+  - Implement `BuildKernel`
+  - Add error parsing
+  - Create build isolation
+
+- [ ] **Patch Engine**
+  - Implement `PatchEngine`
+  - Add Roslyn integration
+  - Create dry-run validation
+
+- [ ] **Snapshot System**
+  - Implement `SnapshotManager`
+  - Add rollback capability
+  - Create pruning logic
+
+### 28.4 Phase 4: Polish & Safety (Weeks 13-16)
+
+- [ ] **Error Handling**
+  - Implement retry controller
+  - Add crash recovery
+  - Create user-friendly error messages
+
+- [ ] **Performance**
+  - Optimize database queries
+  - Add caching layers
+  - Implement background indexing
+
+- [ ] **Security**
+  - Implement operation whitelist
+  - Add path validation
+  - Create security boundary
+
+### 28.5 Phase 5: Testing & Deployment (Weeks 17-20)
+
+- [ ] **Testing**
+  - Unit tests for core components
+  - Integration tests for AI pipeline
+  - End-to-end tests for user flows
+
+- [ ] **Documentation**
+  - API documentation
+  - User guide
+  - Architecture documentation
+
+- [ ] **Deployment**
+  - MSIX package creation
+  - App signing
+  - Store submission preparation
+
+### 28.6 Module Dependency Mapping
+
+```mermaid
+graph TD
+    A[UI Layer] --> B[Orchestrator]
+    B --> C[AI Engine]
+    B --> D[Patch Engine]
+    B --> E[Build Kernel]
+    B --> F[Snapshot Manager]
+    
+    C --> G[Context Service]
+    G --> H[Roslyn Indexer]
+    G --> I[SQLite Database]
+    
+    D --> H
+    D --> I
+    
+    E --> J[MSBuild]
+    E --> I
+    
+    F --> I
+    
+    K[Security Boundary] --> D
+    K --> E
+    
+    L[Resource Monitor] --> B
+    L --> I
+```
+
+### 28.7 Risk Mitigation Strategies
+
+| Risk | Mitigation |
+|------|------------|
+| **AI API instability** | Implement retry logic, fallback to cached responses, graceful degradation |
+| **Build system complexity** | Use well-tested MSBuild APIs, extensive logging, isolation |
+| **Performance degradation** | Profile early, implement caching, background processing |
+| **User data loss** | Snapshot system, crash recovery, auto-save |
+| **Security vulnerabilities** | Operation whitelist, path validation, security audits |
+| **Platform compatibility** | Test on multiple Windows versions, handle missing features gracefully |
+
+---
+
+## 29. Error Handling Architecture
+
+### 29.1 Error Handling Philosophy
+
+1. **User Never Sees Technical Details** - All errors translated to user-friendly messages
+2. **Silent Recovery When Possible** - Retry automatically before showing errors
+3. **Actionable Guidance** - Every error message includes next steps
+4. **Preserve User Work** - Never lose user data, always snapshot before risky operations
+5. **Graceful Degradation** - System remains usable even with partial failures
+
+### 29.2 Error Severity Levels
+
+| Level | User Impact | UI Indicator | Action Required |
+|-------|-------------|--------------|-----------------|
+| **Info** | None | Blue info icon | None |
+| **Warning** | Minor, non-blocking | Yellow warning icon | Optional user action |
+| **Error** | Blocking, recoverable | Red error icon | User must resolve |
+| **Critical** | System-level failure | Red with alert | Immediate attention |
+
+### 29.3 Detailed Error Classification
+
+#### Build Error Types
+```csharp
+public enum BuildErrorType
+{
+    // C# Compiler Errors (CS0001-CS9999)
+    CSharpSyntaxError,              // CS1001-CS1999: Syntax errors
+    CSharpSemanticError,            // CS0001-CS0999: Type/member errors
+    CSharpNullabilityWarning,       // CS8600-CS8999: Nullable reference warnings
+    
+    // XAML Errors (XDG0001-XDG9999)
+    XamlParseError,                 // XDG0001-XDG0999: XML/XAML syntax
+    XamlBindingError,               // XDG1000-XDG1999: Data binding
+    XamlResourceError,              // XDG2000-XDG2999: Resource resolution
+    
+    // NuGet Errors (NU0001-NU9999)
+    NuGetPackageNotFound,           // NU1101: Package doesn't exist
+    NuGetVersionConflict,           // NU1107: Version conflict
+    NuGetRestoreFailed,             // NU1000: General restore failure
+    
+    // MSBuild Errors (MSB0001-MSB9999)
+    MSBuildProjectFileError,        // MSB4000-MSB4999: .csproj issues
+    MSBuildTargetError,             // MSB3000-MSB3999: Build target failures
+    
+    // SDK Errors
+    SdkNotFound,                    // .NET SDK not installed
+    SdkVersionMismatch,             // Wrong SDK version
+    
+    // Timeout
+    BuildTimeout,                   // Build exceeded timeout
+    
+    // Unknown
+    UnknownBuildError
+}
+```
+
+#### AI Engine Error Types
+```csharp
+public enum AIErrorType
+{
+    // API Errors
+    ApiKeyMissing,                  // No API key configured
+    ApiKeyInvalid,                  // Invalid API key
+    ApiRateLimitExceeded,           // Too many requests
+    ApiQuotaExceeded,               // Monthly quota exceeded
+    ApiNetworkError,                // Network connectivity issue
+    ApiTimeout,                     // Request timeout
+    
+    // Response Errors
+    InvalidJsonResponse,            // Malformed JSON
+    SchemaValidationFailed,         // Response doesn't match schema
+    EmptyResponse,                  // No content returned
+    
+    // Content Errors
+    ContentPolicyViolation,         // Prompt violates content policy
+    TokenLimitExceeded,             // Prompt too long
+    
+    // Model Errors
+    ModelNotAvailable,              // Selected model unavailable
+    ModelDeprecated,                // Model no longer supported
+    
+    UnknownAIError
+}
+```
+
+### 29.4 Retry Strategy with Exponential Backoff
+
+```csharp
+public class RetryPolicy
+{
+    public int MaxRetries { get; set; } = 3;
+    public TimeSpan InitialDelay { get; set; } = TimeSpan.FromSeconds(1);
+    public double BackoffMultiplier { get; set; } = 2.0;
+    public TimeSpan MaxDelay { get; set; } = TimeSpan.FromSeconds(30);
+    
+    public async Task<T> ExecuteAsync<T>(
+        Func<Task<T>> operation,
+        Func<Exception, bool> shouldRetry)
+    {
+        var attempt = 0;
+        var delay = InitialDelay;
+        
+        while (true)
+        {
+            try
+            {
+                return await operation();
+            }
+            catch (Exception ex) when (shouldRetry(ex) && attempt < MaxRetries)
+            {
+                attempt++;
+                _logger.LogWarning(ex, "Attempt {Attempt} failed, retrying in {Delay}ms", 
+                    attempt, delay.TotalMilliseconds);
+                
+                await Task.Delay(delay);
+                delay = TimeSpan.FromMilliseconds(
+                    Math.Min(delay.TotalMilliseconds * BackoffMultiplier, MaxDelay.TotalMilliseconds));
+            }
+        }
+    }
+}
+```
+
+### 29.5 Retry Decision Matrix
+
+| Error Type | Retry? | Max Retries | Strategy |
+|------------|--------|-------------|----------|
+| **Network Errors** | ✅ Yes | 3 | Exponential backoff |
+| **API Rate Limit** | ✅ Yes | 5 | Fixed delay (60s) |
+| **Syntax Errors** | ✅ Yes | 3 | AI re-generation |
+| **Build Timeout** | ✅ Yes | 1 | Increase timeout |
+| **SDK Not Found** | ❌ No | 0 | User must install |
+| **API Key Invalid** | ❌ No | 0 | User must fix |
+| **Disk Full** | ❌ No | 0 | User must free space |
+
+### 29.6 Auto-Fix Strategies
+
+```csharp
+public class BuildErrorRecoveryService
+{
+    public async Task<RecoveryResult> RecoverFromBuildErrorAsync(BuildError error)
+    {
+        return error.ErrorType switch
+        {
+            BuildErrorType.CSharpSyntaxError => await RecoverFromSyntaxErrorAsync(error),
+            BuildErrorType.XamlParseError => await RecoverFromXamlErrorAsync(error),
+            BuildErrorType.NuGetPackageNotFound => await RecoverFromNuGetErrorAsync(error),
+            BuildErrorType.BuildTimeout => await RecoverFromTimeoutAsync(error),
+            _ => RecoveryResult.Failed("No recovery strategy available")
+        };
+    }
+    
+    private async Task<RecoveryResult> RecoverFromSyntaxErrorAsync(BuildError error)
+    {
+        // 1. Extract error context
+        var context = await ExtractErrorContextAsync(error);
+        
+        // 2. Ask AI to fix
+        var fixPrompt = $@"
+            The following code has a syntax error:
+            
+            File: {error.FilePath}
+            Line: {error.LineNumber}
+            Error: {error.Message}
+            
+            Code context:
+            {context}
+            
+            Please provide a patch to fix this error.
+        ";
+        
+        var patch = await _aiEngine.GeneratePatchAsync(fixPrompt);
+        
+        // 3. Apply patch
+        var result = await _patchEngine.ApplyPatchAsync(patch);
+        
+        if (result.Success)
+        {
+            return RecoveryResult.Success("Syntax error fixed automatically");
+        }
+        
+        return RecoveryResult.Failed("Unable to fix syntax error automatically");
+    }
+}
+```
+
+### 29.7 Circuit Breaker Pattern
+
+```csharp
+public class CircuitBreaker
+{
+    private int _failureCount;
+    private DateTime _lastFailureTime;
+    private CircuitState _state = CircuitState.Closed;
+    
+    private readonly int _failureThreshold = 5;
+    private readonly TimeSpan _timeout = TimeSpan.FromMinutes(1);
+    
+    public async Task<T> ExecuteAsync<T>(Func<Task<T>> operation)
+    {
+        if (_state == CircuitState.Open)
+        {
+            if (DateTime.UtcNow - _lastFailureTime > _timeout)
+            {
+                _state = CircuitState.HalfOpen;
+            }
+            else
+            {
+                throw new CircuitBreakerOpenException("Circuit breaker is open");
+            }
+        }
+        
+        try
+        {
+            var result = await operation();
+            
+            if (_state == CircuitState.HalfOpen)
+            {
+                _state = CircuitState.Closed;
+                _failureCount = 0;
+            }
+            
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _failureCount++;
+            _lastFailureTime = DateTime.UtcNow;
+            
+            if (_failureCount >= _failureThreshold)
+            {
+                _state = CircuitState.Open;
+            }
+            
+            throw;
+        }
+    }
+}
+
+public enum CircuitState
+{
+    Closed,     // Normal operation
+    Open,       // Failing, reject all requests
+    HalfOpen    // Testing if service recovered
+}
+```
+
+### 29.8 Global Exception Handler
+
+```csharp
+public class GlobalExceptionHandler
+{
+    public void Initialize()
+    {
+        // Catch unhandled exceptions
+        AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        Application.Current.UnhandledException += OnApplicationUnhandledException;
+    }
+    
+    private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        var ex = e.ExceptionObject as Exception;
+        _logger.LogCritical(ex, "Unhandled exception in AppDomain");
+        
+        // Show crash dialog
+        ShowCrashDialog(ex);
+        
+        // Save crash dump
+        SaveCrashDump(ex);
+    }
+    
+    private void OnApplicationUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    {
+        _logger.LogError(e.Exception, "Unhandled UI exception");
+        
+        // Mark as handled to prevent crash
+        e.Handled = true;
+        
+        // Show error dialog
+        ShowErrorDialog(e.Exception);
+    }
+}
+```
+
+---
+
+## 30. UI Framework Specifics
+
+### 30.1 WinUI 3 Integration Patterns
+
+**Application Structure**:
+```csharp
+public partial class App : Application
+{
+    private Window? _window;
+    private IHost? _host;
+    
+    public App()
+    {
+        InitializeComponent();
+        
+        // Build dependency injection container
+        _host = Host.CreateDefaultBuilder()
+            .ConfigureServices((context, services) =>
+            {
+                // Core services
+                services.AddSingleton<IOrchestrator, Orchestrator>();
+                services.AddSingleton<IAIEngine, AIEngine>();
+                services.AddSingleton<IPatchEngine, PatchEngine>();
+                services.AddSingleton<IBuildKernel, BuildKernel>();
+                
+                // ViewModels
+                services.AddTransient<MainViewModel>();
+                services.AddTransient<ProjectViewModel>();
+                services.AddTransient<SettingsViewModel>();
+            })
+            .Build();
+        
+        this.UnhandledException += App_UnhandledException;
+    }
+    
+    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    {
+        _window = new MainWindow();
+        _window.Activate();
+    }
+}
+```
+
+### 30.2 MVVM Toolkit Usage
+
+**ViewModel Base**:
+```csharp
+public partial class MainViewModel : ObservableObject
+{
+    private readonly IOrchestrator _orchestrator;
+    
+    [ObservableProperty]
+    private string _promptText = string.Empty;
+    
+    [ObservableProperty]
+    private bool _isGenerating = false;
+    
+    [ObservableProperty]
+    private ProjectState _projectState = ProjectState.Empty;
+    
+    public MainViewModel(IOrchestrator orchestrator)
+    {
+        _orchestrator = orchestrator;
+    }
+    
+    [RelayCommand]
+    private async Task GenerateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(PromptText))
+            return;
+        
+        IsGenerating = true;
+        
+        try
+        {
+            await _orchestrator.ExecuteAsync(PromptText);
+        }
+        finally
+        {
+            IsGenerating = false;
+        }
+    }
+}
+```
+
+**Data Binding**:
+```xml
+<Page x:Class="SyncAI.Views.MainPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:vm="using:SyncAI.ViewModels">
+    
+    <Grid>
+        <TextBox Text="{x:Bind ViewModel.PromptText, Mode=TwoWay}"
+                 PlaceholderText="Describe your application..."
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap" />
+        
+        <Button Command="{x:Bind ViewModel.GenerateCommand}"
+                Content="Generate"
+                IsEnabled="{x:Bind ViewModel.IsGenerating, Converter={StaticResource InverseBooleanConverter}, Mode=OneWay}" />
+        
+        <ProgressRing IsActive="{x:Bind ViewModel.IsGenerating, Mode=OneWay}"
+                      Visibility="{x:Bind ViewModel.IsGenerating, Converter={StaticResource BooleanToVisibilityConverter}, Mode=OneWay}" />
+    </Grid>
+</Page>
+```
+
+### 30.3 DispatcherQueue Threading
+
+**Thread-Safe UI Updates**:
+```csharp
+public class UIService
+{
+    private readonly DispatcherQueue _dispatcherQueue;
+    
+    public UIService()
+    {
+        _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+    }
+    
+    public async Task UpdateUIAsync(Action action)
+    {
+        if (_dispatcherQueue.HasThreadAccess)
+        {
+            action();
+        }
+        else
+        {
+            var tcs = new TaskCompletionSource<bool>();
+            
+            _dispatcherQueue.TryEnqueue(() =>
+            {
+                try
+                {
+                    action();
+                    tcs.SetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    tcs.SetException(ex);
+                }
+            });
+            
+            await tcs.Task;
+        }
+    }
+    
+    public async Task<T> RunOnUIThreadAsync<T>(Func<T> func)
+    {
+        if (_dispatcherQueue.HasThreadAccess)
+        {
+            return func();
+        }
+        
+        var tcs = new TaskCompletionSource<T>();
+        
+        _dispatcherQueue.TryEnqueue(() =>
+        {
+            try
+            {
+                tcs.SetResult(func());
+            }
+            catch (Exception ex)
+            {
+                tcs.SetException(ex);
+            }
+        });
+        
+        return await tcs.Task;
+    }
+}
+```
+
+**Background Operation with UI Updates**:
+```csharp
+public async Task GenerateWithProgressAsync(string prompt)
+{
+    await Task.Run(async () =>
+    {
+        // Background thread
+        var result = await _aiEngine.GenerateAsync(prompt);
+        
+        // Update UI
+        await _uiService.UpdateUIAsync(() =>
+        {
+            StatusText = "Applying changes...";
+        });
+        
+        await _patchEngine.ApplyAsync(result.Patch);
+        
+        // Update UI again
+        await _uiService.UpdateUIAsync(() =>
+        {
+            StatusText = "Building project...";
+        });
+        
+        var buildResult = await _buildKernel.BuildAsync();
+        
+        // Final UI update
+        await _uiService.UpdateUIAsync(() =>
+        {
+            if (buildResult.Success)
+            {
+                StatusText = "Build successful!";
+                ProjectState = ProjectState.Ready;
+            }
+            else
+            {
+                StatusText = $"Build failed: {buildResult.Error}";
+                ProjectState = ProjectState.Error;
+            }
+        });
+    });
+}
+```
+
+### 30.4 MSIX Deployment Details
+
+**Package Configuration**:
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
+    
+    <Identity Name="SyncAI.Builder"
+              Publisher="CN=SyncAI Inc."
+              Version="1.0.0.0" />
+    
+    <Properties>
+        <DisplayName>Sync AI Builder</DisplayName>
+        <PublisherDisplayName>SyncAI Inc.</PublisherDisplayName>
+        <Logo>Assets\StoreLogo.png</Logo>
+    </Properties>
+    
+    <Dependencies>
+        <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+        <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+    </Dependencies>
+    
+    <Resources>
+        <Resource Language="en-US" />
+    </Resources>
+    
+    <Applications>
+        <Application Id="App"
+                    Executable="SyncAI.Builder.exe"
+                    EntryPoint="$targetentrypoint$">
+            <uap:VisualElements DisplayName="Sync AI Builder"
+                              Description="AI-powered application builder"
+                              BackgroundColor="transparent"
+                              Square150x150Logo="Assets\Square150x150Logo.png"
+                              Square44x44Logo="Assets\Square44x44Logo.png">
+                <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png"
+                               Square71x71Logo="Assets\SmallTile.png"
+                               Square310x310Logo="Assets\LargeTile.png" />
+            </uap:VisualElements>
+        </Application>
+    </Applications>
+    
+    <Capabilities>
+        <rescap:Capability Name="runFullTrust" />
+        <Capability Name="internetClient" />
+    </Capabilities>
+</Package>
+```
+
+**Build Configuration**:
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.22621.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>SyncAI.Builder</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x86;x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>MSIX</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.4.231008000" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.22621.756" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
+  </ItemGroup>
+</Project>
+```
+
+### 30.5 UI State Management
+
+**State Machine**:
+```csharp
+public enum UIState
+{
+    EmptyIdle,           // No project loaded
+    PreviewReady,        // Project loaded, ready to generate
+    Generating,          // AI generation in progress
+    Building,            // Build in progress
+    Previewing,          // Showing generated preview
+    SoftRecovery,        // Retrying after errors
+    HardFailure          // Critical error, user intervention needed
+}
+
+public class UIStateManager
+{
+    private UIState _currentState = UIState.EmptyIdle;
+    private readonly DispatcherQueue _dispatcherQueue;
+    
+    public event EventHandler<UIStateChangedEventArgs>? StateChanged;
+    
+    public UIState CurrentState
+    {
+        get => _currentState;
+        private set
+        {
+            if (_currentState != value)
+            {
+                var oldState = _currentState;
+                _currentState = value;
+                StateChanged?.Invoke(this, new UIStateChangedEventArgs(oldState, value));
+            }
+        }
+    }
+    
+    public async Task TransitionToAsync(UIState newState)
+    {
+        if (!IsValidTransition(CurrentState, newState))
+        {
+            throw new InvalidOperationException($"Invalid transition from {CurrentState} to {newState}");
+        }
+        
+        await _dispatcherQueue.EnqueueAsync(() =>
+        {
+            CurrentState = newState;
+        });
+    }
+    
+    private bool IsValidTransition(UIState from, UIState to)
+    {
+        return (from, to) switch
+        {
+            (UIState.EmptyIdle, UIState.Generating) => true,
+            (UIState.PreviewReady, UIState.Generating) => true,
+            (UIState.Generating, UIState.Building) => true,
+            (UIState.Building, UIState.Previewing) => true,
+            (UIState.Building, UIState.SoftRecovery) => true,
+            (UIState.SoftRecovery, UIState.Building) => true,
+            (UIState.SoftRecovery, UIState.HardFailure) => true,
+            (UIState.Previewing, UIState.PreviewReady) => true,
+            (UIState.HardFailure, UIState.PreviewReady) => true,
+            _ => false
+        };
+    }
+}
 ```
