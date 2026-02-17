@@ -4662,6 +4662,28 @@ CREATE TABLE symbol_edges (
     edge_type TEXT NOT NULL, -- 'CALLS', 'INHERITS', 'IMPLEMENTS'
     snapshot_id INTEGER NOT NULL
 );
+
+-- AI Embeddings Table
+CREATE TABLE embeddings (
+    id INTEGER PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    chunk_id TEXT NOT NULL,  -- e.g., 'Model.User:10-50'
+    vector BLOB NOT NULL,    -- Serialized vector data
+    dim INTEGER NOT NULL,    -- Dimension count (e.g., 1536)
+    hash TEXT NOT NULL,      -- Content hash for cache validation
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    FOREIGN KEY(file_path) REFERENCES files(path)
+);
+
+CREATE TABLE embedding_chunks (
+    id INTEGER PRIMARY KEY,
+    embedding_id INTEGER NOT NULL,
+    content TEXT NOT NULL,   -- The actual text chunk
+    start_line INTEGER,
+    end_line INTEGER,
+    FOREIGN KEY(embedding_id) REFERENCES embeddings(id)
+);
 ```
 
 #### 3. Orchestrator Database (`orchestrator.db`)
@@ -4677,6 +4699,19 @@ CREATE TABLE Tasks (
     RetryCount INTEGER DEFAULT 0,
     Payload TEXT,
     Result TEXT
+);
+
+CREATE TABLE ExecutionHistory (
+    Id INTEGER PRIMARY KEY AUTOINCREMENT,
+    SessionId TEXT NOT NULL,
+    ProjectId TEXT NOT NULL,
+    StartAt DATETIME NOT NULL,
+    EndAt DATETIME,
+    Outcome TEXT NOT NULL, -- 'SUCCESS', 'FAILED', 'CANCELLED'
+    RetryCount INTEGER DEFAULT 0,
+    CrashRecovery BIT DEFAULT 0,
+    ErrorMessage TEXT,
+    LogSummary TEXT
 );
 ```
 
@@ -5684,3 +5719,50 @@ public class UIStateManager
     }
 }
 ```
+
+---
+
+## 31. Preview System Integration
+
+The Preview System provides a hybrid feedback loop, allowing users to visualize generated changes instantly. It operates in **three tiers**, balancing speed, accuracy, and safety.
+
+### 31.1 Architecture & Data Flow
+
+```mermaid
+graph TD
+    A[Code Mutation] -->|Trigger| B{Valid XAML?}
+    B -->|Yes| C[Mode 1: Embedded Preview]
+    B -->|No/Complex| D[Mode 2: Code View]
+
+    C --> E[XamlReader.Load]
+    E -->|Success| F[Render in UI]
+    E -->|Exception| D
+
+    D -->|User Request| G[Mode 3: Full Launch]
+    G --> H[Build Service]
+    H -->|Success| I[Process.Start]
+    H -->|Failure| J[Show Diagnostics]
+```
+
+### 31.2 The Three Preview Modes
+
+| Mode                 | Type              | Speed             | Accuracy       | Limitation                                          |
+| :------------------- | :---------------- | :---------------- | :------------- | :-------------------------------------------------- |
+| **1. Embedded XAML** | `XamlReader.Load` | Instant (<500ms)  | High (Layouts) | No code-behind, no bindings, no custom controls.    |
+| **2. Code View**     | Syntax Highlight  | Fast              | Exact Source   | Static text only. Used as fallback.                 |
+| **3. Full Launch**   | `Process.Start`   | Slow (Build time) | 100% (Binary)  | Requires full compilation. Runs in separate window. |
+
+### 31.3 Fallback Logic (The "Safe Preview" Strategy)
+
+The system automatically degrades to the safest possible view to prevent UI crashes:
+
+1.  **Try Mode 1 (Embedded)**: Attempt to parse XAML with restricted context.
+2.  **Catch Exceptions**: If `XamlParseException` occurs (e.g., due to custom namespaces), **silently fallback** to Mode 2.
+3.  **Offer Mode 3**: Always provide a "Launch App" button for full verification.
+
+### 31.4 Performance & Safety Guards
+
+- **Debounce**: Preview updates are throttled (500ms) to prevent render thrashing during typing or generation.
+- **Thread Affinity**: All `XamlReader` operations are marshaled to the **UI Thread** via `DispatcherQueue`.
+- **Sandboxing**: Mode 3 launches the app as a separate process. Future versions will utilize **Windows Sandbox** for isolation.
+- **Security**: `XamlReader` is configured to disallow hazardous types (`ObjectDataProvider`, `Assembly` calls) to prevent XAML injection attacks.
