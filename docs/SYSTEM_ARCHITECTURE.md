@@ -58,8 +58,6 @@
 
 ### What is Sync AI?
 
-### What is Sync AI?
-
 Sync AI is a **local-first, AI-powered full-stack application builder** for Windows. It is a **Windows-native autonomous software construction environment** that generates, builds, previews, and iterates on .NET applications — all in-process, with no external CLI calls.
 
 **Mission**: To deliver a seamless, production-grade development experience where complexity is hidden, and the user prompts for results, not code.
@@ -1444,40 +1442,6 @@ Unlike cloud builders that call external services, Sync AI runs everything local
 | **Database**      | External DB server            | `Microsoft.Data.Sqlite` embedded                    |
 | **Preview**       | External browser              | WinUI 3 `WebView2` or XAML renderer                 |
 
-### 7.1 Preview System Data Flow
-
-The Preview System is **NOT** just a `WebView2`. It is a bidirectional communication channel that enables "Edit-and-Continue" style workflows.
-
-```mermaid
-sequenceDiagram
-    participant UI as WinUI 3 Shell
-    participant WS as WebSocket Server
-    participant App as Running App (WebView2)
-    participant DOM as DOM Mutation Observer
-
-    UI->>WS: 1. Inject sync.js
-    WS->>App: 2. Establish Connection
-    App->>DOM: 3. Observe Changes
-
-    rect rgb(200, 255, 200)
-    Note right of UI: User clicks element in Preview
-    App->>WS: 4. ElementClicked(xpath)
-    WS->>UI: 5. NavigateToSource(file, line)
-    end
-
-    rect rgb(200, 220, 255)
-    Note right of UI: AI modifies CSS
-    UI->>WS: 6. HotReload(css)
-    WS->>App: 7. InjectCSS(new_css)
-    App-->>UI: 8. RenderConfirmed
-    end
-```
-
-#### Key Components:
-1.  **sync-client.js**: Injected into the running app. Captures clicks, errors, and console logs.
-2.  **BridgeService**: A local WebSocket server that routes messages between the running app and the Builder.
-3.  **SourceMapper**: Translates DOM elements back to their creation location in Razor/XAML files.
-
 ### The 6 Embedded Subsystems
 
 The architecture relies on 6 critical internal subsystems that must be implemented as embedded services:
@@ -1630,130 +1594,6 @@ public class ExecutionKernel
 │ └──────────────┘ └──────────────┘ └──────────────┘ │
 └─────────────────────────────────────────────────────────┘
 
-````
-
-### 10.1 FileSystem Sandbox
-
-#### Core Implementation
-
-The sandbox enforces isolation, preventing cross-project contamination and enabling safe rollbacks.
-
-```csharp
-public class FileSystemSandbox
-{
-    private readonly string _projectRoot; // e.g. "C:\Users\John\SyncAIProjects"
-
-    /// <summary>
-    /// Validates if a file path is safe to write to (Sandbox Containment)
-    /// </summary>
-    public bool IsPathSafe(string path)
-    {
-        var fullPath = Path.GetFullPath(path);
-        var workspacePath = Path.GetFullPath(_projectRoot);
-
-        // 1. Ensure path is within workspace root
-        if (!fullPath.StartsWith(workspacePath, StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        // 2. Block directory traversal attempts
-        if (fullPath.Contains(".."))
-            return false;
-
-        // 3. Block system files
-        if (Path.GetFileName(fullPath).StartsWith("."))
-            return false;
-
-        return true;
-    }
-
-    /// <summary>
-    /// Writes content atomically within the sandbox
-    /// </summary>
-    public async Task WriteFileAsync(string projectId, string relativePath, string content)
-    {
-        var fullPath = Path.Combine(_projectRoot, projectId, relativePath);
-
-        if (!IsPathSafe(fullPath))
-        {
-            throw new SecurityException($"Sandbox Violation: Attempted write to {fullPath}");
-        }
-
-        Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
-        await File.WriteAllTextAsync(fullPath, content);
-    }
-
-    /// <summary>
-    /// Silently cleans build artifacts (bin/obj) to free space or reset state
-    /// </summary>
-    public void CleanBuildArtifacts(string projectId)
-    {
-        var projectDir = Path.Combine(_projectRoot, projectId);
-        var bin = Path.Combine(projectDir, "bin");
-        var obj = Path.Combine(projectDir, "obj");
-
-        if (Directory.Exists(bin)) Directory.Delete(bin, true);
-        if (Directory.Exists(obj)) Directory.Delete(obj, true);
-    }
-```
-
-    /// Rollback to previous snapshot
-    public async Task RollbackToSnapshotAsync(string projectId, string snapshotPath)
-    {
-        var projectSrc = Path.Combine(_projectRoot, projectId, "src");
-        Directory.Delete(projectSrc, recursive: true);
-        ZipFile.ExtractToDirectory(snapshotPath, projectSrc);
-    }
-
-}
-
-````
-
-#### Local-Only Enhancements
-
-- **Disk Space Validation**: `DiskSpaceValidator` checks for sufficient space before snapshots.
-- **Path Validation**: Prevents directory traversal attacks.
-- **Snapshot Compression**: Excludes `bin`, `obj`, `.vs` to save space.
-
-### 10.2 Execution Kernel (In-Process MSBuild)
-
-#### Direct API Implementation
-
-Instead of shelling out to CLI, we use `Microsoft.Build` APIs directly for performance and control.
-
-```csharp
-public class ExecutionKernel
-{
-    /// <summary>
-    /// Builds project using Microsoft.Build APIs (No CLI)
-    /// </summary>
-    public async Task<BuildResult> BuildAsync(string projectPath, string configuration = "Debug")
-    {
-        return await Task.Run(() =>
-        {
-            var projectCollection = new ProjectCollection();
-            try
-            {
-                var project = projectCollection.LoadProject(projectPath);
-                project.SetProperty("Configuration", configuration);
-
-                var buildParameters = new BuildParameters(projectCollection)
-                {
-                    Loggers = new[] { new StructuredLogger() },
-                    MaxNodeCount = Environment.ProcessorCount
-                };
-
-                var buildRequest = new BuildRequestData(
-                    project.CreateProjectInstance(),
-                    new[] { "Restore", "Build" } // Restore + Build in one go
-                );
-
-                var result = BuildManager.DefaultBuildManager.Build(buildParameters, buildRequest);
-                return new BuildResult { Success = result.OverallResult == BuildResultCode.Success };
-            }
-            finally { projectCollection.Dispose(); }
-        });
-    }
-}
 ````
 
 ---
@@ -4167,27 +4007,6 @@ The kernel must detect and mitigate machine variability that cloud-based systems
 
 ---
 
-## 15. Machine Variability Handling
-
-### 15.1 Infrastructure Variability Matrix
-
-| Feature         | Local Machine (Sync AI) | Cloud Container (Lovable)  |
-| :-------------- | :---------------------- | :------------------------- |
-| **CPU/RAM**     | **Variable** (User HW)  | **Fixed** (e.g., 2 vCPU)   |
-| **Disk I/O**    | **Variable** (SSD/HDD)  | **Fast** (Datacenter)      |
-| **Network**     | **Unreliable** (Home)   | **Stable** (Backbone)      |
-| **OS Security** | **Strict** (Antivirus)  | **Permissive** (Container) |
-| **Persistence** | **Permanent**           | **Ephemeral**              |
-| **Tooling**     | **Embedded**            | **Pre-installed**          |
-
-### 15.2 Resource Adaptation Strategy
-
-1.  **Dynamic Throttling**: Use `ResourceMonitor` to pause background indexing if CPU > 80%.
-2.  **Disk Awareness**: Prune snapshots aggressively if disk space < 1GB.
-3.  **Network Resilience**: Retry NuGet restore with exponential backoff for flaky connections.
-
----
-
 ## 16. Deployment Model
 
 ### 16.2 Cloud vs. Local Precision
@@ -4650,8 +4469,6 @@ Complete stack when fully internalized:
 > **Framework**: WinUI 3 (.NET 8)
 > **Target OS**: Windows 10 Build 22621+
 > **Deployment**: MSIX packaging
-
----
 
 ---
 
