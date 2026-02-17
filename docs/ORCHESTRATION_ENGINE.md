@@ -204,8 +204,9 @@ public enum BuilderState
     // Validation & Result
     VALIDATING = 9,          // Final integrity check
     RETRYING = 10,           // Retry in progress
-    BUILD_SUCCEEDED = 11,    // All tasks completed
-    BUILD_FAILED = 12        // Unrecoverable failure
+    EXECUTING_TASK = 11,     // Task execution in progress
+    BUILD_SUCCEEDED = 12,    // All tasks completed
+    BUILD_FAILED = 13        // Unrecoverable failure
 }
 ```
 
@@ -336,7 +337,8 @@ public class BuilderReducer
             (BuilderState.IDLE, SpecParsedEvent e) => context with
             {
                 State = BuilderState.SPEC_PARSED,
-                EventLog = [..context.EventLog, @event]
+                EventLog = [..context.EventLog, @event],
+                ProjectMetadata = e.ExtractedFeatures.ToDictionary(f => f, f => (object)true)
             },
 
             // === TASK GRAPH BUILDING ===
@@ -383,6 +385,34 @@ public class BuilderReducer
             // === INVALID TRANSITION ===
             _ => throw new InvalidOperationException(
                 $"Invalid transition: {context.State} + {(@event.GetType().Name)} not allowed")
+        };
+    }
+
+    private static BuilderContext UpdateTaskAndTransition(
+        BuilderContext context,
+        string taskId,
+        BuilderState newState,
+        BuilderEvent @event)
+    {
+        if (context.TaskMap.TryGetValue(taskId, out var task))
+        {
+            task.Status = newState switch
+            {
+                BuilderState.MUTATION_GUARD => TaskStatus.RUNNING,
+                BuilderState.PATCHING => TaskStatus.RUNNING,
+                BuilderState.INDEXING => TaskStatus.RUNNING,
+                BuilderState.BUILDING => TaskStatus.RUNNING,
+                BuilderState.VALIDATING => TaskStatus.VALIDATING,
+                BuilderState.TASK_GRAPH_BUILT => TaskStatus.COMPLETED,
+                _ => task.Status
+            };
+        }
+
+        return context with
+        {
+            State = newState,
+            CurrentTaskId = newState == BuilderState.TASK_GRAPH_BUILT ? null : taskId,
+            EventLog = [..context.EventLog, @event]
         };
     }
 }
@@ -512,6 +542,12 @@ public class ConcurrencyPolicy
         _ => false
     };
 
+    public static bool IsReadOnlyTask(TaskType type) => type switch
+    {
+        TaskType.MIGRATE_SCHEMA or TaskType.ADD_DEPENDENCY => false,
+        _ => false
+    };
+
     public static void ValidateConcurrency(
         BuilderContext context,
         Task incomingTask)
@@ -531,6 +567,19 @@ public class ConcurrencyPolicy
 ---
 
 ## 8. Build System
+
+### Responsibilities
+
+The Build System is responsible for:
+
+- **Execute In-Process Restore** - Restore NuGet packages via MSBuild API
+- **Execute In-Process Build** - Compile C# and XAML via `BuildManager`
+- **Capture Structured Logs** - Collect errors/warnings directly from `ILogger`
+- **Enforce timeout** - Prevent infinite builds
+- **Enforce process isolation** - Build in isolated `ProjectCollection` context
+- **Classify errors** - Categorize by error type
+- **Support cancellation** - Allow user to cancel builds
+- **Snapshot management** - Create/restore workspace snapshots
 
 ### Build Flow
 
@@ -662,6 +711,67 @@ public class BuildService : IBuildService
             }
         }, cancellationToken);
     }
+
+    public async Task<RestoreResult> RestoreAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default)
+    {
+        // Re-use BuildAsync with "Restore" target only
+        var options = new BuildOptions
+        {
+            RestoreBeforeBuild = false
+        };
+
+        var projectCollection = new ProjectCollection();
+        var buildLogger = new StructuredLogger();
+
+        try
+        {
+            var project = projectCollection.LoadProject(projectPath);
+            var buildParameters = new BuildParameters(projectCollection)
+            {
+                Loggers = new[] { buildLogger }
+            };
+
+            var buildRequest = new BuildRequestData(
+                project.CreateProjectInstance(),
+                new[] { "Restore" });
+
+            var buildResult = BuildManager.DefaultBuildManager
+                .Build(buildParameters, buildRequest);
+
+            return new RestoreResult
+            {
+                Success = buildResult.OverallResult == BuildResultCode.Success,
+                RestoredPackages = ExtractRestoredPackages(buildLogger),
+                Duration = TimeSpan.Zero // Calculate from stopwatch
+            };
+        }
+        finally
+        {
+            projectCollection.Dispose();
+        }
+    }
+
+    public async Task CleanAsync(string projectPath)
+    {
+        var projectDir = Path.GetDirectoryName(projectPath);
+        var binPath = Path.Combine(projectDir, "bin");
+        var objPath = Path.Combine(projectDir, "obj");
+
+        if (Directory.Exists(binPath)) Directory.Delete(binPath, recursive: true);
+        if (Directory.Exists(objPath)) Directory.Delete(objPath, recursive: true);
+
+        await Task.CompletedTask;
+    }
+
+    private List<string> ExtractRestoredPackages(StructuredLogger logger)
+    {
+        // Parse restored packages from build log
+        var packages = new List<string>();
+        // Implementation would parse the log for package names
+        return packages;
+    }
 }
 ```
 
@@ -736,7 +846,7 @@ public class IncrementalBuildTracker
         _fileHashes[filePath] = currentHash;
         return true;
     }
-    
+
     private string ComputeFileHash(string filePath)
     {
         using var sha256 = System.Security.Cryptography.SHA256.Create();
@@ -771,7 +881,7 @@ public class BuildCacheService
 {
     private readonly IMemoryCache _compilationCache;
     private readonly string _globalNuGetCache;
-    
+
     public BuildCacheService(IMemoryCache compilationCache)
     {
         _compilationCache = compilationCache;
@@ -779,12 +889,12 @@ public class BuildCacheService
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".nuget", "packages");
     }
-    
+
     public bool TryGetCachedCompilation(string fileHash, out CompilationResult result)
     {
         return _compilationCache.TryGetValue(fileHash, out result);
     }
-    
+
     public void CacheCompilation(string fileHash, CompilationResult result)
     {
         _compilationCache.Set(fileHash, result, TimeSpan.FromHours(1));
@@ -819,46 +929,132 @@ public class BuildCacheService
 // Build Errors
 public enum BuildErrorType
 {
-    CSharpSyntaxError,              // CS1001-CS1999
-    CSharpSemanticError,            // CS0001-CS0999
-    XamlParseError,                 // XDG0001-XDG0999
-    XamlBindingError,               // XDG1000-XDG1999
-    NuGetPackageNotFound,           // NU1101
-    NuGetVersionConflict,           // NU1107
-    MSBuildProjectFileError,        // MSB4000-MSB4999
-    SdkNotFound,
-    BuildTimeout,
+    // C# Compiler Errors (CS0001-CS9999)
+    CSharpSyntaxError,              // CS1001-CS1999: Syntax errors
+    CSharpSemanticError,            // CS0001-CS0999: Type/member errors
+    CSharpNullabilityWarning,       // CS8600-CS8999: Nullable reference warnings
+
+    // XAML Errors (XDG0001-XDG9999)
+    XamlParseError,                 // XDG0001-XDG0999: XML/XAML syntax
+    XamlBindingError,               // XDG1000-XDG1999: Data binding
+    XamlResourceError,              // XDG2000-XDG2999: Resource resolution
+
+    // NuGet Errors (NU0001-NU9999)
+    NuGetPackageNotFound,           // NU1101: Package doesn't exist
+    NuGetVersionConflict,           // NU1107: Version conflict
+    NuGetRestoreFailed,             // NU1000: General restore failure
+
+    // MSBuild Errors (MSB0001-MSB9999)
+    MSBuildProjectFileError,        // MSB4000-MSB4999: .csproj issues
+    MSBuildTargetError,             // MSB3000-MSB3999: Build target failures
+
+    // SDK Errors
+    SdkNotFound,                    // .NET SDK not installed
+    SdkVersionMismatch,             // Wrong SDK version
+
+    // Timeout
+    BuildTimeout,                   // Build exceeded timeout
+
+    // Unknown
     UnknownBuildError
 }
 
 // AI Engine Errors
 public enum AIErrorType
 {
-    ApiKeyMissing, ApiKeyInvalid, ApiRateLimitExceeded,
-    ApiQuotaExceeded, ApiNetworkError, ApiTimeout,
-    InvalidJsonResponse, SchemaValidationFailed, EmptyResponse,
-    TokenLimitExceeded, ModelNotAvailable, UnknownAIError
+    // API Errors
+    ApiKeyMissing,                  // No API key configured
+    ApiKeyInvalid,                  // Invalid API key
+    ApiRateLimitExceeded,           // Too many requests
+    ApiQuotaExceeded,               // Monthly quota exceeded
+    ApiNetworkError,                // Network connectivity issue
+    ApiTimeout,                     // Request timeout
+
+    // Response Errors
+    InvalidJsonResponse,            // Malformed JSON
+    SchemaValidationFailed,         // Response doesn't match schema
+    EmptyResponse,                  // No content returned
+
+    // Content Errors
+    ContentPolicyViolation,         // Prompt violates content policy
+    TokenLimitExceeded,             // Prompt too long
+
+    // Model Errors
+    ModelNotAvailable,              // Selected model unavailable
+    ModelDeprecated,                // Model no longer supported
+
+    UnknownAIError
 }
 
 // File System Errors
 public enum FileSystemErrorType
 {
-    PathNotFound, AccessDenied, DiskFull, FileInUse,
-    SnapshotCreationFailed, SnapshotRestoreFailed, UnknownFileSystemError
+    PathNotFound,                   // Directory/file doesn't exist
+    PathTooLong,                    // Path exceeds Windows limit
+    AccessDenied,                   // Permission denied
+    DiskFull,                       // Insufficient disk space
+    FileInUse,                      // File locked by another process
+    InvalidFileName,                // Invalid characters in name
+    SnapshotCreationFailed,         // Failed to create snapshot
+    SnapshotRestoreFailed,          // Failed to restore snapshot
+    UnknownFileSystemError
 }
 
 // Roslyn/Patch Errors
 public enum PatchErrorType
 {
-    TargetNotFound, SignatureMismatch, FileHashMismatch,
-    SyntaxError, DuplicateMember, ConflictDetected, UnknownPatchError
+    TargetNotFound,                 // Class/method not found
+    SignatureMismatch,              // Method signature changed
+    FileHashMismatch,               // File modified since patch created
+    SyntaxError,                    // Generated code has syntax errors
+    DuplicateMember,                // Member already exists
+    ConflictDetected,               // Merge conflict
+    ValidationFailed,               // Patch validation failed
+    UnknownPatchError
 }
 
 // Orchestrator Errors
 public enum OrchestratorErrorType
 {
-    InvalidStateTransition, TaskExecutionFailed, RetryBudgetExceeded,
-    DependencyFailed, TimeoutExceeded, CancellationRequested
+    InvalidStateTransition,         // Illegal state machine transition
+    TaskExecutionFailed,            // Task failed to execute
+    RetryBudgetExceeded,            // Max retries reached
+    DependencyFailed,               // Dependent task failed
+    TimeoutExceeded,                // Operation timeout
+    CancellationRequested,          // User cancelled
+    UnknownOrchestratorError
+}
+
+// Validation Support
+public enum ValidationSeverity
+{
+    Info,
+    Warning,
+    Error
+}
+
+public enum ErrorSeverity
+{
+    Info,
+    Warning,
+    Error,
+    Critical
+}
+
+public class ValidationResult
+{
+    public bool IsValid { get; set; }
+    public string ErrorMessage { get; set; }
+    public ValidationSeverity Severity { get; set; }
+
+    public static ValidationResult Success() =>
+        new ValidationResult { IsValid = true };
+
+    public static ValidationResult Error(string message) =>
+        new ValidationResult { IsValid = false, ErrorMessage = message, Severity = ValidationSeverity.Error };
+
+    public static ValidationResult Warning(string message) =>
+        new ValidationResult { IsValid = true, ErrorMessage = message, Severity = ValidationSeverity.Warning };
 }
 ```
 
@@ -910,10 +1106,10 @@ public record ErrorClassification
     public string Message { get; init; }
     public string FilePath { get; init; }
     public int? LineNumber { get; init; }
-    
+
     // Classification strategy for this specific error
     public string AutoFixStrategy { get; init; }
-    
+
     /// <summary>
     /// Should this error be auto-retried, or is it unrecoverable?
     /// </summary>
@@ -925,7 +1121,7 @@ public class ErrorClassifier
     public static ErrorClassification ClassifyBuildError(string buildOutput)
     {
         // Parse dotnet build output
-        
+
         if (buildOutput.Contains("error CS"))
             return new ErrorClassification
             {
@@ -934,7 +1130,7 @@ public class ErrorClassifier
                 AutoFixStrategy = "roslyn-patch-and-retry",
                 IsRetryable = true
             };
-        
+
         if (buildOutput.Contains("XDG") || buildOutput.Contains("XLS"))
             return new ErrorClassification
             {
@@ -942,7 +1138,7 @@ public class ErrorClassifier
                 AutoFixStrategy = "xaml-syntax-fix",
                 IsRetryable = true
             };
-        
+
         if (buildOutput.Contains("NU") || buildOutput.Contains("NuGet"))
             return new ErrorClassification
             {
@@ -950,7 +1146,7 @@ public class ErrorClassifier
                 AutoFixStrategy = "nuget-restore",
                 IsRetryable = true
             };
-        
+
         return new ErrorClassification
         {
             Type = ErrorType.BUILD_ERROR,
@@ -958,7 +1154,7 @@ public class ErrorClassifier
             IsRetryable = false
         };
     }
-    
+
     private static CompilerErrorCode? ExtractErrorCode(string buildOutput)
     {
         var match = System.Text.RegularExpressions.Regex.Match(buildOutput, @"(CS|XDG|XLS|NU|MSB)(\d+)");
@@ -981,7 +1177,7 @@ public class BuildErrorRecoveryService
     private readonly INugetService _nugetService;
     private readonly IProjectService _projectService;
     private readonly ILogger<BuildErrorRecoveryService> _logger;
-    
+
     public async Task<RecoveryResult> RecoverFromBuildErrorAsync(BuildError error)
     {
         return error.ErrorType switch
@@ -993,80 +1189,80 @@ public class BuildErrorRecoveryService
             _ => RecoveryResult.Failed("No recovery strategy available")
         };
     }
-    
+
     private async Task<RecoveryResult> RecoverFromSyntaxErrorAsync(BuildError error)
     {
         // 1. Extract error context
         var context = await ExtractErrorContextAsync(error);
-        
+
         // 2. Ask AI to fix
         var fixPrompt = $@"
             The following code has a syntax error:
-            
+
             File: {error.FilePath}
             Line: {error.LineNumber}
             Error: {error.Message}
-            
+
             Code context:
             {context}
-            
+
             Please provide a patch to fix this error.
         ";
-        
+
         var patch = await _aiEngine.GeneratePatchAsync(fixPrompt);
-        
+
         // 3. Apply patch
         var result = await _patchEngine.ApplyPatchAsync(patch);
-        
+
         if (result.Success)
         {
             return RecoveryResult.Success("Syntax error fixed automatically");
         }
-        
+
         return RecoveryResult.Failed("Unable to fix syntax error automatically");
     }
-    
+
     private async Task<RecoveryResult> RecoverFromXamlErrorAsync(BuildError error)
     {
         // Extract XAML context and generate fix
         var context = await ExtractErrorContextAsync(error);
-        
+
         var fixPrompt = $@"
             The following XAML has an error:
-            
+
             File: {error.FilePath}
             Line: {error.LineNumber}
             Error: {error.Message}
-            
+
             XAML context:
             {context}
-            
+
             Please provide corrected XAML.
         ";
-        
+
         var patch = await _aiEngine.GeneratePatchAsync(fixPrompt);
         var result = await _patchEngine.ApplyPatchAsync(patch);
-        
+
         return result.Success
             ? RecoveryResult.Success("XAML error fixed automatically")
             : RecoveryResult.Failed("Unable to fix XAML error automatically");
     }
-    
+
     private async Task<RecoveryResult> RecoverFromNuGetErrorAsync(BuildError error)
     {
         // Extract package name from error message
         var packageName = ExtractPackageName(error.Message);
-        
+
         // Try to find alternative package version
         var availableVersions = await _nugetService.GetAvailableVersionsAsync(packageName);
-        
+
         if (availableVersions.Any())
         {
             var latestStable = availableVersions
                 .Where(v => !v.IsPrerelease)
                 .OrderByDescending(v => v.Version)
                 .FirstOrDefault();
-            
+
             if (latestStable != null)
             {
                 // Update package reference
@@ -1074,39 +1270,39 @@ public class BuildErrorRecoveryService
                 return RecoveryResult.Success($"Updated {packageName} to version {latestStable.Version}");
             }
         }
-        
+
         return RecoveryResult.Failed($"Package {packageName} not found in NuGet");
     }
-    
+
     private async Task<RecoveryResult> RecoverFromTimeoutAsync(BuildError error)
     {
         // Increase timeout and retry
         _logger.LogWarning("Build timeout detected, increasing timeout and retrying");
         return RecoveryResult.Success("Timeout recovery: increased timeout for retry", new { IncreasedTimeout = true });
     }
-    
+
     private async Task<string> ExtractErrorContextAsync(BuildError error)
     {
         if (!File.Exists(error.FilePath))
             return string.Empty;
-        
+
         var lines = await File.ReadAllLinesAsync(error.FilePath);
         var startLine = Math.Max(0, error.LineNumber - 5);
         var endLine = Math.Min(lines.Length - 1, error.LineNumber + 5);
-        
+
         var contextLines = lines[startLine..endLine];
         return string.Join(Environment.NewLine, contextLines);
     }
-    
+
     private string ExtractPackageName(string errorMessage)
     {
         // Parse package name from NuGet error message
         // Example: "Unable to find package 'MyPackage'" -> "MyPackage"
         var match = System.Text.RegularExpressions.Regex.Match(
-            errorMessage, 
+            errorMessage,
             @"package ['""]?([^'""\s]+)['""]?",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        
+
         return match.Success ? match.Groups[1].Value : string.Empty;
     }
 }
@@ -1116,10 +1312,10 @@ public class RecoveryResult
     public bool Success { get; set; }
     public string Message { get; set; }
     public object Data { get; set; }
-    
+
     public static RecoveryResult Success(string message, object data = null) =>
         new RecoveryResult { Success = true, Message = message, Data = data };
-    
+
     public static RecoveryResult Failed(string message) =>
         new RecoveryResult { Success = false, Message = message };
 }
@@ -1134,28 +1330,28 @@ public class SnapshotRollbackService
     private readonly IFileSystemSandbox _fileSystemSandbox;
     private readonly ICodeIndexer _codeIndexer;
     private readonly ILogger<SnapshotRollbackService> _logger;
-    
+
     public async Task<RollbackResult> RollbackToLastGoodStateAsync(string projectId)
     {
         // Find last committed snapshot
         var lastGoodSnapshot = await _snapshotRepository.GetLastCommittedSnapshotAsync(projectId);
-        
+
         if (lastGoodSnapshot == null)
         {
             return RollbackResult.Failed("No good snapshot found");
         }
-        
+
         try
         {
             // Restore snapshot
             await _fileSystemSandbox.RestoreSnapshotAsync(projectId, lastGoodSnapshot.FilePath);
-            
+
             // Re-index files
             await _codeIndexer.IndexProjectAsync(projectId);
-            
-            _logger.LogInformation("Rolled back project {ProjectId} to snapshot {SnapshotId}", 
+
+            _logger.LogInformation("Rolled back project {ProjectId} to snapshot {SnapshotId}",
                 projectId, lastGoodSnapshot.Id);
-            
+
             return RollbackResult.Success($"Restored to snapshot from {lastGoodSnapshot.CreatedDate}");
         }
         catch (Exception ex)
@@ -1172,10 +1368,10 @@ public class RollbackResult
     public string Message { get; set; }
     public string SnapshotId { get; set; }
     public DateTime? SnapshotDate { get; set; }
-    
+
     public static RollbackResult Success(string message) =>
         new RollbackResult { Success = true, Message = message };
-    
+
     public static RollbackResult Failed(string message) =>
         new RollbackResult { Success = false, Message = message };
 }
@@ -1196,10 +1392,10 @@ public class CircuitBreaker
     private int _failureCount;
     private DateTime _lastFailureTime;
     private CircuitState _state = CircuitState.Closed;
-    
+
     private readonly int _failureThreshold = 5;
     private readonly TimeSpan _timeout = TimeSpan.FromMinutes(1);
-    
+
     public async Task<T> ExecuteAsync<T>(Func<Task<T>> operation)
     {
         if (_state == CircuitState.Open)
@@ -1213,29 +1409,29 @@ public class CircuitBreaker
                 throw new CircuitBreakerOpenException("Circuit breaker is open");
             }
         }
-        
+
         try
         {
             var result = await operation();
-            
+
             if (_state == CircuitState.HalfOpen)
             {
                 _state = CircuitState.Closed;
                 _failureCount = 0;
             }
-            
+
             return result;
         }
         catch (Exception ex)
         {
             _failureCount++;
             _lastFailureTime = DateTime.UtcNow;
-            
+
             if (_failureCount >= _failureThreshold)
             {
                 _state = CircuitState.Open;
             }
-            
+
             throw;
         }
     }
@@ -1253,13 +1449,13 @@ public class CircuitBreakerOpenException : Exception
 public class ErrorAnalyticsService
 {
     private readonly IErrorRepository _errorRepository;
-    
+
     public async Task<ErrorStatistics> GetErrorStatisticsAsync(TimeSpan period)
     {
         var since = DateTime.UtcNow - period;
-        
+
         var errors = await _errorRepository.GetErrorsSinceAsync(since);
-        
+
         return new ErrorStatistics
         {
             TotalErrors = errors.Count,
@@ -1287,11 +1483,11 @@ public class ErrorPatternDetector
 {
     private readonly IErrorRepository _errorRepository;
     private readonly IErrorPatternRepository _errorPatternRepository;
-    
+
     public async Task DetectPatternsAsync()
     {
         var recentErrors = await _errorRepository.GetRecentErrorsAsync(100);
-        
+
         // Group by error code - pattern = 3+ occurrences
         var patterns = recentErrors
             .GroupBy(e => e.ErrorCode)
@@ -1305,14 +1501,14 @@ public class ErrorPatternDetector
                 LastSeen = g.Max(e => e.Timestamp),
                 CommonContext = FindCommonContext(g.ToList())
             });
-        
+
         // Store patterns for AI learning
         foreach (var pattern in patterns)
         {
             await _errorPatternRepository.UpsertAsync(pattern);
         }
     }
-    
+
     private string FindCommonContext(List<ErrorLog> errors)
     {
         // Analyze common patterns in error context
@@ -1340,12 +1536,12 @@ public class ErrorLogger
 {
     private readonly ILogger _logger;
     private readonly IErrorRepository _errorRepository;
-    
+
     public void LogError(Exception ex, string message, params object[] args)
     {
         // Log to file
         _logger.LogError(ex, message, args);
-        
+
         // Log to database for analytics
         _errorRepository.AddAsync(new ErrorLog
         {
@@ -1357,12 +1553,12 @@ public class ErrorLogger
             StackTrace = ex.StackTrace
         });
     }
-    
+
     public void LogWarning(string message, params object[] args)
     {
         _logger.LogWarning(message, args);
     }
-    
+
     public void LogInfo(string message, params object[] args)
     {
         _logger.LogInformation(message, args);
@@ -1449,17 +1645,17 @@ public class ErrorMessageProvider
             Severity = ErrorSeverity.Warning
         }
     };
-    
+
     public ErrorMessageTemplate GetTemplate(BuildErrorType errorType)
     {
-        return _buildErrorMessages.TryGetValue(errorType, out var template) 
-            ? template 
-            : new ErrorMessageTemplate 
-            { 
-                Title = "Build Error", 
-                Message = "An unexpected error occurred.", 
+        return _buildErrorMessages.TryGetValue(errorType, out var template)
+            ? template
+            : new ErrorMessageTemplate
+            {
+                Title = "Build Error",
+                Message = "An unexpected error occurred.",
                 UserAction = "Please try again.",
-                Severity = ErrorSeverity.Error 
+                Severity = ErrorSeverity.Error
             };
     }
 }
@@ -1494,23 +1690,23 @@ public class ActionButton
         <FontIcon Glyph="{x:Bind ViewModel.ErrorIcon}"
                   FontSize="48"
                   Foreground="{x:Bind ViewModel.ErrorColor}"/>
-        
+
         <!-- Error Message -->
         <TextBlock Text="{x:Bind ViewModel.ErrorMessage}"
                    TextWrapping="Wrap"
                    Style="{StaticResource BodyTextBlockStyle}"/>
-        
+
         <!-- User Action -->
         <InfoBar Severity="{x:Bind ViewModel.Severity}"
                  IsOpen="True"
                  Title="What to do next"
                  Message="{x:Bind ViewModel.UserAction}"/>
-        
+
         <!-- Action Button (if applicable) -->
         <HyperlinkButton Content="{x:Bind ViewModel.ActionButtonText}"
                          NavigateUri="{x:Bind ViewModel.ActionButtonUrl}"
                          Visibility="{x:Bind ViewModel.HasActionButton}"/>
-        
+
         <!-- Technical Details (Expandable) -->
         <Expander Header="Technical Details"
                   IsExpanded="False">
@@ -1531,7 +1727,7 @@ public class ActionButton
 public class GlobalExceptionHandler
 {
     private readonly ILogger<GlobalExceptionHandler> _logger;
-    
+
     public void Initialize()
     {
         // Catch unhandled exceptions
@@ -1539,38 +1735,38 @@ public class GlobalExceptionHandler
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         Application.Current.UnhandledException += OnApplicationUnhandledException;
     }
-    
+
     private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         var ex = e.ExceptionObject as Exception;
         _logger.LogCritical(ex, "Unhandled exception in AppDomain");
-        
+
         // Show crash dialog
         ShowCrashDialog(ex);
-        
+
         // Save crash dump
         SaveCrashDump(ex);
     }
-    
+
     private void OnUnobservedTaskException(object sender, UnobservedTaskExceptionEventArgs e)
     {
         _logger.LogError(e.Exception, "Unobserved task exception");
-        
+
         // Mark as observed to prevent crash
         e.SetObserved();
     }
-    
+
     private void OnApplicationUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
     {
         _logger.LogError(e.Exception, "Unhandled UI exception");
-        
+
         // Mark as handled to prevent crash
         e.Handled = true;
-        
+
         // Show error dialog
         ShowErrorDialog(e.Exception);
     }
-    
+
     private async void ShowCrashDialog(Exception ex)
     {
         var dialog = new ContentDialog
@@ -1580,11 +1776,23 @@ public class GlobalExceptionHandler
                      "Error details have been saved to the log file.",
             CloseButtonText = "Close Application"
         };
-        
+
         await dialog.ShowAsync();
         Application.Current.Exit();
     }
-    
+
+    private async void ShowErrorDialog(Exception ex)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "Unexpected Error",
+            Content = $"An error occurred: {ex.Message}\n\nThe application will continue running.",
+            CloseButtonText = "OK"
+        };
+
+        await dialog.ShowAsync();
+    }
+
     private void SaveCrashDump(Exception ex)
     {
         var crashLogPath = Path.Combine(
@@ -1592,9 +1800,9 @@ public class GlobalExceptionHandler
             "SyncAIAppBuilder",
             "crash_logs",
             $"crash_{DateTime.UtcNow:yyyyMMdd_HHmmss}.log");
-        
+
         Directory.CreateDirectory(Path.GetDirectoryName(crashLogPath));
-        
+
         File.WriteAllText(crashLogPath, $@"
 === CRASH LOG ===
 Timestamp: {DateTime.UtcNow}
@@ -1622,25 +1830,25 @@ public class InputValidator
     {
         if (string.IsNullOrWhiteSpace(prompt))
             return ValidationResult.Error("Prompt cannot be empty");
-        
+
         if (prompt.Length < 10)
             return ValidationResult.Warning("Prompt is very short. Consider adding more details.");
-        
+
         if (prompt.Length > 10000)
             return ValidationResult.Error("Prompt is too long. Maximum 10,000 characters.");
-        
+
         return ValidationResult.Success();
     }
-    
+
     public ValidationResult ValidateProjectName(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
             return ValidationResult.Error("Project name cannot be empty");
-        
+
         var invalidChars = Path.GetInvalidFileNameChars();
         if (name.Any(c => invalidChars.Contains(c)))
             return ValidationResult.Error("Project name contains invalid characters");
-        
+
         return ValidationResult.Success();
     }
 }
@@ -1649,36 +1857,36 @@ public class PreconditionChecker
 {
     private readonly ISdkManager _sdkManager;
     private readonly ILogger<PreconditionChecker> _logger;
-    
+
     public async Task<PreconditionResult> CheckBuildPreconditionsAsync(string projectPath)
     {
         var issues = new List<string>();
-        
+
         // Check SDK
         var sdkValidation = await _sdkManager.ValidateSdkAsync();
         if (!sdkValidation.IsValid)
             issues.Add(sdkValidation.ErrorMessage);
-        
+
         // Check disk space
         var driveInfo = new DriveInfo(Path.GetPathRoot(projectPath));
         if (driveInfo.AvailableFreeSpace < 1_000_000_000) // 1 GB
             issues.Add("Low disk space. At least 1 GB free space recommended.");
-        
+
         // Check file locks
         var lockedFiles = await FindLockedFilesAsync(projectPath);
         if (lockedFiles.Any())
             issues.Add($"Files are locked: {string.Join(", ", lockedFiles)}");
-        
+
         return issues.Any()
             ? PreconditionResult.Failed(issues)
             : PreconditionResult.Success();
     }
-    
+
     private async Task<List<string>> FindLockedFilesAsync(string projectPath)
     {
         var lockedFiles = new List<string>();
         var projectDir = Path.GetDirectoryName(projectPath);
-        
+
         foreach (var file in Directory.GetFiles(projectDir, "*.*", SearchOption.AllDirectories))
         {
             try
@@ -1690,7 +1898,7 @@ public class PreconditionChecker
                 lockedFiles.Add(file);
             }
         }
-        
+
         return lockedFiles;
     }
 }
@@ -1699,7 +1907,7 @@ public class PreconditionResult
 {
     public bool Success { get; set; }
     public List<string> Issues { get; set; } = new();
-    
+
     public static PreconditionResult Success() => new() { Success = true };
     public static PreconditionResult Failed(List<string> issues) => new() { Success = false, Issues = issues };
 }
@@ -1751,6 +1959,137 @@ public interface IExecutionKernel
     Task<BuildResult> BuildAsync(string projectPath);
     Task<TestResult> RunTestsAsync(string projectPath);
     Task<ExecutionResult> RunAppAsync(string projectPath);
+}
+```
+
+### Data Transfer Objects
+
+#### TaskDefinition
+
+```csharp
+public class TaskDefinition
+{
+    public string Id { get; set; }
+    public TaskType Type { get; set; }
+    public string Description { get; set; }
+    public List<string> TargetFiles { get; set; }
+    public Dictionary<string, object> Parameters { get; set; }
+}
+```
+
+#### TaskResult
+
+```csharp
+public class TaskResult
+{
+    public bool Success { get; set; }
+    public string TaskId { get; set; }
+    public string ErrorMessage { get; set; }
+    public object Data { get; set; }
+}
+```
+
+#### Symbol and SymbolKind
+
+```csharp
+public class Symbol
+{
+    public string Name { get; set; }
+    public string FullyQualifiedName { get; set; }
+    public SymbolKind Kind { get; set; }
+    public string FilePath { get; set; }
+    public int LineNumber { get; set; }
+    public int ColumnNumber { get; set; }
+}
+
+public enum SymbolKind
+{
+    Class,
+    Interface,
+    Method,
+    Property,
+    Field,
+    Event,
+    Namespace
+}
+```
+
+#### PatchDefinition and PatchAction
+
+```csharp
+public class PatchDefinition
+{
+    public string FilePath { get; set; }
+    public PatchAction Action { get; set; }
+    public string TargetSymbol { get; set; }
+    public string Content { get; set; }
+    public Dictionary<string, object> Metadata { get; set; }
+}
+
+public enum PatchAction
+{
+    ADD_CLASS,
+    ADD_METHOD,
+    ADD_PROPERTY,
+    ADD_FIELD,
+    MODIFY_METHOD_BODY,
+    MODIFY_PROPERTY,
+    INSERT_USING,
+    REMOVE_MEMBER,
+    UPDATE_XAML_NODE,
+    ADD_XAML_ELEMENT,
+    MODIFY_XAML_ATTRIBUTE
+}
+```
+
+#### TestResult, TestFailure, and ExecutionResult
+
+```csharp
+public class TestResult
+{
+    public bool Success { get; set; }
+    public int TotalTests { get; set; }
+    public int PassedTests { get; set; }
+    public int FailedTests { get; set; }
+    public List<TestFailure> Failures { get; set; }
+    public TimeSpan Duration { get; set; }
+}
+
+public class TestFailure
+{
+    public string TestName { get; set; }
+    public string ErrorMessage { get; set; }
+    public string StackTrace { get; set; }
+}
+
+public class ExecutionResult
+{
+    public bool Success { get; set; }
+    public int ExitCode { get; set; }
+    public string StandardOutput { get; set; }
+    public string StandardError { get; set; }
+    public TimeSpan Duration { get; set; }
+}
+```
+
+#### ProjectGraph and SourceFile
+
+```csharp
+public class ProjectGraph
+{
+    public string ProjectId { get; set; }
+    public string ProjectPath { get; set; }
+    public List<SourceFile> SourceFiles { get; set; }
+    public List<Symbol> Symbols { get; set; }
+    public Dictionary<string, List<string>> Dependencies { get; set; }
+}
+
+public class SourceFile
+{
+    public string FilePath { get; set; }
+    public string Content { get; set; }
+    public List<Symbol> Symbols { get; set; }
+    public DateTime LastModified { get; set; }
 }
 ```
 
@@ -2039,16 +2378,16 @@ public class BuildServiceIntegrationTests
   </PropertyGroup>
 </Project>");
 
-        File.WriteAllText(Path.Combine(workspace, "Program.cs"), 
+        File.WriteAllText(Path.Combine(workspace, "Program.cs"),
             "Console.WriteLine(\"Hello, World!\");");
-        
+
         return projectPath;
     }
 
     private string CreateProjectWithSyntaxError(string workspace)
     {
         var projectPath = CreateValidProject(workspace);
-        File.WriteAllText(Path.Combine(workspace, "Program.cs"), 
+        File.WriteAllText(Path.Combine(workspace, "Program.cs"),
             "Console.WriteLine(\"Missing semicolon\""); // Missing closing paren and semicolon
         return projectPath;
     }
@@ -2069,9 +2408,9 @@ public class OrchestratorUnitTests
         // Arrange
         var mockBuild = new Mock<IBuildService>();
         mockBuild.Setup(b => b.BuildAsync(It.IsAny<string>(), null, default))
-                 .ReturnsAsync(new BuildResult 
-                 { 
-                     Success = false, 
+                 .ReturnsAsync(new BuildResult
+                 {
+                     Success = false,
                      ErrorType = ErrorType.CSharpCompiler,
                      ErrorMessage = "CS1002: ; expected"
                  });
@@ -2092,12 +2431,12 @@ public class OrchestratorUnitTests
         // Arrange
         var mockBuild = new Mock<IBuildService>();
         var callCount = 0;
-        
+
         mockBuild.Setup(b => b.BuildAsync(It.IsAny<string>(), null, default))
-                 .ReturnsAsync(() => 
+                 .ReturnsAsync(() =>
                  {
                      callCount++;
-                     return callCount < 3 
+                     return callCount < 3
                          ? new BuildResult { Success = false, ErrorType = ErrorType.CSharpCompiler }
                          : new BuildResult { Success = true };
                  });
@@ -2131,6 +2470,7 @@ This orchestrator implements the **"hide complexity, show results"** principle a
 - **Determinism**: Invisibly perfect replay makes system feel magical
 
 **Without deterministic orchestrator:**
+
 - Roslyn patch engine can produce cascading corruption
 - Retry loops become nondeterministic
 - Memory layer tracking becomes unreliable
@@ -2138,6 +2478,7 @@ This orchestrator implements the **"hide complexity, show results"** principle a
 - Silent error fixing can perpetuate failures
 
 **With deterministic orchestrator:**
+
 - Every state transition is logged
 - Every retry is budgeted and tracked
 - Every error is classified before retry decision
