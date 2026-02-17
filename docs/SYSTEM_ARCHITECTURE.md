@@ -3319,13 +3319,28 @@ public void UpdateStatus(string message)
 }
 ```
 
+```csharp
 await DispatcherQueue.EnqueueAsync(() =>
 {
-BuildProgressText = "Compiling...";
-BuildPercentage = 45;
+    BuildProgressText = "Compiling...";
+    BuildPercentage = 45;
 });
+```
 
-````
+### 13.5 Hidden Internal Systems (Normal Mode)
+
+In Lovable-style mode, the following must remain hidden:
+
+- ❌ Task graph
+- ❌ Patch operations
+- ❌ Roslyn AST tree
+- ❌ MSBuild raw output
+- ❌ NuGet logs
+- ❌ Snapshot IDs
+- ❌ Retry counts
+- ❌ File diffs by default
+
+**All of this exists. But hidden.**
 
 ---
 
@@ -3415,6 +3430,7 @@ public class OperationWhitelist
 **Before applying patch**: Simulate AST modification, validate syntax tree, check node existence
 
 **Implementation**:
+
 ```csharp
 public async Task<bool> ValidatePatchAsync(Patch patch)
 {
@@ -3457,6 +3473,7 @@ public async Task<bool> ValidatePatchAsync(Patch patch)
 **Prevents**: Infinite AI retry loops, endless build cycles, resource exhaustion
 
 **Implementation**:
+
 ```csharp
 public class RetryController
 {
@@ -3509,8 +3526,6 @@ public class RetryController
 - **API keys in secure storage** (Azure Key Vault / env vars)
 - **Rate limiting** on API calls
 - **Input sanitization**
-
-````
 
 ---
 
@@ -3814,7 +3829,19 @@ public class HybridExecutionService
 }
 ```
 
-### 16.3 Update Distribution Mechanisms
+### 16.3 Internationalization & Localization Checklist
+
+Ensure the application is ready for global use:
+
+- [ ] **Resource Management**: Use strict `PRI` resource separation (`.resw` files).
+- [ ] **XAML Localization**: Use `x:Uid` for all XAML controls requiring translation.
+- [ ] **Code-Behind**: Use `ResourceLoader.GetForViewIndependentUse()` for C# strings.
+- [ ] **Culture Fallback**: Verify `en-US` default fallback for missing resources.
+- [ ] **Pseudo-Localization**: Test with `qps-ploc` to verify UI layout flexibility.
+- [ ] **Flow Direction**: Ensure RTL support for relevant languages (if planned).
+- [ ] **Formatting**: Use `CultureInfo.CurrentCulture` for dates, numbers, and currency.
+
+### 16.4 Update Distribution Mechanisms
 
 **MSIX Auto-Update**:
 
@@ -4410,8 +4437,6 @@ This is what separates production AI tools from basic generators.
 - [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) — Preview rendering, sandbox launch
 - [PROJECT_HANDBOOK.md](./PROJECT_HANDBOOK.md) — Project structure, dev setup, deployment
 
-````
-
 ---
 
 ## 25. API Contracts & Interface Specifications
@@ -4420,23 +4445,27 @@ This is what separates production AI tools from basic generators.
 
 **Orchestrator Service (`IOrchestrator`)**
 The central control point for all mutations.
+
 - `Task<BuilderState> DispatchAsync(BuilderEvent @event)`: Dispatches an event to the state machine.
 - `Task<TaskResult> ExecuteTaskAsync(TaskDefinition task)`: Entry point for agents to request work execution.
 - `BuilderContext GetCurrentContext()`: Returns the current immutable state of the builder.
 
 **Code Intelligence Service (`IRoslynService`)**
 Provides AST-based analysis and indexing.
+
 - `Task<ProjectGraph> IndexProjectAsync(string path)`: Recursively indexes symbols in a .NET project.
 - `Task<List<Symbol>> FindUsagesAsync(ISymbol symbol)`: Finds all references to a specific symbol.
 - `Task<SemanticModel> GetSemanticModelAsync(string filePath)`: Returns the Roslyn semantic model for a file.
 
 **Patch Engine (`IPatchEngine`)**
 Surgically modifies source code.
+
 - `Task<string> ApplyPatchAsync(string filePath, PatchDefinition patch)`: Applies an AST-based patch.
 - `Task<bool> ValidatePatchAsync(string filePath, PatchDefinition patch)`: Checks for conflicts.
 
 **Execution Kernel (`IExecutionKernel`)**
 Manages the isolated .NET execution environment.
+
 - `Task<BuildResult> BuildAsync(string projectPath)`: Runs an isolated MSBuild process.
 - `Task<TestResult> RunTestsAsync(string projectPath)`: Executes unit tests.
 - `Task<ExecutionResult> RunAppAsync(string projectPath)`: Launches the app in a controlled environment.
@@ -4445,6 +4474,7 @@ Manages the isolated .NET execution environment.
 
 **1. Project Specification Contract (`ProjectSpec`)**
 High-level structural definition of the application.
+
 ```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
@@ -4478,7 +4508,7 @@ High-level structural definition of the application.
   },
   "required": ["projectId", "projectName", "stack", "features"]
 }
-````
+```
 
 **2. Task Graph Contract (`TaskGraph`)**
 Ordered sequence of construction steps.
@@ -4925,6 +4955,40 @@ graph TD
 | **User data loss**           | Snapshot system, crash recovery, auto-save                                |
 | **Security vulnerabilities** | Operation whitelist, path validation, security audits                     |
 | **Platform compatibility**   | Test on multiple Windows versions, handle missing features gracefully     |
+
+---
+
+### 28.8 Accelerated Implementation Schedule (15-Week)
+
+#### Phase 1: Foundation
+
+1. Filesystem Sandbox (week 1)
+2. Orchestrator (week 2-3) — with Execution Kernel hooks
+3. Project Graph DB (week 3)
+
+#### Phase 2: Code Intelligence (Weeks 4-6)
+
+4. Roslyn Indexing Service (Weeks 4-5)
+5. Impact Analysis (Week 5)
+6. Embedding Integration (Week 6)
+
+#### Phase 3: Mutation Safety (Weeks 7-9)
+
+7. Patch Engine (transaction-based) (week 7-8)
+8. Conflict Detection (week 8)
+9. Rollback System (week 9)
+
+#### Phase 4: Execution (Weeks 10-12)
+
+10. Execution Kernel (managed .NET) (week 10-11)
+11. Error Classification (week 11)
+12. Auto-Fix Strategies (week 12)
+
+#### Phase 5: Production (Weeks 13-15)
+
+13. Testing & Hardening (week 13-14)
+14. Deployment Model (week 14-15)
+15. Documentation (ongoing)
 
 ---
 
