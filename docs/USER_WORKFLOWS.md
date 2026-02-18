@@ -21,7 +21,26 @@
 
 ### The "Lovable" for Desktop Experience
 
-SyncAI Explorer is designed to be a **zero-configuration** text-to-app builder for Windows. It combines the ease of conversational AI with the power of native .NET development.
+Sync AI brings the "Lovable" experience to Windows Desktop:
+
+1.  **Autonomous Construction**: The user is not a developer; the user is the **architect**. The system is the builder.
+2.  **No IDE Required**: Zero exposure to Visual Studio, `.csproj` files, or terminals.
+3.  **Local-First & Private**: All code, data, and builds stay on the user's machine.
+4.  **End-to-End Responsibility**: The system owns the stack from **Schema → UI → Tests → Packaging**.
+
+It is a **fully autonomous Windows-native software construction system**.
+
+This system does not generate fragments or starter templates.
+It constructs **complete, runnable, production-ready Windows-native applications**.
+
+From database schema to MSIX installer, the entire lifecycle is owned by the system.
+
+- **Full Stack**: Generates database schemas (SQLite), backend logic (C#), and native UI (WinUI 3/XAML).
+- **End-to-End Lifecycle**: Handles everything from initial scaffolding to final `.msix` packaging.
+- **Live Iteration**: Real-time preview with hot-reload capabilities for instant feedback.
+- **Data Persistence**: Built-in specialized repositories and reliable database management.
+
+It is not just a UI prototyping tool; it is a full-cycle software construction environment.
 
 ### Feature Matrix
 

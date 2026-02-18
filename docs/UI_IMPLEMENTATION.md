@@ -32,6 +32,8 @@
 > Smooth UX does not mean the system is simple.
 > It means the system is sophisticated AND the UI abstracts away the details.
 > **The Goal**: A completely autonomous construction environment where the user never needs to touch an IDE, CLI, or compiler logs.
+>
+> **The Factory Metaphor**: The UI is the control room of an autonomous factory. The user sets the parameters (prompts), and the factory (Orchestrator + Agents) handles the dangerous machinery (compilers, file I/O) behind safety glass. The user sees the product, not the assembly line.
 
 **What Users See** vs **What Happens Internally**:
 
@@ -169,6 +171,7 @@ public sealed partial class MainWindow : Window
 | `xl`  | 32px  | Page margins                             |
 
 **ResourceDictionary Implementation**:
+
 ```xaml
 <ResourceDictionary>
     <x:Double x:Key="SpacingXS">4</x:Double>
@@ -191,6 +194,7 @@ public sealed partial class MainWindow : Window
 | **Code**     | 14px | Regular  | Code display (Cascadia Code) |
 
 **Style Definitions**:
+
 ```xaml
 <Style x:Key="TitleStyle" TargetType="TextBlock">
     <Setter Property="FontSize" Value="28"/>
@@ -218,6 +222,7 @@ public sealed partial class MainWindow : Window
 | **Error**    | Red   | `#D13438` | Soft pulse      |
 
 **ResourceDictionary**:
+
 ```xaml
 <ResourceDictionary>
     <SolidColorBrush x:Key="StatusIdleBrush"     Color="#6B6B6B"/>
@@ -230,6 +235,7 @@ public sealed partial class MainWindow : Window
 ### Material System
 
 **Background Brush Construction**:
+
 ```csharp
 // Mica for main window background
 this.SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
@@ -830,6 +836,7 @@ var acrylicBrush = new AcrylicBrush
 | **Building** | Disabled, text "Building…", indeterminate progress bar inside |
 
 **Idle XAML**:
+
 ```xaml
 <Button x:Name="GenerateButton"
         Content="Generate Application"
@@ -840,6 +847,7 @@ var acrylicBrush = new AcrylicBrush
 ```
 
 **Hover State**:
+
 ```csharp
 private void OnGenerateButtonPointerEntered(object sender, PointerRoutedEventArgs e)
 {
@@ -858,6 +866,7 @@ private void OnGenerateButtonPointerEntered(object sender, PointerRoutedEventArg
 ```
 
 **Click Animation** (80ms shrink):
+
 ```csharp
 private async void OnGenerateClick(object sender, RoutedEventArgs e)
 {
@@ -876,6 +885,7 @@ private async void OnGenerateClick(object sender, RoutedEventArgs e)
 ```
 
 **Building State**:
+
 ```csharp
 private void TransitionToBuildingState()
 {
@@ -899,6 +909,7 @@ private void TransitionToBuildingState()
 ### Status Indicator Pulse
 
 **Status Dot** (12px circle in status bar):
+
 ```xaml
 <Ellipse x:Name="StatusDot"
          Width="12"
@@ -907,6 +918,7 @@ private void TransitionToBuildingState()
 ```
 
 **Building State Pulse** (1.5s cycle):
+
 ```csharp
 private void StartStatusPulse()
 {
@@ -935,6 +947,7 @@ private void StartStatusPulse()
 ```
 
 **Success Flash** (300ms):
+
 ```csharp
 private async void ShowSuccessFlash()
 {
@@ -955,6 +968,7 @@ private async void ShowSuccessFlash()
 ### Page Transitions
 
 **Smooth Fade + Slide** (120ms fade out, 160ms slide in):
+
 ```csharp
 private async Task TransitionToPage(Page newPage, Page currentPage)
 {
@@ -1115,16 +1129,16 @@ private async Task RollbackToSnapshot(string snapshotId)
 
 ### Orchestrator → UI State Mapping Table
 
-| UI State | Orchestrator States (Backend) |
-|----------|-------------------------------|
-| `FIRST_LAUNCH` | N/A (no orchestrator instance) |
-| `EMPTY_IDLE` | `IDLE` |
-| `TYPING` | `IDLE` (no backend change) |
-| `BUILDING` | `SPEC_PARSED`, `TASK_GRAPH_READY`, `MUTATION_GUARD`, `PATCHING`, `INDEXING`, `TASK_EXECUTING`, `VALIDATING`, `RETRYING` (attempts 1–3) |
-| `PREVIEW_READY` | `COMPLETED` |
-| `SOFT_RECOVERY` | `RETRYING` (attempts 4+) |
-| `HARD_FAILURE` | `FAILED` |
-| `INTERVENTION_REQUIRED` | `GUARD_REJECTED` |
+| UI State                | Orchestrator States (Backend)                                                                                                          |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `FIRST_LAUNCH`          | N/A (no orchestrator instance)                                                                                                         |
+| `EMPTY_IDLE`            | `IDLE`                                                                                                                                 |
+| `TYPING`                | `IDLE` (no backend change)                                                                                                             |
+| `BUILDING`              | `SPEC_PARSED`, `TASK_GRAPH_READY`, `MUTATION_GUARD`, `PATCHING`, `INDEXING`, `TASK_EXECUTING`, `VALIDATING`, `RETRYING` (attempts 1–3) |
+| `PREVIEW_READY`         | `COMPLETED`                                                                                                                            |
+| `SOFT_RECOVERY`         | `RETRYING` (attempts 4+)                                                                                                               |
+| `HARD_FAILURE`          | `FAILED`                                                                                                                               |
+| `INTERVENTION_REQUIRED` | `GUARD_REJECTED`                                                                                                                       |
 
 ### State Mapping
 
@@ -1347,6 +1361,7 @@ public class MainViewModel : ObservableObject
 ### Failure Implementation
 
 **Tier 1 — `BuildWithSilentRetryAsync()`**:
+
 ```csharp
 private async Task<BuildResult> BuildWithSilentRetryAsync(string projectPath)
 {
@@ -1373,6 +1388,7 @@ private async Task<BuildResult> BuildWithSilentRetryAsync(string projectPath)
 ```
 
 **Tier 2 — `RecoverableFailureBar` XAML + `HandleRecoverableFailureAsync()`**:
+
 ```xaml
 <InfoBar x:Name="RecoverableFailureBar"
          Severity="Warning"
@@ -1419,6 +1435,7 @@ private async Task<BuildResult> HandleRecoverableFailureAsync(string projectPath
 ```
 
 **Tier 3 — `HardFailureDialog` XAML + `HandleHardFailureAsync()`**:
+
 ```xaml
 <ContentDialog x:Name="HardFailureDialog"
                Title="Build Could Not Complete"
@@ -1489,6 +1506,7 @@ private async Task<BuildResult> HandleHardFailureAsync(string projectPath)
 ```
 
 **`TranslateErrorMessage()` implementation**:
+
 ```csharp
 public string TranslateErrorMessage(BuildError error)
 {
@@ -1652,6 +1670,7 @@ private void UnlockAdvancedFeatures()
 ### Empty Project State XAML
 
 If user opens a new project with no code yet:
+
 ```xaml
 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
     <FontIcon Glyph="&#xE8F1;" FontSize="64" Opacity="0.3"/>
@@ -1718,6 +1737,7 @@ public void ToggleTheme()
 - Minimum touch target size: 44×44px
 
 **Example**:
+
 ```xaml
 <Button Content="Generate"
         AutomationProperties.Name="Generate Application Button"
@@ -1733,6 +1753,7 @@ public void ToggleTheme()
 - All operations async with progress indication
 
 **Async Pattern**:
+
 ```csharp
 // ✅ Good: Async with progress
 public async Task LoadProjectsAsync()

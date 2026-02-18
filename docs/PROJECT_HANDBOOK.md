@@ -6,6 +6,16 @@
 
 ---
 
+## Preface: Constructing the Constructor
+
+Sync AI is **not** an AI coding assistant. It is an **Autonomous Software Construction System**.
+
+When contributing, remember:
+
+1.  **We build the Factory, not the Product.** Our code enables the _user_ to be the architect.
+2.  **No IDE Exposure.** The user should never see a `.csproj` file or a console window.
+3.  **Local-First.** We respect the user's machine and data privacy.
+
 ## Table of Contents
 
 1. [Project Directory Structure](#1-project-directory-structure)

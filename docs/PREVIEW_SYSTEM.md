@@ -8,6 +8,8 @@ The Preview System provides **three modes** for users to visualize generated Win
 2. **Code View** - Syntax-highlighted source code inspection
 3. **Full Launch** - Compiled application execution in separate window
 
+> **Crucial Distinction**: Unlike web-based prototyping tools, the "Full Launch" renders a **real, compiled .NET 8 binary** running natively on Windows. It is not a simulation; it is the actual production application.
+
 ---
 
 ## Architecture
