@@ -14,6 +14,8 @@
 4. [Project History & Time Travel](#4-project-history--time-travel)
 5. [Advanced Mode & Power Features](#5-advanced-mode--power-features)
 6. [Export & Distribution](#6-export--distribution)
+7. [Design Philosophy & UX Principles](#7-design-philosophy--ux-principles)
+8. [Error Handling Strategy](#8-error-handling-strategy)
 
 ---
 
@@ -59,6 +61,16 @@ It is not just a UI prototyping tool; it is a full-cycle software construction e
 - **Constraint**: Users never see a line of code unless they ask to.
 - **Reality**: The system is writing high-quality, documented C# code in the background.
 
+### Environment Bootstrapping & Self-Repair
+
+The system automatically manages the development environment:
+
+- **Automatic .NET SDK Detection**: System checks for compatible SDK on launch
+- **Guided SDK Installation**: If SDK missing or outdated, guided setup flow initiates
+- **NuGet Cache Corruption Detection**: Detects and repairs corrupted NuGet caches
+- **Self-Repair Strategy**: Automatic recovery from build environment issues
+- **Low-Resource Mitigation**: RAM/Disk constraints detected and handled gracefully
+
 ---
 
 ## 2. Primary User Cycle
@@ -85,6 +97,86 @@ It is not just a UI prototyping tool; it is a full-cycle software construction e
 5.  **Verifying**: "Checking for errors..." (Build & Auto-fix)
 6.  **Packaging**: "Signing and bundling..." (Manifest generation)
 7.  **Ready**: App is live and interactive.
+
+### Observable System Behaviors
+
+Based on evidence-driven analysis:
+
+1. **Complex Apps Generate in 30-60 Seconds**: Initial generation takes 30-60s; refinements take 5-15s. Multi-stage pipeline (parsing → architecture → generation → validation).
+
+2. **Intelligent Incremental Updates**: User says "Change button colors" → Only CSS/styles regenerate. Impact analysis prevents unnecessary regeneration.
+
+3. **Dependency Management Is Automatic**: Generated code includes `.csproj` with all dependencies. No manual NuGet package addition required.
+
+4. **Code Quality Is Consistent**: Generated apps deploy and run successfully. Every output goes through build validation before showing to user.
+
+5. **Real Code Ownership**: Users can download and run code locally. Code works in IDE (Visual Studio, VS Code). Output is actual C# + XAML, not proprietary format.
+
+6. **Error-Free User Experience**: Users never see compilation errors. Errors are fixed silently before preview shown.
+
+### Architecture Implied By Behavior
+
+**Input Processing Pipeline**:
+```
+Natural Language Prompt
+    ↓
+[Semantic Parser]
+    ↓
+Structured Intent Objects
+{
+  "features": ["auth", "crud", "api"],
+  "entities": ["User", "Product"],
+  "screens": ["Dashboard", "List", "Detail"]
+}
+```
+
+**Generation Pipeline**:
+```
+Intent Objects
+    ↓
+[Architect] → Project structure
+    ↓
+[CodeGen Agents] → Frontend code (parallel)
+                → Backend code (parallel)
+                → DB schema (parallel)
+    ↓
+[Integration] → Wire together (.csproj, API routes, DB migrations)
+    ↓
+Generated Files (Real C# / XAML code)
+```
+
+**Validation Pipeline**:
+```
+Generated Code
+    ↓
+[Syntax Check] - Parse & compile
+    ↓
+[Build Check] - dotnet restore check
+    ↓
+[Dependency Check] - Missing NuGet packages?
+    ↓
+[Type Check] - Roslyn/C# compiler errors?
+    ↓
+[Preview Build] - Build for Windows
+    ↓
+[Success?] → Show preview OR Auto-fix & retry
+```
+
+**Update Pipeline (For Refinements)**:
+```
+User says: "Change to dark mode"
+    ↓
+[Impact Analysis] - Which files affected?
+    ↓
+[Scoped Regen] - Regenerate only CSS, theme
+                 Leave API/DB/Auth alone
+    ↓
+[Merge] - Integrate into existing code
+    ↓
+[Validate] - Build check
+    ↓
+[Preview] - Updated live
+```
 
 ---
 
@@ -123,6 +215,45 @@ When the user pauses, the AI proactively suggests improvements based on best pra
 - "Should we valid input for the email field?"
 - "The color contrast looks low, shall I fix it?"
 
+### Refinement Flow State Machine
+
+```
+IDLE
+  ↓ (user sends message)
+USER_MESSAGE
+  ↓ (orchestrator processes)
+AI_PLANNING (hidden from user)
+  ↓ (orchestrator executes)
+APPLYING_CHANGES (maps to UI State: BUILDING)
+  ↓ (build succeeds)
+PREVIEW_UPDATE (maps to UI State: PREVIEW_READY)
+```
+
+**User sees**:
+- "Updating your app…" (with shimmer)
+- Preview updates smoothly
+- No task names, no file operations
+
+### Layout Transition for Refinement
+
+When "Improve this app" is clicked:
+
+1. **Preview panel animates**: Height transitions from 100% → 60% (200ms duration)
+2. **Conversation panel slides in**: From bottom, 160ms duration
+3. **System message appears**: "You can add features, redesign layouts, or modify behavior."
+
+### Refinement Failure UX
+
+**Soft Failure** (retries ongoing):
+- Message: "Working on that change…"
+- Silent retry continues
+
+**Hard Failure** (retry budget exhausted):
+- Message: "I couldn't safely apply that change. You can refine your request."
+- Action buttons: "Retry", "Edit Prompt"
+
+**Never show**: Compiler output, stack traces, file paths, technical errors
+
 ---
 
 ## 4. Project History & Time Travel
@@ -143,6 +274,32 @@ Every successful build creates a **Snapshot**. Users can browse history like a t
 - **State Management**: `ProjectState.db` tracks which commit corresponds to which user prompt.
 - **Safety**: Current work is always stashed before restoring an old snapshot.
 
+### Timeline Micro-Animations
+
+**On hover**:
+- Scale: 1.02f
+- Elevation: `Translation(0, -2, 8)`
+
+**On click**:
+- Accent border: 2px
+- Details panel slides down: 180ms
+
+**Smooth scroll snap**:
+- `VerticalSnapPointsType="Mandatory"`
+- `VerticalSnapPointsAlignment="Near"`
+
+### Restore Flow
+
+When user clicks "Restore This Version":
+
+1. **Confirmation dialog**: "Restore app to this version?" with Primary=Restore, Close=Cancel
+2. **Execute restore**: `_snapshotService.RestoreAsync(snapshotId)`
+3. **Silent rebuild**: `_orchestrator.RebuildCurrentProjectAsync()`
+4. **Refresh preview**: `RefreshPreviewAsync()`
+5. **Success toast**: "Restored successfully."
+
+**User does NOT see**: File operations, snapshot mechanics, build process
+
 ---
 
 ## 5. Advanced Mode & Power Features
@@ -151,25 +308,82 @@ Every successful build creates a **Snapshot**. Users can browse history like a t
 
 For users who want to peek behind the curtain or need granular control.
 
+### Activation Methods
+
+- **Keyboard Shortcut**: `Ctrl + Shift + A` (primary method)
+- **Settings Toggle**: Settings → Enable Developer Mode toggle
+- **Easter Egg**: Click status dot 5 times (optional)
+
 ### The Advanced Panel
 
-When enabled, an overlay panel appears, providing deep insights:
+**Layout Specifications**:
+- Default height: 320px
+- Resizable: Up to 50% screen height
+- Background: Neutral subtle dark acrylic
+- Collapse/Expand animation: 200ms
 
-1.  **Orchestrator Logs**
-    - Real-time view of what the agents are thinking.
-    - "Planning navigation...", "Fixing null reference in MainWindow.xaml.cs..."
+**Design Rules** (Advanced Mode must):
+- ❌ Never auto-open
+- ❌ Never interrupt workflow
+- ❌ Never steal focus
+- ❌ Never display by default
+- ✅ Only appear when explicitly activated
+- ✅ Remain collapsed until user expands
 
-2.  **Build Monitor**
-    - Raw MSBuild output (usually hidden on success).
-    - Performance metrics (Build time, RAM usage).
+When enabled, a collapsible bottom drawer appears with six tabs:
 
-3.  **Database Explorer**
-    - View and query the local SQLite database created for the app.
-    - Manually modify data for testing.
+#### Tab 1: Orchestrator
 
-4.  **Code View**
-    - Read-only (or editable) view of the generated C# and XAML.
-    - Syntax highlighting and simple navigation.
+- **Current State**: Displays active orchestrator state
+- **Active Task ID**: Shows currently executing task identifier
+- **Retry Count**: Number of retry attempts for current operation
+- **State Transition History**: Minimal vertical event list
+  ```
+  IDLE → SPEC_PARSED → EXECUTING → VALIDATING → COMPLETED
+  ```
+
+#### Tab 2: Task Queue
+
+- **Pending Tasks**: Queued tasks waiting for execution
+- **Executing Tasks**: Currently running tasks with progress
+- **Completed Tasks**: Finished tasks with duration
+- **Task Dependencies**: Visual indicator of task relationships
+- **Status Icons**: Visual status indicators per task
+
+#### Tab 3: Patch Log
+
+- **File Modified**: Path to modified file
+- **Operation Type**: Add / Modify / Delete (with color badge)
+- **Timestamp**: When the patch was applied
+- **Success/Conflict Status**: Green checkmark or warning indicator
+- **Expandable Details**: Full path, status message
+
+#### Tab 4: Build Output
+
+- **MSBuild Console Output**: Raw build output (Cascadia Code font)
+- **Compiler Warnings**: Warning messages highlighted
+- **Errors (if any)**: Error details when build fails
+- **Copy Button**: Copy entire output to clipboard
+
+#### Tab 5: Snapshot Manager
+
+- **Snapshot ID**: Unique identifier (monospace font)
+- **Timestamp**: When snapshot was created
+- **Trigger Reason**: Why snapshot was created (e.g., "Pre-Generation", "Post-Patch")
+- **Actions per snapshot**:
+  - "Restore" button (accent style)
+  - "View Diff" button
+  - "Delete" button
+
+#### Tab 6: System Health
+
+Green / Yellow / Red status indicators for:
+
+- **.NET SDK**: Version + health status
+- **Disk Space**: Available space + health status
+- **Memory Usage**: RAM usage + health status
+- **NuGet Status**: Cache health + connectivity
+- **Antivirus Interference**: Detection of AV blocking operations
 
 ### Manual Code Overrides
 
@@ -183,6 +397,81 @@ Users can manually edit files in the **Code View**.
 - **Dashboard**: Grid view of all local projects.
 - **Quick Switch**: Switch between projects without restarting the builder.
 - **Archiving**: Move old projects to cold storage to keep the workspace clean.
+
+#### Switching Projects Flow
+
+1. **Fade out current**: 120ms transition
+2. **Load new project**: `_orchestrator.LoadProjectAsync(projectId)`
+3. **Restore last tab state**: Remember which tab was open
+4. **Fade in new**: 160ms transition
+
+**No reload flicker** — seamless transition.
+
+#### Project Filters
+
+- **Search**: AutoSuggestBox, 300px width, placeholder "Search projects…"
+- **Sort flyout options**: Last Modified, Name, Health, Size
+- **View flyout options**: Grid View, List View
+
+#### Archive System
+
+**Archive workflow**:
+1. Move project to `WorkspacesPath/Archive/{projectName}`
+2. Update metadata: `IsArchived = true`
+3. Remove from main view
+4. Show toast: "{projectName} archived"
+
+**Archived projects**: Hidden from main view, accessible via "Show Archived" toggle
+
+#### Safe Delete UX
+
+**Confirmation modal**:
+1. Title: "Delete this project permanently?"
+2. Message: "This action cannot be undone."
+3. Prompt: "Type the project name to confirm:"
+4. TextBox: User must type exact project name
+5. Delete button only enabled when input matches
+
+**Prevents accidental deletion** — requires typed confirmation.
+
+### Performance Optimization UX
+
+#### Three Performance States
+
+**🟢 Normal Operation**:
+- User sees nothing
+- System monitors silently in background
+
+**🟡 Soft Performance Warning**:
+- **Trigger**: Build takes > 30 seconds
+- **UI**: InfoBar with message "Build is taking longer than usual…"
+- **Action button**: "Optimize Build" → opens optimization panel
+
+**🔴 Critical Resource Issue**:
+- **Trigger**: Disk space < 1GB
+- **UI**: Warning InfoBar with message "Low disk space may affect builds."
+- **Action button**: "Free Space" → opens disk cleanup
+
+#### Optimize Build Panel
+
+When "Optimize Build" is clicked:
+
+```
+□ Clean temporary build files      [checked]
+□ Re-index project graph           [checked]
+□ Clear NuGet cache                [checked]
+□ Compact SQLite database          [checked]
+□ Remove old snapshots             [checked]
+
+[Run All Optimizations]  [Cancel]
+```
+
+#### Snapshot Size Management
+
+**If snapshots exceed 5GB**:
+- Gentle notification: "Old versions will be automatically archived."
+- Non-alarmist tone
+- Archive runs in background
 
 ---
 
@@ -209,10 +498,191 @@ SyncAI is a **bootstrap engine**, not a walled garden.
 3.  **Zip Archive**
     - Clean export of source code (excluding `obj` and `bin` folders).
 
+### Packaging State Machine
+
+```
+CONFIGURE (user fills form: App Name, Publisher, Version, Icon)
+  ↓
+PACKAGING (MSBuild packaging profile execution)
+  ↓
+SIGNING (certificate signing)
+  ↓
+VERIFYING (validation of package integrity)
+  ↓
+READY (installer available for download/install)
+```
+
+### On Packaging Success
+
+**Success panel displays**:
+- Green checkmark FontIcon (`\uE73E`)
+- File name of generated MSIX
+- Three action buttons:
+  - "Open Folder" — Opens containing directory
+  - "Install Now" — Launches the installer
+  - "Share" — Opens system share sheet
+
+### On Packaging Failure
+
+**Failure panel displays**:
+- Friendly translated message (not raw error)
+- "Retry" button
+- Collapsed Expander with technical details (for debugging)
+
+### Advanced Build Options
+
+Additional packaging formats (for power users):
+
+- **MSIX Packaging**: Default Windows Store format
+- **Installer Generation**: Setup.exe, .msi formats
+- **Code Signing**: Automatic signing with project certificate
+- **Auto-Update Capability**: Generate update manifests
+- **Release Notes Generation**: Auto-generate from commit history
+
 ### Continuous Integration (Future)
 
 - Plans to support "Push to GitHub" directly from the UI.
 - Auto-generation of GitHub Actions workflows for CI/CD.
+
+---
+
+## 7. Design Philosophy & UX Principles
+
+### The Central Principle
+
+> **Hide complexity, show only results.**
+>
+> Smooth UX does not mean the system is simple.
+> It means the system is sophisticated AND the UI abstracts away the details.
+
+### The 5 Design Principles
+
+#### Principle 1: Fail Silently, Succeed Loudly
+
+- **Internal errors?** Classify and auto-fix.
+- **Still broken after 5 retries?** Fallback to simpler generation.
+- **Missing SDK/Tooling?** Auto-bootstrap or guide silently.
+- **Only show success states** to the user.
+- **Never show compile logs** or raw MSBuild output.
+
+#### Principle 2: One UI, Multiple Stages
+
+- Show single spinner for entire pipeline
+- Multiple stages happen invisibly
+- Users don't know about parsing, generation, validation
+- Single preview result shown
+
+#### Principle 3: Intelligent Scoping
+
+- Impact analysis before regeneration
+- Only touch affected modules
+- Preserve untouched code
+- Merge generated with existing
+
+#### Principle 4: Opinionated Defaults
+
+- Constrain stack choices (WinUI3 + .NET 8 + SQLite)
+- Use opinionated templates
+- Enforce naming conventions
+- Pre-configure best practices
+
+#### Principle 5: Real Code Ownership
+
+- Generate actual C#, XAML, SQL (not proprietary format)
+- Export to GitHub
+- Download as ZIP
+- Continue in IDE
+- Deploy independently
+
+### Psychology of Hidden Complexity
+
+Why this design works:
+
+1. **Reduced Cognitive Load**: Users don't see 50 pieces of information. One clear result (working app). Feels magical and effortless.
+
+2. **Increased Confidence**: No errors = system works. No "failed" attempts visible. Always shows success.
+
+3. **Speed Perception**: Spinner is brief. No intermediate steps. Feels instant.
+
+4. **Trust Building**: Consistently works. No surprises. Professional experience.
+
+### Comparison: Hidden vs Exposed Complexity
+
+| Aspect | Hidden Complexity | Exposed Complexity |
+|--------|-------------------|-------------------|
+| **User Experience** | Smooth, magical | Confusing, overwhelming |
+| **Error Visibility** | 0% | 100% (frustrating) |
+| **Time to Working App** | Fast (steps hidden) | Slow (debugging) |
+| **Perceived Reliability** | High (always works) | Low (errors visible) |
+| **System Underneath** | Same | Same |
+| **User Satisfaction** | High | Low |
+
+---
+
+## 8. Error Handling Strategy
+
+### User-Facing: Never Show Errors
+
+```
+User never sees:
+- Compilation errors
+- Build failures
+- Missing dependencies
+- Type mismatches
+- Syntax errors
+```
+
+### System-Level: Extensive Error Handling
+
+The system handles 5 categories of errors internally:
+
+#### 1. Parse Errors
+- **Response**: Retry with NLP fallback
+- **Fallback**: Use simpler interpretation
+- **Last resort**: Default features if parsing fails
+
+#### 2. Generation Errors
+- **Response**: Log error + context
+- **Action**: Classify error type
+- **Recovery**: Apply auto-fix, regenerate affected section
+- **Validation**: Revalidate after fix
+
+#### 3. Validation Errors
+- **Classification**: syntax, type, config, etc.
+- **Action**: Identify root cause
+- **Fix**: Apply targeted fix
+- **Loop**: Recompile, retry up to 5x
+
+#### 4. Deployment Errors
+- **Response**: Fallback to local preview
+- **Assistance**: Suggest manual fixes if necessary
+- **Support**: Offer help options
+
+#### 5. Unrecoverable Errors
+- **User message**: "Something went wrong"
+- **Suggestions**: "Try simpler prompt" or "Contact support"
+- **Safety**: Preserve work (auto-save)
+
+### Automatic Error Detection & Fixing
+
+**Error Classification**:
+- Syntax errors (CS1002, CS1003)
+- Type mismatches (CS1503)
+- Missing references (CS0106)
+- Undefined variables (CS0103)
+- Build failures
+- Configuration errors
+
+**Auto-Fix Strategies**:
+- Insert missing using statements
+- Add type conversions (`int.Parse`, `Convert.ToInt32`)
+- Add missing attributes (`[Required]`, `[StringLength]`)
+- Fix method signatures
+- Add missing properties
+
+**Retry Logic**: Up to 5 auto-fix attempts before showing to user
+
+**Fix Success Tracking**: Remember solutions for future errors
 
 ---
 
