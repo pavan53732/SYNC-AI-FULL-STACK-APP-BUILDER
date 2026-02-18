@@ -1129,18 +1129,34 @@ private async Task RollbackToSnapshot(string snapshotId)
 - **UI**: Warning InfoBar explaining dependency impact, Force Apply / Discard buttons
 - **→** `BUILDING` (Force Apply) or `EMPTY_IDLE` (Discard)
 
+#### 🔷 FATAL_ENVIRONMENT_ERROR
+
+- **Trigger**: Environment validation fails (SDK missing, corrupted installation, disk critical, certificate expired)
+- **UI**: Full-screen error card (cannot be dismissed), error icon, clear title ("System Configuration Required"), actionable guidance with links, "Open Logs" button for developers
+- **Distinguishing Features**:
+  - NOT recoverable via retry
+  - Requires user action outside the app
+  - Blocks all generation until resolved
+- **Resolution Paths**:
+  - SDK missing → "Download .NET SDK" button (opens browser)
+  - Disk critical → "Free Disk Space" guidance
+  - Certificate expired → "Renew Certificate" workflow
+  - Corrupted installation → "Repair Installation" button
+- **→** `EMPTY_IDLE` (after user fixes issue and clicks "Retry Validation")
+
 ### Orchestrator → UI State Mapping Table
 
-| UI State                | Orchestrator States (Backend)                                                                                                          |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `FIRST_LAUNCH`          | N/A (no orchestrator instance)                                                                                                         |
-| `EMPTY_IDLE`            | `IDLE`                                                                                                                                 |
-| `TYPING`                | `IDLE` (no backend change)                                                                                                             |
-| `BUILDING`              | `SPEC_PARSED`, `TASK_GRAPH_READY`, `MUTATION_GUARD`, `PATCHING`, `INDEXING`, `TASK_EXECUTING`, `VALIDATING`, `RETRYING` (attempts 1–3) |
-| `PREVIEW_READY`         | `COMPLETED`                                                                                                                            |
-| `SOFT_RECOVERY`         | `RETRYING` (attempts 4+)                                                                                                               |
-| `HARD_FAILURE`          | `FAILED`                                                                                                                               |
-| `INTERVENTION_REQUIRED` | `GUARD_REJECTED`                                                                                                                       |
+| UI State                  | Orchestrator States (Backend)                                                                                                          |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `FIRST_LAUNCH`            | N/A (no orchestrator instance)                                                                                                         |
+| `EMPTY_IDLE`              | `IDLE`                                                                                                                                 |
+| `TYPING`                  | `IDLE` (no backend change)                                                                                                             |
+| `BUILDING`                | `SPEC_PARSED`, `TASK_GRAPH_READY`, `MUTATION_GUARD`, `PATCHING`, `INDEXING`, `TASK_EXECUTING`, `VALIDATING`, `RETRYING` (attempts 1–3) |
+| `PREVIEW_READY`           | `COMPLETED`                                                                                                                            |
+| `SOFT_RECOVERY`           | `RETRYING` (attempts 4+)                                                                                                               |
+| `HARD_FAILURE`            | `FAILED`                                                                                                                               |
+| `INTERVENTION_REQUIRED`   | `GUARD_REJECTED`                                                                                                                       |
+| `FATAL_ENVIRONMENT_ERROR` | `ENVIRONMENT_INVALID` (SDK missing, disk critical, corrupted installation, certificate expired)                                        |
 
 ### State Mapping
 
@@ -1149,20 +1165,21 @@ private UIState MapToUIState(OrchestratorState orchestratorState, int retryCount
 {
     return orchestratorState switch
     {
-        OrchestratorState.IDLE             => UIState.EMPTY_IDLE,
-        OrchestratorState.SPEC_PARSED      => UIState.BUILDING,
-        OrchestratorState.TASK_GRAPH_READY => UIState.BUILDING,
-        OrchestratorState.MUTATION_GUARD   => UIState.BUILDING,
-        OrchestratorState.PATCHING         => UIState.BUILDING,
-        OrchestratorState.INDEXING         => UIState.BUILDING,
-        OrchestratorState.TASK_EXECUTING   => UIState.BUILDING,
-        OrchestratorState.VALIDATING       => UIState.BUILDING,
+        OrchestratorState.IDLE               => UIState.EMPTY_IDLE,
+        OrchestratorState.SPEC_PARSED        => UIState.BUILDING,
+        OrchestratorState.TASK_GRAPH_READY   => UIState.BUILDING,
+        OrchestratorState.MUTATION_GUARD     => UIState.BUILDING,
+        OrchestratorState.PATCHING           => UIState.BUILDING,
+        OrchestratorState.INDEXING           => UIState.BUILDING,
+        OrchestratorState.TASK_EXECUTING     => UIState.BUILDING,
+        OrchestratorState.VALIDATING         => UIState.BUILDING,
         OrchestratorState.RETRYING when retryCount <= 3 => UIState.BUILDING,
         OrchestratorState.RETRYING when retryCount > 3  => UIState.SOFT_RECOVERY,
-        OrchestratorState.COMPLETED        => UIState.PREVIEW_READY,
-        OrchestratorState.FAILED           => UIState.HARD_FAILURE,
-        OrchestratorState.GUARD_REJECTED   => UIState.INTERVENTION_REQUIRED,
-        _                                  => UIState.EMPTY_IDLE
+        OrchestratorState.COMPLETED          => UIState.PREVIEW_READY,
+        OrchestratorState.FAILED             => UIState.HARD_FAILURE,
+        OrchestratorState.GUARD_REJECTED     => UIState.INTERVENTION_REQUIRED,
+        OrchestratorState.ENVIRONMENT_INVALID => UIState.FATAL_ENVIRONMENT_ERROR,
+        _                                    => UIState.EMPTY_IDLE
     };
 }
 ```

@@ -139,7 +139,7 @@ CREATE TABLE symbols (
     id TEXT PRIMARY KEY,
     file_id TEXT NOT NULL,
     name TEXT NOT NULL,
-    kind TEXT NOT NULL, -- 'class', 'function', 'component', 'route', 'model'
+kind TEXT NOT NULL, -- 'class', 'method', 'property', 'view', 'viewmodel', 'service', 'repository'
     exported BOOLEAN,
     FOREIGN KEY (file_id) REFERENCES files(id)
 );
@@ -185,11 +185,11 @@ public class SymbolExtractor
 
 Stored in the `dependencies` table:
 
-| id  | from_symbol      | to_symbol        | type     |
-| :-- | :--------------- | :--------------- | :------- |
-| 1   | `UserPage`       | `UserController` | `import` |
-| 2   | `UserController` | `UserModel`      | `import` |
-| 3   | `/api/users`     | `UserController` | `route`  |
+| id  | from_symbol      | to_symbol        | type        |
+| :-- | :--------------- | :--------------- | :---------- |
+| 1   | `LoginPage`      | `LoginViewModel` | `binding`   |
+| 2   | `TaskService`    | `TaskRepository` | `dependency`|
+| 3   | `DashboardPage`  | `NavigationService` | `navigation` |
 
 **Best For**: UI-heavy apps, <50 files, clear file-to-component mapping.
 
@@ -2365,9 +2365,11 @@ To ensure the generated manifest is accurate, the system maintains a dedicated i
 ```sql
 CREATE TABLE api_usage (
     id TEXT PRIMARY KEY,
-    file_path TEXT,
-    api_name TEXT,
-    required_capability TEXT
+    file_path TEXT NOT NULL,
+    namespace TEXT NOT NULL,
+    type_name TEXT,
+    member_name TEXT,
+    detected_at DATETIME NOT NULL
 );
 ```
 

@@ -88,7 +88,6 @@ Sync AI abstracts the entire .NET development lifecycle, just as Lovable abstrac
     - Capability inference and injection
     - MSIX bundle generation
     - Certificate generation and signing
-    - Certificate generation and signing
     - Deterministic mutation-based version increment
     - Production-ready installer output
 
@@ -157,6 +156,42 @@ BuilderContext.ProjectMetadata["AppVersion"]
 Manifest version must be derived exclusively from this value.
 Snapshots and installer versions must match.
 ```
+
+### Atomic Packaging Rule (CRITICAL)
+
+Packaging is an atomic operation that creates an installation artifact. Unlike preview execution, packaging requires:
+
+```text
+PACKAGING PIPELINE (Atomic - All-or-Nothing):
+┌─────────────────────────────────────────────────────────────┐
+│ 1. CAPABILITY_SCAN → Detect required permissions            │
+│ 2. MANIFEST_GENERATE → Create Package.appxmanifest         │
+│ 3. VERSION_SYNC → Ensure manifest matches BuilderContext    │
+│ 4. BUILD_RELEASE → Compile in Release configuration         │
+│ 5. PACKAGE_CREATE → Generate MSIX bundle                    │
+│ 6. SIGN → Apply code signature                              │
+│ 7. VERIFY → Validate signature integrity                    │
+└─────────────────────────────────────────────────────────────┘
+        │
+        ▼ (any step fails)
+┌─────────────────────────────────────────────────────────────┐
+│ ROLLBACK → Restore previous stable package (if exists)      │
+│ REPORT → Surface actionable error to user                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Differences from Preview Launch:**
+
+| Aspect | Preview Launch | Packaging |
+|--------|---------------|-----------|
+| Build Config | Debug | Release |
+| Signing | Optional | **Mandatory** |
+| Isolation | Windows Sandbox / AppContainer | N/A (artifact output) |
+| Output | Running process | `.msixbundle` file |
+| Reversibility | Kill process | Delete file |
+| Capability Inference | Runtime detection | **Pre-build injection** |
+
+**INVARIANT**: Packaging MUST NOT modify source files. Manifest generation creates a NEW file in the `packaging/` directory.
 
 ### Layer Details
 
@@ -4148,6 +4183,30 @@ CREATE TABLE ProjectVersions (
     SnapshotId TEXT NOT NULL,
     Description TEXT,
     Timestamp DATETIME NOT NULL
+);
+
+-- Installed Packages (NuGet dependency tracking)
+-- Used by: PackagingService for capability inference, BuildService for restore validation
+CREATE TABLE installed_packages (
+    id INTEGER PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    package_id TEXT NOT NULL,           -- NuGet package name (e.g., 'Microsoft.UI.Xaml')
+    version TEXT NOT NULL,              -- Semantic version (e.g., '2.8.0')
+    installed_at DATETIME NOT NULL,
+    installed_by TEXT,                  -- 'AI_AGENT', 'USER', 'TEMPLATE'
+    capability_hints TEXT,              -- JSON array: ['internetClient', 'location']
+    is_approved INTEGER DEFAULT 1,      -- Matches OperationWhitelist.ApprovedPackages
+    FOREIGN KEY (project_id) REFERENCES projects(id),
+    UNIQUE(project_id, package_id)
+);
+
+-- Package capability mapping (pre-computed for fast lookup)
+CREATE TABLE package_capabilities (
+    id INTEGER PRIMARY KEY,
+    package_id TEXT NOT NULL,           -- NuGet package name
+    capability TEXT NOT NULL,           -- Windows capability name
+    api_namespace TEXT,                 -- Triggering namespace (e.g., 'Windows.Devices.Geolocation')
+    UNIQUE(package_id, capability)
 );
 ```
 

@@ -138,8 +138,9 @@ public class PreviewService
         // SECURITY STEP 1: Verify Windows Sandbox is available
         if (!IsWindowsSandboxAvailable())
         {
-             // Fallback: Show error or require admin override (Not implemented for safety)
-             throw new SecurityException("Windows Sandbox is required for safe execution of AI-generated code.");
+            // FALLBACK: Use AppContainer isolation when Windows Sandbox feature is unavailable
+            // This ensures the system works on all Windows 10 22621+ without requiring Sandbox
+            return await LaunchInAppContainerFallbackAsync(projectPath);
         }
 
         // SECURITY STEP 2: Show consent dialog
@@ -154,9 +155,10 @@ public class PreviewService
         var buildResult = await _buildService.BuildAsync(projectPath);
         if (!buildResult.Success) throw new BuildException("Build failed", buildResult.Errors);
 
-        // Step 4: Packaging & Signing (Layer 2.5)
-        // Ensure manifest is up-to-date and identity is signed
-        await _packagingService.PreparePackageAsync(projectPath);
+        // Step 4: Prepare for Preview Launch (NOT full MSIX packaging)
+        // Preview Launch → Signed EXE in isolated sandbox (fast, lightweight)
+        // Installer Generation → Full MSIX pipeline (separate workflow)
+        await _packagingService.PreparePreviewExecutableAsync(projectPath);
 
         // Step 5: Get executable path (or packaged entry point)
         // DYNAMIC RESOLUTION: Do not hardcode "bin/Debug". Use MSBuild properties or Project Context.

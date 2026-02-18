@@ -39,7 +39,7 @@ From database schema to MSIX installer, the entire lifecycle is owned by the sys
 
 - **Full Stack**: Generates database schemas (SQLite), backend logic (C#), and native UI (WinUI 3/XAML).
 - **End-to-End Lifecycle**: Handles everything from initial scaffolding to final `.msix` packaging.
-- **Live Iteration**: Real-time preview with hot-reload capabilities for instant feedback.
+- **Live Iteration**: Real-time preview via shadow copy launch (app restarts in <2s for changes).
 - **Data Persistence**: Built-in specialized repositories and reliable database management.
 
 It is not just a UI prototyping tool; it is a full-cycle software construction environment.
@@ -50,7 +50,7 @@ It is not just a UI prototyping tool; it is a full-cycle software construction e
 | :-------------------------------- | :---------------------------------------------------------------- | :-------------------------------------------------- |
 | **Natural Language Construction** | Build full apps by describing them in plain English.              | Semantic Intent Parsing → Multi-Agent Orchestration |
 | **Silent Auto-Fix Loop**          | Compiler errors are detected and fixed without user intervention. | MSBuild Log Parsing + Roslyn Code Fix Providers     |
-| **Live Native Preview**           | See changes instantly without manual restarts.                    | Hot Reload / Window Hosting / Shadow Copy           |
+| **Live Native Preview**           | See changes reflected quickly via shadow copy launch.             | Shadow Copy Launch / Window Hosting                  |
 | **Project Time Travel**           | Undo/redo entire generations or specific refinement steps.        | Snapshot System (Git-based under the hood)          |
 | **Installer Generation**          | Every successful build produces a signed MSIX bundle.             | Windows App SDK Build Tools + MSIX                  |
 | **Permission Automation**         | APIs like Location/Camera are auto-detected and declared.         | Roslyn AST Scanning → Capability Injection          |
@@ -198,7 +198,7 @@ Refinement is not just "regenerate". It is a **context-aware patch system**.
     - _Add_ `DeleteTask` method to Repository.
 4.  **Execution**:
     - Apply AST patches.
-    - Hot Reload if possible, else Recompile.
+    - Shadow copy launch (rebuild and relaunch in <2s).
 
 ### Smart Context Detection
 

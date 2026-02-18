@@ -90,6 +90,22 @@ The CIE analyzes code to determine required OS permissions, preventing runtime c
     2.  **Auto-Generation**: If no certificate exists, the system auto-generates one.
     3.  **Identity Match**: If a certificate exists, it must match the Publisher in the manifest.
     4.  **Validation**: The certificate is validated before packaging begins.
+    5.  **Expiration Monitoring**: Certificates are monitored for approaching expiration (30-day warning threshold). UI shows warning badge when certificate is within 30 days of expiration.
+
+    ### 4.2.1 Certificate Health Monitoring
+
+    The system continuously monitors certificate health:
+
+    | Check | Frequency | Warning Threshold | Action |
+    | :--- | :--- | :--- | :--- |
+    | **Expiration Date** | On app launch + daily | 30 days before expiry | UI warning badge + toast notification |
+    | **Certificate Chain** | Before packaging | N/A | Fail packaging if chain invalid |
+    | **Private Key Access** | Before signing | N/A | Fail signing if key inaccessible |
+
+    **Health Status UI Integration**:
+    - **Green**: Certificate valid for > 30 days
+    - **Yellow**: Certificate expires within 30 days (warning badge in Settings)
+    - **Red**: Certificate expired or invalid (blocking error, regeneration required)
 
     ### 4.3 Certificate Lifecycle Rules
 
@@ -123,7 +139,56 @@ The CIE analyzes code to determine required OS permissions, preventing runtime c
 
 ---
 
-## 6. Integration Contract
+## 6. Elevation Policy
+
+### 6.1 Operations Requiring Elevation
+
+The following operations require administrator privileges:
+
+| Operation | Reason | User Experience |
+| :--- | :--- | :--- |
+| **Certificate Installation** | Installs cert to LocalMachine\TrustedPeople | One-time prompt per project |
+| **MSIX Installation** | System-wide app installation | UAC prompt when user clicks "Install Now" |
+| **BroadFileSystemAccess** | Grants app-wide file system access | User must enable in Windows Settings |
+
+### 6.2 Operations NOT Requiring Elevation
+
+The following operations run without elevation:
+
+| Operation | Reason |
+| :--- | :--- |
+| **Build & Compilation** | User-space operation, no system changes |
+| **Preview Launch** | Shadow copy runs in user context |
+| **MSIX Creation** | File creation only, no installation |
+| **Certificate Generation** | Creates PFX file in user directory |
+| **Project Deletion** | Removes files from user workspace |
+
+### 6.3 Elevation UX Guidelines
+
+1. **Never auto-prompt**: Only request elevation when user explicitly triggers an action
+2. **Clear context**: Show why elevation is needed before UAC prompt
+3. **Graceful degradation**: If elevation denied, explain what functionality is unavailable
+4. **Remember choices**: Don't re-prompt for same operation within same session
+
+### 6.4 Certificate Installation Flow
+
+```
+User clicks "Install App" or "Trust Certificate"
+    ↓
+Check if certificate already trusted
+    ↓ (No)
+Show confirmation: "This app needs a trusted certificate to run. Install certificate?"
+    ↓ (User confirms)
+UAC Prompt (for LocalMachine store installation)
+    ↓ (Approved)
+Install certificate to TrustedPeople store
+    ↓
+Proceed with MSIX installation or app launch
+```
+
+---
+
+## 7. Integration Contract
 
 ### Input (from Orchestrator)
 

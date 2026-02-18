@@ -574,9 +574,20 @@ public class BuildKernelValidator
                 "⚠️  .NET SDK version is older than 8.0. Update for best compatibility.");
         }
 
-        // 3. Check disk space
+        // 3. Check disk space - FATAL THRESHOLD
         var diskSpace = GetAvailableDiskSpace(_projectPath);
-        if (diskSpace < 1_000_000_000)  // 1 GB
+        var estimatedPipelineSize = EstimatePipelineSize(_projectPath);
+
+        if (diskSpace < estimatedPipelineSize)
+        {
+            // FATAL: Cannot proceed - abort immediately
+            result.Errors.Add(
+                $"❌ INSUFFICIENT DISK SPACE: {diskSpace / 1_000_000_000:F1}GB available, " +
+                $"{estimatedPipelineSize / 1_000_000_000:F1}GB required. Free space and retry.");
+            result.FatalError = ErrorType.RESOURCE_EXHAUSTION_DISK;
+            return result; // Immediate abort, no retry
+        }
+        else if (diskSpace < 1_000_000_000)  // 1 GB - Warning threshold
         {
             result.Warnings.Add(
                 $"⚠️  Low disk space: {diskSpace / 1_000_000_000}GB available. Build may fail.");

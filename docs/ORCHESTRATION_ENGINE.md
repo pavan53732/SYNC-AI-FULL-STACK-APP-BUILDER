@@ -194,6 +194,9 @@ public class Task
     public string? ErrorMessage { get; set; }         // Error details
     public int RetryBudget { get; set; } = 5;         // Remaining retries
 
+    // Admin/Elevation awareness
+    public bool RequiresAdmin { get; set; }           // Task requires elevation (signing, cert install)
+
     // Audit trail
     public DateTime CreatedAt { get; }
     public DateTime? StartedAt { get; set; }
@@ -793,6 +796,34 @@ public class RetryController
     | **PKG003** | Asset Missing | 1 | Generate placeholder assets |
     | **PKG004** | Sign Failed | 0 | **FATAL**: Certificate corruption requires user intervention |
     | **PKG005** | Identity Mismatch | 1 | Update manifest to match certificate |
+
+### Packaging Retry Policy (Deterministic Implementation)
+
+```csharp
+// Packaging-specific retry policy with explicit per-error handling
+private static readonly Dictionary<ErrorType, RetryPolicy> PackagingRetryPolicy = new()
+{
+    { ErrorType.PACKAGING_ERROR, RetryPolicy.OneRetry },      // PKG001, PKG003, PKG005
+    { ErrorType.SIGNING_ERROR, RetryPolicy.NoRetry },         // PKG004 - FATAL
+    { ErrorType.CAPABILITY_ERROR, RetryPolicy.OneRetry },     // PKG002
+    { ErrorType.MANIFEST_ERROR, RetryPolicy.OneRetry }        // PKG001
+};
+
+public enum RetryPolicy
+{
+    NoRetry,      // FATAL errors - do not consume retry budget
+    OneRetry,     // Single attempt with auto-fix
+    StandardRetry // Normal retry with backoff
+}
+```
+
+**Fatal Packaging Errors (No Retry)**:
+- Disk exhaustion
+- SDK missing
+- Certificate corruption
+- User declined elevation
+
+These errors do NOT consume retry budget and require immediate user intervention.
 
 ---
 
