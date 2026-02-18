@@ -1,7 +1,7 @@
 # Execution Architecture - Local Windows Desktop
 
 **Status**: Critical architectural specification - Local-only Windows desktop deployment  
-**Scope**: All execution on user's PC (no cloud services)  
+**Scope**: Build & Execution on user's PC. AI reasoning requires cloud connectivity.  
 **UI Framework**: WinUI 3 (Windows App SDK, .NET 8, MSIX deployment)  
 **Audience**: Architecture team, platform engineers
 
@@ -59,6 +59,7 @@ All **build and execution** on user's PC using **Embedded Tools**:
 
 - WinUI 3 desktop application (modern Windows UI)
 - **Embedded MSBuild & Roslyn** (No external SDK required)
+- **Direct API Calls**: No `dotnet.exe` process spawning (Banned).
 - User controls infrastructure
 - Complexity is visible and managed by orchestrator
 

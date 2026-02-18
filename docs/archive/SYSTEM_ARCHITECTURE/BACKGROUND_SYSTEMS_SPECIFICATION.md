@@ -9,7 +9,7 @@
 ## Core Principle
 
 > **Calm UI with 10+ background subsystems**
-> 
+>
 > When user clicks "Generate", 10+ systems run silently. User sees: Spinner → App appears.
 
 **Reality**: Deterministic state engine, safety rollback, continuous indexing, intelligent retry loops, local build supervision
@@ -25,6 +25,7 @@ These systems exist but are **invisible** unless Advanced Mode is enabled.
 ### A. Deterministic Orchestrator Engine
 
 **Running**:
+
 - State machine transitions
 - Task graph execution
 - Retry counter
@@ -36,30 +37,31 @@ These systems exist but are **invisible** unless Advanced Mode is enabled.
 **User does NOT see**: `STATE: VALIDATING_DEPENDENCY_GRAPH`
 
 **Implementation**:
+
 ```csharp
 public class Orchestrator
 {
     private OrchestratorState _currentState;
     private TaskGraph _taskGraph;
     private int _retryCount;
-    
+
     private async Task ExecuteTaskGraphAsync()
     {
         // Hidden from user
         _currentState = OrchestratorState.SPEC_PARSED;
         _taskGraph = await _taskGraphBuilder.BuildAsync(spec);
-        
+
         foreach (var task in _taskGraph.TopologicalSort())
         {
             _currentState = OrchestratorState.TASK_EXECUTING;
             await ExecuteTaskWithRetryAsync(task);
         }
-        
+
         _currentState = OrchestratorState.VALIDATING;
         await ValidateOutputAsync();
-        
+
         _currentState = OrchestratorState.COMPLETED;
-        
+
         // User only sees UI state: BUILDING → PREVIEW_READY
     }
 }
@@ -70,6 +72,7 @@ public class Orchestrator
 ### B. Roslyn Indexing Engine
 
 **Continuously maintains**:
+
 - Syntax trees
 - Symbol graph
 - Dependency map
@@ -77,6 +80,7 @@ public class Orchestrator
 - Cross-file references
 
 **Runs**:
+
 - After every patch
 - After snapshot restore
 - After project load
@@ -84,42 +88,43 @@ public class Orchestrator
 **User never sees**: "Re-indexing 42 symbols…"
 
 **Implementation**:
+
 ```csharp
 public class RoslynIndexer
 {
     private ConcurrentDictionary<string, SyntaxTree> _syntaxTrees;
     private SymbolGraph _symbolGraph;
-    
+
     public async Task IndexProjectAsync(string projectPath)
     {
         // Runs silently in background
         var files = Directory.GetFiles(projectPath, "*.cs", SearchOption.AllDirectories);
-        
+
         foreach (var file in files)
         {
             var tree = await ParseFileAsync(file);
             _syntaxTrees[file] = tree;
-            
+
             // Update symbol graph
             await _symbolGraph.UpdateFromTreeAsync(tree);
         }
-        
+
         // Build dependency map
         await BuildDependencyMapAsync();
-        
+
         // Index XAML bindings
         await IndexXamlBindingsAsync();
-        
+
         // No UI notification
     }
-    
+
     public async Task IncrementalIndexFileAsync(string filePath)
     {
         // After patch, re-index only changed file
         var tree = await ParseFileAsync(filePath);
         _syntaxTrees[filePath] = tree;
         await _symbolGraph.UpdateFromTreeAsync(tree);
-        
+
         // Silent
     }
 }
@@ -130,6 +135,7 @@ public class RoslynIndexer
 ### C. Structured Patch Engine
 
 **For every change**:
+
 1. Parse C# AST
 2. Modify node
 3. Validate syntax
@@ -140,6 +146,7 @@ public class RoslynIndexer
 **User never sees**: "ADD_METHOD operation applied."
 
 **Implementation**:
+
 ```csharp
 public class PatchEngine
 {
@@ -148,7 +155,7 @@ public class PatchEngine
         // 1. Parse AST
         var tree = await CSharpSyntaxTree.ParseTextAsync(File.ReadAllText(patch.FilePath));
         var root = await tree.GetRootAsync();
-        
+
         // 2. Modify node
         var modifiedRoot = patch.Operation switch
         {
@@ -157,26 +164,26 @@ public class PatchEngine
             PatchOperation.DELETE_METHOD => DeleteMethod(root, patch.MethodName),
             _ => throw new InvalidOperationException()
         };
-        
+
         // 3. Validate syntax
         var diagnostics = modifiedRoot.GetDiagnostics();
         if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
         {
             return PatchResult.Failed("Syntax error after patch");
         }
-        
+
         // 4. Format code
         var formatted = Formatter.Format(modifiedRoot, workspace);
-        
+
         // 5. Write atomically
         await File.WriteAllTextAsync(patch.FilePath, formatted.ToFullString());
-        
+
         // 6. Re-index file
         await _indexer.IncrementalIndexFileAsync(patch.FilePath);
-        
+
         // Log internally, don't show to user
         _logger.LogInformation("Patch applied: {Operation} on {File}", patch.Operation, patch.FilePath);
-        
+
         return PatchResult.Success();
     }
 }
@@ -184,32 +191,52 @@ public class PatchEngine
 
 ---
 
-### D. Snapshot & Rollback System
+### D. Snapshot & Rollback System (Diff-Based)
+
+**Strategy**:
+
+- **Diff-Based Storage**: Only store changed files per snapshot to save space.
+- **Hard Cap**: Maximum 50 snapshots locally. Oldest prone when limit reached.
+- **Disk Space Guard**: Prevent snapshots if disk space < 500MB.
+- **Atomic Operations**: Snapshots are strictly serialized.
 
 **Before every mutation**:
-- Create snapshot
-- Store diff
-- Save metadata
 
-**On failure**:
-- Rollback automatically
-- Retry
-
-**User sees**: Nothing
+1. Check Disk Space & Cap.
+2. Identify changed files (Diff).
+3. Store compressed diffs.
+4. Save metadata.
 
 **Implementation**:
+
 ```csharp
 public class SnapshotService
 {
+    private const int MaxSnapshots = 50;
+    private const long MinDiskSpaceBytes = 500 * 1024 * 1024; // 500 MB
+
     public async Task<string> CreateSnapshotAsync(string projectPath, string reason)
     {
+        // 1. Guard: Disk Space
+        if (GetFreeDiskSpace() < MinDiskSpaceBytes)
+        {
+            _logger.LogWarning("Snapshot skipped: Low disk space");
+            return null; // or throw Exception based on policy
+        }
+
+        // 2. Guard: Prune Old Snapshots
+        await PruneSnapshotsAsync(MaxSnapshots - 1);
+
         var snapshotId = Guid.NewGuid().ToString();
-        var snapshotPath = Path.Combine(_snapshotsDir, snapshotId);
-        
-        // Copy entire project state
-        await CopyDirectoryAsync(projectPath, snapshotPath);
-        
-        // Store metadata
+        var snapshotDir = Path.Combine(_snapshotsDir, snapshotId);
+        Directory.CreateDirectory(snapshotDir);
+
+        // 3. Diff-Based Capture (Concept)
+        // In practice, copy only modified files since last snapshot or full copy if first.
+        // For simplicity/safety, we might start with optimized full copy with exclusions (bin/obj).
+        await CopyProjectFilesAsync(projectPath, snapshotDir, excludePatterns: new[] { "bin", "obj", ".git" });
+
+        // 4. Store Metadata
         var metadata = new SnapshotMetadata
         {
             Id = snapshotId,
@@ -217,28 +244,40 @@ public class SnapshotService
             TriggerReason = reason,
             ProjectPath = projectPath
         };
-        
         await _database.SaveSnapshotMetadataAsync(metadata);
-        
-        // Silent - no UI notification
-        _logger.LogDebug("Snapshot created: {SnapshotId}", snapshotId);
-        
+
+        _logger.LogDebug("Snapshot created: {SnapshotId} (Reason: {Reason})", snapshotId, reason);
         return snapshotId;
     }
-    
+
     public async Task RollbackAsync(string snapshotId)
     {
         var snapshot = await _database.GetSnapshotAsync(snapshotId);
+        if (snapshot == null) throw new InvalidOperationException("Snapshot not found");
+
         var snapshotPath = Path.Combine(_snapshotsDir, snapshotId);
-        
-        // Restore files
+
+        // 1. Restore Files (Atomic overwrite)
         await CopyDirectoryAsync(snapshotPath, snapshot.ProjectPath, overwrite: true);
-        
-        // Re-index
+
+        // 2. Re-index Project
         await _indexer.IndexProjectAsync(snapshot.ProjectPath);
-        
-        // Silent rollback
+
         _logger.LogInformation("Rolled back to snapshot: {SnapshotId}", snapshotId);
+    }
+
+    private async Task PruneSnapshotsAsync(int keepCount)
+    {
+        var snapshots = await _database.GetSnapshotsOrderedByDateAsync();
+        if (snapshots.Count > keepCount)
+        {
+            var toDelete = snapshots.Take(snapshots.Count - keepCount);
+            foreach (var snap in toDelete)
+            {
+                Directory.Delete(Path.Combine(_snapshotsDir, snap.Id), true);
+                await _database.DeleteSnapshotMetadataAsync(snap.Id);
+            }
+        }
     }
 }
 ```
@@ -248,6 +287,7 @@ public class SnapshotService
 ### E. Build Kernel Supervisor
 
 **Internally**:
+
 - Launch `dotnet restore`
 - Launch `dotnet build`
 - Capture logs
@@ -258,55 +298,61 @@ public class SnapshotService
 **User sees**: "Building your app…"
 
 **Implementation**:
+
 ```csharp
 public class BuildKernel
 {
+    // BuildKernel (Embedded API Mode)
+    // - Uses Microsoft.Build.Execution.BuildManager
+    // - Uses NuGet.Commands RestoreCommand
+    // - No CLI process spawn
+    // - No dotnet.exe execution
+    // - Structured error events captured via IEventSource
+
     public async Task<BuildResult> BuildProjectAsync(string projectPath)
     {
-        var startInfo = new ProcessStartInfo
+        // 1. Prepare Build Parameters
+        var projectCollection = new ProjectCollection();
+        var buildParameters = new BuildParameters(projectCollection)
         {
-            FileName = "dotnet",
-            Arguments = $"build \"{projectPath}\" --no-restore",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
+            Loggers = new[] { new BuildLogger() }, // Captures structured events
+            DetailedSummary = true
         };
-        
-        using var process = new Process { StartInfo = startInfo };
-        var outputBuilder = new StringBuilder();
-        var errorBuilder = new StringBuilder();
-        
-        process.OutputDataReceived += (s, e) => outputBuilder.AppendLine(e.Data);
-        process.ErrorDataReceived += (s, e) => errorBuilder.AppendLine(e.Data);
-        
-        process.Start();
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        
-        // Timeout enforcement
-        var completed = await process.WaitForExitAsync(TimeSpan.FromMinutes(5));
-        
-        if (!completed)
+
+        // 2. Define Build Request
+        var buildRequest = new BuildRequestData(
+            projectPath,
+            new Dictionary<string, string>
+            {
+                { "Configuration", "Debug" },
+                { "Platform", "AnyCPU" }
+            },
+            null,
+            new[] { "Restore", "Build" },
+            null
+        );
+
+        // 3. Execute In-Process (No CLI spawn)
+        return await Task.Run(() =>
         {
-            process.Kill();
-            return BuildResult.Failed("Build timeout exceeded");
-        }
-        
-        // Parse MSBuild output
-        var errors = ParseMSBuildErrors(outputBuilder.ToString());
-        
-        // Classify errors
-        var classification = ClassifyErrors(errors);
-        
-        // Log internally
-        _logger.LogInformation("Build completed with {ErrorCount} errors", errors.Count);
-        
-        // User only sees: "Building…" → "Preview Ready" or "Optimizing build…"
-        
-        return process.ExitCode == 0 
-            ? BuildResult.Success() 
-            : BuildResult.Failed(classification);
+            var buildResult = BuildManager.DefaultBuildManager.Build(
+                buildParameters,
+                buildRequest
+            );
+
+            // 4. Analyze Results
+            if (buildResult.OverallResult == BuildResultCode.Success)
+            {
+                _logger.LogInformation("Embedded Build Succeeded");
+                return BuildResult.Success();
+            }
+            else
+            {
+                var errors = ParseBuildExceptions(buildResult.Exception);
+                _logger.LogError("Embedded Build Failed: {Count} errors", errors.Count);
+                return BuildResult.Failed(errors);
+            }
+        });
     }
 }
 ```
@@ -316,6 +362,7 @@ public class BuildKernel
 ### F. Silent Retry Loop
 
 **If build fails**:
+
 1. Send minimal error context to AI
 2. Receive structured fix
 3. Apply patch
@@ -325,45 +372,46 @@ public class BuildKernel
 **User only sees**: "Optimizing build…" (after 3 silent retries)
 
 **Implementation**:
+
 ```csharp
 public class RetryController
 {
     private const int SilentRetryLimit = 3;
     private const int TotalRetryLimit = 10;
-    
+
     public async Task<BuildResult> BuildWithRetryAsync(string projectPath)
     {
         for (int attempt = 1; attempt <= TotalRetryLimit; attempt++)
         {
             var result = await _buildKernel.BuildProjectAsync(projectPath);
-            
+
             if (result.Success)
             {
                 // Silent success
                 _logger.LogInformation("Build succeeded on attempt {Attempt}", attempt);
                 return result;
             }
-            
+
             // Log internally
             _logger.LogWarning("Build failed on attempt {Attempt}: {Error}", attempt, result.Error);
-            
+
             // Update UI state based on attempt count
             if (attempt > SilentRetryLimit)
             {
                 // Show "Optimizing build…" to user
                 _uiStateManager.TransitionTo(UIState.SOFT_RECOVERY);
             }
-            
+
             // Get AI fix
             var fix = await _aiEngine.GenerateFixAsync(result.Error);
-            
+
             // Apply patch
             await _patchEngine.ApplyPatchAsync(fix.Patch);
-            
+
             // Exponential backoff
             await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt - 1)));
         }
-        
+
         // Retry budget exhausted
         return BuildResult.Failed("Retry limit exceeded");
     }
@@ -375,6 +423,7 @@ public class RetryController
 ### G. Memory Layer (SQLite)
 
 **Continuously stores**:
+
 - Architectural decisions
 - Naming conventions
 - Error history
@@ -384,6 +433,7 @@ public class RetryController
 **User never interacts directly with DB**
 
 **Schema**:
+
 ```sql
 -- Architectural Decisions
 CREATE TABLE ArchitecturalDecisions (
@@ -431,6 +481,7 @@ CREATE TABLE Projects (
 ### H. Workspace Sandbox Manager
 
 **Enforces**:
+
 - No writes outside workspace
 - Clean bin/obj folders
 - Snapshot diff boundaries
@@ -439,42 +490,43 @@ CREATE TABLE Projects (
 **User never sees path restrictions**
 
 **Implementation**:
+
 ```csharp
 public class SandboxManager
 {
     private readonly string _workspaceRoot;
-    
+
     public bool IsPathSafe(string path)
     {
         var fullPath = Path.GetFullPath(path);
         var workspacePath = Path.GetFullPath(_workspaceRoot);
-        
+
         // Ensure path is within workspace
         return fullPath.StartsWith(workspacePath, StringComparison.OrdinalIgnoreCase);
     }
-    
+
     public async Task WriteFileAsync(string path, string content)
     {
         if (!IsPathSafe(path))
         {
             throw new SecurityException("Attempted write outside workspace");
         }
-        
+
         await File.WriteAllTextAsync(path, content);
     }
-    
+
     public async Task CleanBuildArtifactsAsync(string projectPath)
     {
         // Clean bin/obj silently
         var binPath = Path.Combine(projectPath, "bin");
         var objPath = Path.Combine(projectPath, "obj");
-        
+
         if (Directory.Exists(binPath))
             Directory.Delete(binPath, recursive: true);
-        
+
         if (Directory.Exists(objPath))
             Directory.Delete(objPath, recursive: true);
-        
+
         // No UI notification
     }
 }
@@ -485,6 +537,7 @@ public class SandboxManager
 ### I. Resource Monitor
 
 **Background checks**:
+
 - Disk space
 - Memory usage
 - CPU usage
@@ -494,45 +547,46 @@ public class SandboxManager
 **Only surfaces if threshold crossed**
 
 **Implementation**:
+
 ```csharp
 public class ResourceMonitor
 {
     private Timer _monitoringTimer;
-    
+
     public void StartMonitoring()
     {
         _monitoringTimer = new Timer(CheckResources, null, TimeSpan.Zero, TimeSpan.FromMinutes(1));
     }
-    
+
     private void CheckResources(object state)
     {
         // Check disk space
         var driveInfo = new DriveInfo(Path.GetPathRoot(_workspaceRoot));
         var availableGB = driveInfo.AvailableFreeSpace / (1024.0 * 1024 * 1024);
-        
+
         if (availableGB < 1.0)
         {
             // Surface to user
             _uiStateManager.ShowLowDiskSpaceWarning();
         }
-        
+
         // Check memory
         var memoryUsage = GC.GetTotalMemory(forceFullCollection: false);
         var memoryMB = memoryUsage / (1024.0 * 1024);
-        
+
         if (memoryMB > 1000)
         {
             // Log internally, don't show to user yet
             _logger.LogWarning("High memory usage: {MemoryMB} MB", memoryMB);
         }
-        
+
         // Check SDK
         var sdkValid = await ValidateSdkAsync();
         if (!sdkValid)
         {
             _uiStateManager.ShowSdkIssueWarning();
         }
-        
+
         // All checks run silently unless threshold crossed
     }
 }
@@ -551,11 +605,12 @@ These run even when user is idle.
 **Purpose**: Ensure SQLite graph matches file system
 
 **Implementation**:
+
 ```csharp
 public class ProjectGraphSync
 {
     private FileSystemWatcher _watcher;
-    
+
     public void StartWatching(string projectPath)
     {
         _watcher = new FileSystemWatcher(projectPath)
@@ -564,14 +619,14 @@ public class ProjectGraphSync
             Filter = "*.cs",
             IncludeSubdirectories = true
         };
-        
+
         _watcher.Changed += OnFileChanged;
         _watcher.Created += OnFileCreated;
         _watcher.Deleted += OnFileDeleted;
-        
+
         _watcher.EnableRaisingEvents = true;
     }
-    
+
     private async void OnFileChanged(object sender, FileSystemEventArgs e)
     {
         // Reconcile state silently
@@ -596,26 +651,27 @@ public class ProjectGraphSync
 **If too many snapshots**: Archive older versions, compress diffs
 
 **Implementation**:
+
 ```csharp
 public class SnapshotPruner
 {
     private const int MaxSnapshots = 50;
-    
+
     public async Task PruneOldSnapshotsAsync(string projectId)
     {
         var snapshots = await _database.GetSnapshotsAsync(projectId);
-        
+
         if (snapshots.Count > MaxSnapshots)
         {
             var toArchive = snapshots
                 .OrderBy(s => s.Timestamp)
                 .Take(snapshots.Count - MaxSnapshots);
-            
+
             foreach (var snapshot in toArchive)
             {
                 await ArchiveSnapshotAsync(snapshot.Id);
             }
-            
+
             // Silent operation
             _logger.LogInformation("Archived {Count} old snapshots", toArchive.Count());
         }
@@ -630,6 +686,7 @@ public class SnapshotPruner
 **Pre-build retrieval data**: Relevant files cached, symbol references cached, token trimming prepared
 
 **Implementation**:
+
 ```csharp
 public class AIContextCache
 {
@@ -638,15 +695,15 @@ public class AIContextCache
         // Cache relevant files
         var relevantFiles = await _indexer.GetRelevantFilesAsync(projectPath);
         _cache.Set($"relevant_files_{projectPath}", relevantFiles);
-        
+
         // Cache symbol references
         var symbols = await _indexer.GetSymbolGraphAsync();
         _cache.Set($"symbols_{projectPath}", symbols);
-        
+
         // Pre-trim tokens
         var trimmedContext = await _tokenManager.TrimContextAsync(relevantFiles);
         _cache.Set($"trimmed_context_{projectPath}", trimmedContext);
-        
+
         // So AI call is fast
     }
 }
@@ -659,41 +716,42 @@ public class AIContextCache
 **On startup**: Verify .NET SDK, MSBuild, NuGet, workspace integrity
 
 **Implementation**:
+
 ```csharp
 public class EnvironmentValidator
 {
     public async Task<ValidationResult> ValidateEnvironmentAsync()
     {
         var results = new List<ValidationIssue>();
-        
+
         // Verify .NET SDK
         var sdkVersion = await GetDotNetSdkVersionAsync();
         if (sdkVersion == null)
         {
             results.Add(new ValidationIssue(".NET SDK not found"));
         }
-        
+
         // Verify MSBuild
         var msbuildPath = await FindMSBuildAsync();
         if (msbuildPath == null)
         {
             results.Add(new ValidationIssue("MSBuild not accessible"));
         }
-        
+
         // Validate NuGet
         var nugetValid = await ValidateNuGetAsync();
         if (!nugetValid)
         {
             results.Add(new ValidationIssue("NuGet configuration issue"));
         }
-        
+
         // Check workspace integrity
         var workspaceValid = Directory.Exists(_workspaceRoot);
         if (!workspaceValid)
         {
             results.Add(new ValidationIssue("Workspace directory missing"));
         }
-        
+
         // Runs silently, only surfaces if critical issue
         return new ValidationResult(results);
     }
@@ -711,6 +769,7 @@ Critical but invisible.
 ### A. Operation Whitelist
 
 **LLM cannot**:
+
 - Execute shell
 - Access registry
 - Write outside workspace
@@ -718,6 +777,7 @@ Critical but invisible.
 - Add unsafe dependencies
 
 **Implementation**:
+
 ```csharp
 public class OperationWhitelist
 {
@@ -729,12 +789,12 @@ public class OperationWhitelist
         "ADD_DEPENDENCY",
         "UPDATE_XAML"
     };
-    
+
     public bool IsOperationAllowed(string operation)
     {
         return AllowedOperations.Contains(operation);
     }
-    
+
     public bool IsDependencySafe(string packageName)
     {
         // Check against known safe packages
@@ -751,24 +811,25 @@ public class OperationWhitelist
 **Before applying patch**: Simulate AST modification, validate syntax tree, check node existence
 
 **Implementation**:
+
 ```csharp
 public async Task<bool> ValidatePatchAsync(Patch patch)
 {
     // Simulate AST modification
     var tree = await CSharpSyntaxTree.ParseTextAsync(File.ReadAllText(patch.FilePath));
     var root = await tree.GetRootAsync();
-    
+
     try
     {
         var modifiedRoot = ApplyPatchToNode(root, patch);
-        
+
         // Validate syntax tree
         var diagnostics = modifiedRoot.GetDiagnostics();
         if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
         {
             return false;
         }
-        
+
         // Check node existence
         if (patch.Operation == PatchOperation.MODIFY_METHOD)
         {
@@ -778,7 +839,7 @@ public async Task<bool> ValidatePatchAsync(Patch patch)
                 return false;
             }
         }
-        
+
         return true;
     }
     catch
@@ -803,21 +864,22 @@ public async Task<bool> ValidatePatchAsync(Patch patch)
 **Prevents**: Sending entire project to AI, context overflow, exponential cost growth
 
 **Implementation**:
+
 ```csharp
 public class TokenBudgetGuard
 {
     private const int MaxTokensPerRequest = 8000;
-    
+
     public async Task<string> TrimContextAsync(List<string> files)
     {
         var context = new StringBuilder();
         var tokenCount = 0;
-        
+
         foreach (var file in files.OrderByDescending(f => _relevanceScorer.Score(f)))
         {
             var fileContent = await File.ReadAllTextAsync(file);
             var fileTokens = _tokenizer.CountTokens(fileContent);
-            
+
             if (tokenCount + fileTokens > MaxTokensPerRequest)
             {
                 // Trim file content
@@ -825,11 +887,11 @@ public class TokenBudgetGuard
                 context.AppendLine(trimmed);
                 break;
             }
-            
+
             context.AppendLine(fileContent);
             tokenCount += fileTokens;
         }
-        
+
         return context.ToString();
     }
 }
@@ -840,6 +902,7 @@ public class TokenBudgetGuard
 ## 4. What User SHOULD NEVER See (Normal Mode)
 
 In Lovable-style mode:
+
 - ❌ Task graph
 - ❌ Patch operations
 - ❌ Roslyn AST tree
@@ -892,6 +955,7 @@ You are building:
 **A calm UI**
 
 With:
+
 - 10+ background subsystems
 - Deterministic state engine
 - Safety rollback system

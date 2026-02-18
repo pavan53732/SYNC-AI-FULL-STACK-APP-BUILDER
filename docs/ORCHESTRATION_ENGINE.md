@@ -189,55 +189,41 @@ public class Task
 ### Builder States
 
 ```csharp
-public enum BuilderState
+public enum OrchestratorState
 {
-    IDLE = 0,                // Awaiting user action or spec
-    SPEC_PARSING = 1,        // User intent → structured spec
-    SPEC_PARSED = 2,         // Spec validated, ready for planning
-    TASK_GRAPH_BUILDING = 3, // Planning service creating DAG
-    TASK_GRAPH_BUILT = 4,    // Task DAG complete, ready to execute
-    // Execution Breakdown
-    MUTATION_GUARD = 5,      // Pre-execution safety check (Impact/Breaking Change)
-    PATCHING = 6,            // Roslyn AST transformation
-    INDEXING = 7,            // Updating semantic graph post-patch
-    BUILDING = 8,            // MSBuild / Dotnet CLI execution
-    // Validation & Result
-    VALIDATING = 9,          // Final integrity check
-    RETRYING = 10,           // Retry in progress
-    EXECUTING_TASK = 11,     // Task execution in progress
-    BUILD_SUCCEEDED = 12,    // All tasks completed
-    BUILD_FAILED = 13        // Unrecoverable failure
+    IDLE,
+    AI_PLANNING,
+    SPEC_PARSED,
+    TASK_GRAPH_READY,
+    TASK_EXECUTING,
+    VALIDATING,
+    RETRYING,
+    COMPLETED,
+    FAILED
 }
+
 ```
 
 ### State Diagram
 
 ```
 IDLE
-  ↓ (spec arrives)
-SPEC_PARSING
-  ↓ (spec valid)
+  ↓ (prompt submitted)
+AI_PLANNING
+  ↓ (planning complete)
 SPEC_PARSED
-  ↓ (plan generated)
-TASK_GRAPH_BUILDING
-  ↓ (DAG complete)
-TASK_GRAPH_BUILT
-  ↓ (execute next task)
-MUTATION_GUARD
-  ↓ (guard safe)
-PATCHING
-  ↓ (patch applied)
-INDEXING
-  ↓ (index updated)
-BUILDING
-  ↓ (build complete)
+  ↓ (graph generated)
+TASK_GRAPH_READY
+  ↓ (dispatch task)
+TASK_EXECUTING
+  ↓ (patch applied & indexed)
 VALIDATING
   ↓ (validation succeeds)    ↓ (validation fails)
-BUILD_SUCCEEDED            RETRYING
+COMPLETED                  RETRYING
                               ↓ (retry < maxRetries)
-                           EXECUTING_TASK
+                           TASK_EXECUTING
                               ↓ (retry >= maxRetries)
-                           BUILD_FAILED
+                           FAILED
 ```
 
 ---
@@ -249,7 +235,7 @@ BUILD_SUCCEEDED            RETRYING
 ```csharp
 public class BuilderContext
 {
-    public BuilderState State { get; set; }
+    public OrchestratorState State { get; set; }
 
     // Task execution
     public List<Task> AllTasks { get; } = new();
@@ -334,53 +320,53 @@ public class BuilderReducer
         return (context.State, @event) switch
         {
             // === SPEC PARSING ===
-            (BuilderState.IDLE, SpecParsedEvent e) => context with
+            (OrchestratorState.IDLE, SpecParsedEvent e) => context with
             {
-                State = BuilderState.SPEC_PARSED,
+                State = OrchestratorState.SPEC_PARSED,
                 EventLog = [..context.EventLog, @event],
                 ProjectMetadata = e.ExtractedFeatures.ToDictionary(f => f, f => (object)true)
             },
 
             // === TASK GRAPH BUILDING ===
-            (BuilderState.SPEC_PARSED, var e) when @event is TaskStartedEvent te && te.TaskId == "graph-builder" =>
-                context with { State = BuilderState.TASK_GRAPH_BUILDING, EventLog = [..context.EventLog, @event] },
+            (OrchestratorState.SPEC_PARSED, var e) when @event is TaskStartedEvent te && te.TaskId == "graph-builder" =>
+                context with { State = OrchestratorState.AI_PLANNING, EventLog = [..context.EventLog, @event] },
 
-            (BuilderState.TASK_GRAPH_BUILDING, var e) when @event is TaskCompletedEvent te && te.TaskId == "graph-builder" =>
-                context with { State = BuilderState.TASK_GRAPH_BUILT, EventLog = [..context.EventLog, @event] },
+            (OrchestratorState.AI_PLANNING, var e) when @event is TaskCompletedEvent te && te.TaskId == "graph-builder" =>
+                context with { State = OrchestratorState.TASK_GRAPH_READY, EventLog = [..context.EventLog, @event] },
 
             // === TASK EXECUTION PHASES ===
-            (BuilderState.TASK_GRAPH_BUILT, TaskStartedEvent e) =>
-                UpdateTaskAndTransition(context, e.TaskId, BuilderState.MUTATION_GUARD, @event),
+            (OrchestratorState.TASK_GRAPH_READY, TaskStartedEvent e) =>
+                UpdateTaskAndTransition(context, e.TaskId, OrchestratorState.TASK_EXECUTING, @event),
 
-            (BuilderState.MUTATION_GUARD, TaskGuardPassedEvent e) =>
-                UpdateTaskAndTransition(context, e.TaskId, BuilderState.PATCHING, @event),
+            (OrchestratorState.TASK_EXECUTING, TaskGuardPassedEvent e) =>
+                UpdateTaskAndTransition(context, e.TaskId, OrchestratorState.TASK_EXECUTING, @event),
 
-            (BuilderState.PATCHING, TaskPatchedEvent e) =>
-                UpdateTaskAndTransition(context, e.TaskId, BuilderState.INDEXING, @event),
+            (OrchestratorState.TASK_EXECUTING, TaskPatchedEvent e) =>
+                UpdateTaskAndTransition(context, e.TaskId, OrchestratorState.TASK_EXECUTING, @event),
 
-            (BuilderState.INDEXING, TaskIndexedEvent e) =>
-                UpdateTaskAndTransition(context, e.TaskId, BuilderState.BUILDING, @event),
+            (OrchestratorState.TASK_EXECUTING, TaskIndexedEvent e) =>
+                UpdateTaskAndTransition(context, e.TaskId, OrchestratorState.VALIDATING, @event),
 
-            (BuilderState.BUILDING, TaskValidatingEvent e) =>
-                context with { State = BuilderState.VALIDATING, EventLog = [..context.EventLog, @event] },
+            (OrchestratorState.VALIDATING, TaskValidatingEvent e) =>
+                context with { State = OrchestratorState.VALIDATING, EventLog = [..context.EventLog, @event] },
 
             // === SUCCESS PATH ===
-            (BuilderState.VALIDATING, TaskCompletedEvent e) =>
-                UpdateTaskAndTransition(context, e.TaskId, BuilderState.TASK_GRAPH_BUILT, @event),
+            (OrchestratorState.VALIDATING, TaskCompletedEvent e) =>
+                UpdateTaskAndTransition(context, e.TaskId, OrchestratorState.TASK_GRAPH_READY, @event),
 
             // === FAILURE & RETRY PATH ===
-            (BuilderState.VALIDATING, TaskFailedEvent e) when e.CurrentRetry < e.MaxRetries =>
-                context with { State = BuilderState.RETRYING, EventLog = [..context.EventLog, @event] },
+            (OrchestratorState.VALIDATING, TaskFailedEvent e) when e.CurrentRetry < e.MaxRetries =>
+                context with { State = OrchestratorState.RETRYING, EventLog = [..context.EventLog, @event] },
 
-            (BuilderState.RETRYING, TaskStartedEvent e) =>
-                context with { State = BuilderState.EXECUTING_TASK, EventLog = [..context.EventLog, @event] },
+            (OrchestratorState.RETRYING, TaskStartedEvent e) =>
+                context with { State = OrchestratorState.TASK_EXECUTING, EventLog = [..context.EventLog, @event] },
 
-            (BuilderState.VALIDATING, TaskFailedEvent e) when e.CurrentRetry >= e.MaxRetries =>
-                context with { State = BuilderState.BUILD_FAILED, EventLog = [..context.EventLog, @event] },
+            (OrchestratorState.VALIDATING, TaskFailedEvent e) when e.CurrentRetry >= e.MaxRetries =>
+                context with { State = OrchestratorState.FAILED, EventLog = [..context.EventLog, @event] },
 
             // === COMPLETION ===
-            (BuilderState.TASK_GRAPH_BUILT, BuildCompletedEvent e) =>
-                context with { State = BuilderState.BUILD_SUCCEEDED, EventLog = [..context.EventLog, @event] },
+            (OrchestratorState.TASK_GRAPH_READY, BuildCompletedEvent e) =>
+                context with { State = OrchestratorState.COMPLETED, EventLog = [..context.EventLog, @event] },
 
             // === INVALID TRANSITION ===
             _ => throw new InvalidOperationException(
@@ -391,19 +377,16 @@ public class BuilderReducer
     private static BuilderContext UpdateTaskAndTransition(
         BuilderContext context,
         string taskId,
-        BuilderState newState,
+        OrchestratorState newState,
         BuilderEvent @event)
     {
         if (context.TaskMap.TryGetValue(taskId, out var task))
         {
             task.Status = newState switch
             {
-                BuilderState.MUTATION_GUARD => TaskStatus.RUNNING,
-                BuilderState.PATCHING => TaskStatus.RUNNING,
-                BuilderState.INDEXING => TaskStatus.RUNNING,
-                BuilderState.BUILDING => TaskStatus.RUNNING,
-                BuilderState.VALIDATING => TaskStatus.VALIDATING,
-                BuilderState.TASK_GRAPH_BUILT => TaskStatus.COMPLETED,
+                OrchestratorState.TASK_EXECUTING => TaskStatus.RUNNING,
+                OrchestratorState.VALIDATING => TaskStatus.VALIDATING,
+                OrchestratorState.TASK_GRAPH_READY => TaskStatus.COMPLETED,
                 _ => task.Status
             };
         }
@@ -411,7 +394,7 @@ public class BuilderReducer
         return context with
         {
             State = newState,
-            CurrentTaskId = newState == BuilderState.TASK_GRAPH_BUILT ? null : taskId,
+            CurrentTaskId = newState == OrchestratorState.TASK_GRAPH_READY ? null : taskId,
             EventLog = [..context.EventLog, @event]
         };
     }
@@ -454,7 +437,7 @@ public class RetryController
 
         return context with
         {
-            State = BuilderState.RETRYING,
+            State = OrchestratorState.RETRYING,
             EventLog = [..context.EventLog, new RetryStartedEvent
             {
                 TaskId = failedTask.Id,
@@ -552,7 +535,7 @@ public class ConcurrencyPolicy
         BuilderContext context,
         Task incomingTask)
     {
-        if (context.State == BuilderState.EXECUTING_TASK && IsMutationTask(incomingTask.Type))
+        if (context.State == OrchestratorState.TASK_EXECUTING && IsMutationTask(incomingTask.Type))
         {
             throw new InvalidOperationException(
                 "Cannot start mutation task while another task is executing. " +

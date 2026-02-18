@@ -41,18 +41,18 @@
 10. [Embedded Subsystems](#10-embedded-subsystems)
 11. [Execution Lifecycle](#11-execution-lifecycle)
 12. [Background Systems](#12-background-systems)
-13. [Threading and Concurrency Model](#13-threading-and-concurrency-model)
-14. [Security and Isolation](#14-security-and-isolation)
-15. [Machine Variability Handling](#15-machine-variability-handling)
-16. [Deployment Model](#16-deployment-model)
-17. [Builder Project Structure](#17-builder-project-structure)
-18. [Module Structure](#18-module-structure)
-19. [System-Level Stack](#19-system-level-stack)
-20. [Implementation Roadmap](#20-implementation-roadmap)
-21. [Key Architectural Decisions](#21-key-architectural-decisions)
-22. [Performance Considerations](#22-performance-considerations)
-23. [Comparison with Traditional Approaches](#23-comparison-with-traditional-approaches)
-24. [Future Evolution](#24-future-evolution)
+
+13. [Security and Isolation](#14-security-and-isolation)
+14. [Machine Variability Handling](#15-machine-variability-handling)
+15. [Deployment Model](#16-deployment-model)
+16. [Builder Project Structure](#17-builder-project-structure)
+17. [Module Structure](#18-module-structure)
+18. [System-Level Stack](#19-system-level-stack)
+19. [Implementation Roadmap](#20-implementation-roadmap)
+20. [Key Architectural Decisions](#21-key-architectural-decisions)
+21. [Performance Considerations](#22-performance-considerations)
+22. [Comparison with Traditional Approaches](#23-comparison-with-traditional-approaches)
+23. [Future Evolution](#24-future-evolution)
 
 ---
 
@@ -72,14 +72,14 @@ The user sees a simple prompt → app interface. Behind the scenes, 10+ subsyste
 
 ### Architecture Principles
 
-| Principle              | Implementation                                    |
-| ---------------------- | ------------------------------------------------- |
-| **Local-First**        | All processing runs on the user's Windows machine |
-| **Embedded Execution** | MSBuild, NuGet, Roslyn — all in-process via APIs  |
-| **Deterministic**      | State machine governs every operation             |
-| **Reversible**         | Snapshot system enables rollback at any point     |
-| **Isolated**           | Each project runs in a sandboxed directory        |
-| **Hidden Complexity**  | User never sees logs, retries, or internal state  |
+| Principle              | Implementation                                             |
+| ---------------------- | ---------------------------------------------------------- |
+| **Local-First**        | Build & Run are 100% local; AI reasoning is cloud-assisted |
+| **Embedded Execution** | MSBuild, NuGet, Roslyn — all in-process via APIs           |
+| **Deterministic**      | State machine governs every operation                      |
+| **Reversible**         | Snapshot system enables rollback at any point              |
+| **Isolated**           | Each project runs in a sandboxed directory                 |
+| **Hidden Complexity**  | User never sees logs, retries, or internal state           |
 
 ### Core Principle: The Autonomous Construction Environment
 
@@ -94,7 +94,7 @@ Lovable feels completely "internal" and seamless, but behind the scenes it manag
 **Sync AI's Windows Equivalent**:
 
 - **Embeds .NET SDK**: No "Install .NET" step for users.
-- **Manages MSBuild**: Direct API calls, no `dotnet build` CLI.
+- **Manages MSBuild**: Direct API calls, no `dotnet.exe` CLI usage.
 - **Wraps XAML Compilation**: Hidden behind the Preview System.
 - **Controls NuGet**: In-process restoration and caching.
 
@@ -104,7 +104,7 @@ Lovable feels completely "internal" and seamless, but behind the scenes it manag
 
 The system is built as an **autonomous software construction environment**, not a developer utility.
 
-- **Zero Tooling Exposure**: Users never open Visual Studio, run `dotnet build`, or manage NuGet manually.
+- **Zero Tooling Exposure**: Users never open Visual Studio, run `In-process MSBuild via Microsoft.Build API`, or manage NuGet manually.
 - **Embedded Services**: The .NET SDK, MSBuild, and Roslyn are **internal bundled services**, not external user tools.
 - **Developer-Free Workflow**: The Orchestrator and Patch Engine handle all file edits and debugging silently.
 - **The Goal**: A self-contained constructor where the only external dependency is the Cloud AI reasoning.
@@ -238,8 +238,8 @@ public class ExecutionKernel
 
 **Key Capabilities**:
 
-- `dotnet restore` → In-process NuGet restore via `NuGet.Commands`
-- `dotnet build` → In-process MSBuild via `Microsoft.Build`
+- `In-process NuGet restore via NuGet.Commands` → In-process NuGet restore via `NuGet.Commands`
+- `In-process MSBuild via Microsoft.Build API` → In-process MSBuild via `Microsoft.Build`
 - `dotnet run` → Managed `Process` with output capture
 - Structured error output (not raw CLI text)
 
@@ -507,8 +507,6 @@ graph TD
 
 **Purpose**: The brain — deterministic state machine governing all operations.
 
-**Purpose**: The brain — deterministic state machine governing all operations.
-
 **🔴 CRITICAL FOUNDATION: Must Implement First**
 Without deterministic orchestration, Roslyn indexing and patching will create nondeterministic mutation loops that silently corrupt code.
 
@@ -611,6 +609,8 @@ customer database, and analytics dashboard"
 ---
 
 ## 4. Planning Layer (Task Graph / DAG)
+
+> **Threading Clarification**: Parallelizable tasks are planned in DAG, but execution is serialized at mutation layer. AI planning may be parallel. Filesystem mutation is strictly sequential.
 
 ### Purpose
 
@@ -1052,7 +1052,7 @@ public class Customer
 
 ## 6. Data Flow and Orchestration
 
-### 6.1 Deterministic Orchestrator Engine
+### 6.1 State Machine Definition (Authoritative)
 
 The Orchestrator is the deterministic "brain" that governs all operations. It ensures that the system never enters an invalid state.
 
@@ -1132,8 +1132,6 @@ Live Preview / Deploy
 - Automatic error fixing (hidden from user)
 - Silent retries (only success shown)
 
-- Silent retries (only success shown)
-
 ---
 
 ## 7. AI Engine Integration with Preview System
@@ -1164,9 +1162,337 @@ User Prompt → Orchestrator → AI Engine (Patches) → Roslyn Engine (Apply) �
 
 ---
 
-## 8. Error Handling
+## 8. Error Classification & Silent Retry Strategy
 
-See [Section 29. Error Classification & Recovery Strategy](#29-error-classification--recovery-strategy) for the authoritative definition of error handling.
+### 8.1 Error Handling Philosophy
+
+1. **User Never Sees Technical Details** - All errors translated to user-friendly messages
+2. **Silent Recovery When Possible** - Retry automatically before showing errors
+3. **Actionable Guidance** - Every error message includes next steps
+4. **Preserve User Work** - Never lose user data, always snapshot before risky operations
+5. **Graceful Degradation** - System remains usable even with partial failures
+
+### 8.2 Error Severity Levels
+
+| Level        | User Impact           | UI Indicator        | Action Required      |
+| ------------ | --------------------- | ------------------- | -------------------- |
+| **Info**     | None                  | Blue info icon      | None                 |
+| **Warning**  | Minor, non-blocking   | Yellow warning icon | Optional user action |
+| **Error**    | Blocking, recoverable | Red error icon      | User must resolve    |
+| **Critical** | System-level failure  | Red with alert      | Immediate attention  |
+
+### 8.3 Detailed Error Classification
+
+#### 8.3.1 Domain-Level Error Taxonomy (Complete)
+
+**Category 1: Build Domain Errors**
+
+| Sub-Domain         | Error Code Range | Examples                              | Auto-Fixable |
+| ------------------ | ---------------- | ------------------------------------- | ------------ |
+| **C# Syntax**      | CS1000-CS1999    | Missing semicolons, unmatched braces  | ✅ Yes       |
+| **C# Semantic**    | CS0001-CS0999    | Type mismatches, missing references   | ✅ Yes       |
+| **C# Nullability** | CS8600-CS8999    | Nullable reference warnings           | ⚠️ Partial   |
+| **XAML Parse**     | XDG0001-XDG0999  | Malformed XAML, missing attributes    | ✅ Yes       |
+| **XAML Binding**   | XDG1000-XDG1999  | Invalid bindings, missing DataContext | ⚠️ Partial   |
+| **NuGet**          | NU0001-NU9999    | Package not found, version conflicts  | ✅ Yes       |
+| **MSBuild**        | MSB0001-MSB9999  | Project file errors, target failures  | ⚠️ Partial   |
+
+**Category 2: AI Domain Errors**
+
+| Sub-Domain   | Error Type | Examples                         | Auto-Fixable        |
+| ------------ | ---------- | -------------------------------- | ------------------- |
+| **API**      | Network    | Timeout, connection refused      | ✅ Yes (retry)      |
+| **API**      | Auth       | Invalid key, quota exceeded      | ❌ No               |
+| **Response** | Parse      | Malformed JSON, schema mismatch  | ✅ Yes (re-request) |
+| **Response** | Content    | Policy violation, empty response | ⚠️ Partial          |
+
+**Category 3: Filesystem Domain Errors**
+
+| Sub-Domain   | Error Type | Examples                        | Auto-Fixable      |
+| ------------ | ---------- | ------------------------------- | ----------------- |
+| **IO**       | Access     | Permission denied, file locked  | ⚠️ Partial        |
+| **IO**       | Space      | Disk full                       | ❌ No             |
+| **Sandbox**  | Security   | Path traversal, restricted file | ❌ No (fatal)     |
+| **Snapshot** | Corruption | Checksum mismatch               | ✅ Yes (rollback) |
+
+**Category 4: Orchestrator Domain Errors**
+
+| Sub-Domain  | Error Type | Examples                   | Auto-Fixable        |
+| ----------- | ---------- | -------------------------- | ------------------- |
+| **State**   | Invalid    | Invalid state transition   | ❌ No (bug)         |
+| **Session** | Timeout    | Build exceeded 5 min limit | ✅ Yes (retry)      |
+| **Retry**   | Exhausted  | Max retries exceeded       | ❌ No (escalate)    |
+| **Lock**    | Conflict   | Workspace already locked   | ❌ No (user action) |
+
+> **INVARIANT**: Errors marked ❌ No must surface to user. Errors marked ✅ Yes are silently handled. Errors marked ⚠️ Partial require context-dependent handling.
+
+#### Build Error Types
+
+```csharp
+public enum BuildErrorType
+{
+    // C# Compiler Errors (CS0001-CS9999)
+    CSharpSyntaxError,              // CS1001-CS1999: Syntax errors
+    CSharpSemanticError,            // CS0001-CS0999: Type/member errors
+    CSharpNullabilityWarning,       // CS8600-CS8999: Nullable reference warnings
+
+    // XAML Errors (XDG0001-XDG9999)
+    XamlParseError,                 // XDG0001-XDG0999: XML/XAML syntax
+    XamlBindingError,               // XDG1000-XDG1999: Data binding
+    XamlResourceError,              // XDG2000-XDG2999: Resource resolution
+
+    // NuGet Errors (NU0001-NU9999)
+    NuGetPackageNotFound,           // NU1101: Package doesn't exist
+    NuGetVersionConflict,           // NU1107: Version conflict
+    NuGetRestoreFailed,             // NU1000: General restore failure
+
+    // MSBuild Errors (MSB0001-MSB9999)
+    MSBuildProjectFileError,        // MSB4000-MSB4999: .csproj issues
+    MSBuildTargetError,             // MSB3000-MSB3999: Build target failures
+
+    // SDK Errors
+    SdkNotFound,                    // .NET SDK not installed
+    SdkVersionMismatch,             // Wrong SDK version
+
+    // Timeout
+    BuildTimeout,                   // Build exceeded timeout
+
+    // Unknown
+    UnknownBuildError
+}
+```
+
+#### AI Engine Error Types
+
+```csharp
+public enum AIErrorType
+{
+    // API Errors
+    ApiKeyMissing,                  // No API key configured
+    ApiKeyInvalid,                  // Invalid API key
+    ApiRateLimitExceeded,           // Too many requests
+    ApiQuotaExceeded,               // Monthly quota exceeded
+    ApiNetworkError,                // Network connectivity issue
+    ApiTimeout,                     // Request timeout
+
+    // Response Errors
+    InvalidJsonResponse,            // Malformed JSON
+    SchemaValidationFailed,         // Response doesn't match schema
+    EmptyResponse,                  // No content returned
+
+    // Content Errors
+    ContentPolicyViolation,         // Prompt violates content policy
+    TokenLimitExceeded,             // Prompt too long
+
+    // Model Errors
+    ModelNotAvailable,              // Selected model unavailable
+    ModelDeprecated,                // Model no longer supported
+
+    UnknownAIError
+}
+```
+
+### 8.4 Retry Strategy with Exponential Backoff
+
+```csharp
+public class RetryPolicy
+{
+    public int MaxRetries { get; set; } = 3;
+    public TimeSpan InitialDelay { get; set; } = TimeSpan.FromSeconds(1);
+    public double BackoffMultiplier { get; set; } = 2.0;
+    public TimeSpan MaxDelay { get; set; } = TimeSpan.FromSeconds(30);
+
+    public async Task<T> ExecuteAsync<T>(
+        Func<Task<T>> operation,
+        Func<Exception, bool> shouldRetry)
+    {
+        var attempt = 0;
+        var delay = InitialDelay;
+
+        while (true)
+        {
+            try
+            {
+                return await operation();
+            }
+            catch (Exception ex) when (shouldRetry(ex) && attempt < MaxRetries)
+            {
+                attempt++;
+                _logger.LogWarning(ex, "Attempt {Attempt} failed, retrying in {Delay}ms",
+                    attempt, delay.TotalMilliseconds);
+
+                await Task.Delay(delay);
+                delay = TimeSpan.FromMilliseconds(
+                    Math.Min(delay.TotalMilliseconds * BackoffMultiplier, MaxDelay.TotalMilliseconds));
+            }
+        }
+    }
+}
+```
+
+### 8.5 Retry Decision Matrix
+
+| Error Type          | Retry? | Max Retries | Strategy             |
+| ------------------- | ------ | ----------- | -------------------- |
+| **Network Errors**  | ✅ Yes | 3           | Exponential backoff  |
+| **API Rate Limit**  | ✅ Yes | 5           | Fixed delay (60s)    |
+| **Syntax Errors**   | ✅ Yes | 3           | AI re-generation     |
+| **Build Timeout**   | ✅ Yes | 1           | Increase timeout     |
+| **SDK Not Found**   | ❌ No  | 0           | User must install    |
+| **API Key Invalid** | ❌ No  | 0           | User must fix        |
+| **Disk Full**       | ❌ No  | 0           | User must free space |
+
+### 8.6 Auto-Fix Strategies
+
+```csharp
+public class BuildErrorRecoveryService
+{
+    public async Task<RecoveryResult> RecoverFromBuildErrorAsync(BuildError error)
+    {
+        return error.ErrorType switch
+        {
+            BuildErrorType.CSharpSyntaxError => await RecoverFromSyntaxErrorAsync(error),
+            BuildErrorType.XamlParseError => await RecoverFromXamlErrorAsync(error),
+            BuildErrorType.NuGetPackageNotFound => await RecoverFromNuGetErrorAsync(error),
+            BuildErrorType.BuildTimeout => await RecoverFromTimeoutAsync(error),
+            _ => RecoveryResult.Failed("No recovery strategy available")
+        };
+    }
+
+    private async Task<RecoveryResult> RecoverFromSyntaxErrorAsync(BuildError error)
+    {
+        // 1. Extract error context
+        var context = await ExtractErrorContextAsync(error);
+
+        // 2. Ask AI to fix
+        var fixPrompt = $@"
+            The following code has a syntax error:
+
+            File: {error.FilePath}
+            Line: {error.LineNumber}
+            Error: {error.Message}
+
+            Code context:
+            {context}
+
+            Please provide a patch to fix this error.
+        ";
+
+        var patch = await _aiEngine.GeneratePatchAsync(fixPrompt);
+
+        // 3. Apply patch
+        var result = await _patchEngine.ApplyPatchAsync(patch);
+
+        if (result.Success)
+        {
+            return RecoveryResult.Success("Syntax error fixed automatically");
+        }
+
+        return RecoveryResult.Failed("Unable to fix syntax error automatically");
+    }
+}
+```
+
+### 8.7 Circuit Breaker Pattern
+
+```csharp
+public class CircuitBreaker
+{
+    private int _failureCount;
+    private DateTime _lastFailureTime;
+    private CircuitState _state = CircuitState.Closed;
+
+    private readonly int _failureThreshold = 5;
+    private readonly TimeSpan _timeout = TimeSpan.FromMinutes(1);
+
+    public async Task<T> ExecuteAsync<T>(Func<Task<T>> operation)
+    {
+        if (_state == CircuitState.Open)
+        {
+            if (DateTime.UtcNow - _lastFailureTime > _timeout)
+            {
+                _state = CircuitState.HalfOpen;
+            }
+            else
+            {
+                throw new CircuitBreakerOpenException("Circuit breaker is open");
+            }
+        }
+
+        try
+        {
+            var result = await operation();
+
+            if (_state == CircuitState.HalfOpen)
+            {
+                _state = CircuitState.Closed;
+                _failureCount = 0;
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _failureCount++;
+            _lastFailureTime = DateTime.UtcNow;
+
+            if (_failureCount >= _failureThreshold)
+            {
+                _state = CircuitState.Open;
+            }
+
+            throw;
+        }
+    }
+}
+
+public enum CircuitState
+{
+    Closed,     // Normal operation
+    Open,       // Failing, reject all requests
+    HalfOpen    // Testing if service recovered
+}
+```
+
+### 8.8 Global Exception Handler
+
+```csharp
+public class GlobalExceptionHandler
+{
+    public void Initialize()
+    {
+        // Catch unhandled exceptions
+        AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        Application.Current.UnhandledException += OnApplicationUnhandledException;
+    }
+
+    private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        var ex = e.ExceptionObject as Exception;
+        _logger.LogCritical(ex, "Unhandled exception in AppDomain");
+
+        // Show crash dialog
+        ShowCrashDialog(ex);
+
+        // Save crash dump
+        SaveCrashDump(ex);
+    }
+
+    private void OnApplicationUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+    {
+        _logger.LogError(e.Exception, "Unhandled UI exception");
+
+        // Mark as handled to prevent crash
+        e.Handled = true;
+
+        // Show error dialog
+        ShowErrorDialog(e.Exception);
+    }
+}
+```
+
+---
 
 ## 9. Memory and State Layer
 
@@ -1387,12 +1713,12 @@ public class ProjectGraphService
 
 ### Why "Embedded"?
 
-Unlike cloud builders that call external services, Sync AI runs everything locally as in-process .NET libraries:
+
 
 | Component         | Traditional Approach          | Sync AI Embedded Approach                           |
 | ----------------- | ----------------------------- | --------------------------------------------------- |
-| **Build**         | Shell out to `dotnet build`   | `Microsoft.Build.Execution.BuildManager` in-process |
-| **NuGet**         | Shell out to `dotnet restore` | `NuGet.Commands.RestoreCommand` in-process          |
+| **Build**         | Shell out to `In-process MSBuild via Microsoft.Build API`   | `Microsoft.Build.Execution.BuildManager` in-process |
+| **NuGet**         | Shell out to `In-process NuGet restore via NuGet.Commands` | `NuGet.Commands.RestoreCommand` in-process          |
 | **Code Analysis** | External linter               | `Microsoft.CodeAnalysis` (Roslyn) in-process        |
 | **Database**      | External DB server            | `Microsoft.Data.Sqlite` embedded                    |
 | **Preview**       | External browser              | WinUI 3 `WebView2` or XAML renderer                 |
@@ -1492,7 +1818,7 @@ public class FileSystemSandbox
 ### 10.2 Execution Kernel (Deep Dive)
 
 **Overview**:
-The Execution Kernel wraps the .NET SDK tools (MSBuild, NuGet) into a managed API. It avoids launching `dotnet.exe` processes where possible, preferring in-process libraries for speed and control.
+The Execution Kernel wraps the .NET SDK tools (MSBuild, NuGet) into a managed API. It **never** launches `dotnet.exe` processes, preferring in-process libraries for speed, reliability, and error structured handling.
 
 **Key Responsibilities**:
 - **MSBuild Localization**: Uses `Microsoft.Build.Locator` to find the correct SDK without user PATH configuration.
@@ -1571,34 +1897,15 @@ Before any patch is written to disk, it must pass a rigorous 5-layer safety chec
 
 #### Implementation
 
-````csharp
-public async Task<bool> ValidatePatchAsync(Patch patch)
-{
-    // Simulate AST modification in memory first
-    var tree = await CSharpSyntaxTree.ParseTextAsync(File.ReadAllText(patch.FilePath));
-    var root = await tree.GetRootAsync();
-
-    try
-    {
-        var modifiedRoot = ApplyPatchToNode(root, patch);
-
-        // Validate syntax tree (Layer 4)
-        var diagnostics = modifiedRoot.GetDiagnostics();
-        if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
-        {
-            return false; // Syntax error caught before disk write
-        }
-
-        // specific semantic checks (Layers 1-3)...
-
-```csharp
-        return true;
-    }
-    catch
-    {
-        return false;
-    }
+`csharp
+return true;
 }
+catch
+{
+return false;
+}
+}
+
 ````
 
 #### Transactional Patch Engine Implementation (Deep Dive)
@@ -1731,11 +2038,53 @@ public class ProcessSandbox
 }
 ```
 
+### 10.7 Snapshot Manager (Diff-Based)
+
+**Overview**: Smart version control that captures state before every mutation.
+
+> **INVARIANTS (Strict)**:
+> - **Hard Cap**: Max 50 snapshots per project. Oldest pruned automatically.
+> - **Disk Guard**: REJECT snapshot if Free Space < 500MB.
+> - **Performance**: Store only changed files (Diff) vs last snapshot.
+
+**Pruning Logic**:
+```csharp
+if (snapshots.Count >= 50) {
+    var toDelete = snapshots.OrderBy(s => s.Date).Take(snapshots.Count - 49);
+    foreach (var snap in toDelete) DeleteSnapshot(snap.Id);
+}
+```
+
+### 10.8 DiskSpaceValidator (Pre-Flight)
+
+**Overview**: Ensures sufficient storage before starting heavy operations.
+
+**Validation Formula**:
+`Required = (ProjectSize * 2) + 500MB`
+
+```csharp
+public bool HasSpace(long requiredBytes)
+{
+    var drive = new DriveInfo(Path.GetPathRoot(_projectPath));
+    return drive.AvailableFreeSpace > requiredBytes;
+}
+```
+
+### 10.9 Temporary Build Workspaces
+
+**Overview**: To ensure 100% clean builds, we never build in the source directory.
+
+**Strategy**:
+1.  **Clone**: Copy source to `Intermediates/Build_{SessionId}`.
+2.  **Build**: Run MSBuild on the clone.
+3.  **Artifacts**: Copy output (`bin/`) back to source if successful.
+4.  **Cleanup**: `finally { Directory.Delete(clone, true); }`
+
 ---
 
 ## 11. Execution Lifecycle
 
-### 11.X ExecutionSession Schema (Authoritative)
+### 11.1 ExecutionSession Schema (Normative)
 
 **Canonical Schema**:
 
@@ -1747,12 +2096,18 @@ public class ExecutionSession
     string Prompt;
     DateTime StartTime;
 
+    // Retry Logic
     int RetryCount;
-    int RetryBudgetPerTask;
-    int TotalRetryBudget;
+    int RetryBudgetPerTask; // Default: 3
+    int TotalRetryBudget;   // Default: 10
 
+    // Lifecycle
     CancellationTokenSource CancellationToken;
     ExecutionState CurrentState;
+
+    // Invariants
+    // - Must be persisted before execution
+    // - CancellationToken cascades to all workers
 }
 ```
 
@@ -1763,17 +2118,33 @@ public class ExecutionSession
 > - `CancellationToken` is mandatory for all worker threads
 > - Session must be persisted in SQLite before execution begins
 
-### 11.Y Full 6-Phase Execution Lifecycle
+### 11.2 Full 6-Phase Execution Lifecycle
 
 > **Core Principle**: User sees "Building...", System runs 6 phases with deterministic state transitions.
 
 #### Phase 0: Pre-Execution Guard (UI Thread)
 
-- **Action**: User clicks "Generate"
-- **Validation**: Check Orchestrator State (must be IDLE)
-- **Lock**: Acquire Workspace Mutex
-- **Session**: Create persisted `ExecutionSession`
-- **Transition**: `IDLE` -> `AI_PLANNING`
+**Normative Logic**:
+
+```csharp
+public async Task<ExecutionSession> SubmitGenerateRequestAsync(string prompt)
+{
+    // 1. Validate State (Must be IDLE)
+    if (_currentState != OrchestratorState.IDLE) throw new InvalidOperationException("Busy");
+
+    // 2. Acquire Workspace Mutex (Serialized Access)
+    await _workspaceLock.WaitAsync();
+
+    // 3. Create & Persist Session
+    var session = new ExecutionSession { Id = Guid.NewGuid(), Prompt = prompt };
+    await _database.SaveSessionAsync(session);
+
+    // 4. Transition State
+    _currentState = OrchestratorState.AI_PLANNING;
+
+    return session;
+}
+```
 
 #### Phase 1: AI Planning (AI Worker)
 
@@ -1790,7 +2161,7 @@ public class ExecutionSession
   1. **Snapshot**: Create pre-task snapshot
   2. **Patch**: Apply AST patch (atomic)
   3. **Index**: Update Roslyn Index (incremental)
-  4. **Build**: Run `dotnet build` (isolated)
+  4. **Build**: Run `In-process MSBuild via Microsoft.Build API` (isolated)
   5. **Verify**: Check exit code & error log
   6. **Commit**: Mark snapshot as committed on success
 
@@ -1806,7 +2177,7 @@ public class ExecutionSession
 
 #### Phase 4: Build Execution (Build Worker)
 
-- **Command**: `dotnet build --no-restore`
+- **Command**: `In-process MSBuild via Microsoft.Build API --no-restore`
 - **Isolation**: New Process per build
 - **Timeout**: Hard 5-minute limit
 - **Capture**: Stdout/Stderr parsing
@@ -1849,257 +2220,13 @@ public class ExecutionSession
 
 **Stage 3: Project Registry Load**
 
-- Scan: `~/.syncai/workspaces/*`
+- Scan: `%AppData%\SyncAI\Workspaces\\`
 - Validate: Check `.metadata.json` integrity
 - Repair: Auto-fix corrupted snapshots if possible
 
-### 11.3 Six-Thread Architecture
 
-The system uses a deterministic threading model with 6 specialized thread types:
 
-#### Thread Types and Responsibilities
-
-**🟢 1. UI Thread (DispatcherQueue)**
-
-- **Handles**: Rendering, button clicks, ViewModel updates, animations, status updates
-- **Never blocks**: All heavy operations offloaded to worker threads
-- **Implementation**:
-
-```csharp
-// All UI updates must use DispatcherQueue
-private async Task UpdateUIAsync(Action action)
-{
-    await _dispatcherQueue.EnqueueAsync(action);
-}
-```
-
-**🔵 2. Orchestrator Thread**
-
-- **Single background thread** responsible for:
-  - State machine transitions
-  - Task queue management
-  - Retry controller
-  - Lock control
-- **Must be sequential** - No parallel task execution
-- **Implementation**:
-
-```csharp
-public class Orchestrator
-{
-    private readonly Thread _orchestratorThread;
-    private readonly BlockingCollection<ExecutionSession> _executionQueue;
-
-    public Orchestrator()
-    {
-        _executionQueue = new BlockingCollection<ExecutionSession>();
-
-        _orchestratorThread = new Thread(OrchestratorLoop)
-        {
-            Name = "Orchestrator",
-            IsBackground = true,
-            Priority = ThreadPriority.AboveNormal
-        };
-
-        _orchestratorThread.Start();
-    }
-
-    private void OrchestratorLoop()
-    {
-        foreach (var session in _executionQueue.GetConsumingEnumerable())
-        {
-            try
-            {
-                ExecuteSessionAsync(session).Wait();
-            }
-            catch (Exception ex)
-            {
-                HandleExecutionErrorAsync(session, ex).Wait();
-            }
-        }
-    }
-}
-```
-
-**🟣 3. AI Worker Thread Pool**
-
-- **Used for**: SDK API calls, context preparation, JSON validation
-- **Parallel safe** (but limit concurrency to 2 max)
-- **Implementation**:
-
-```csharp
-private static readonly SemaphoreSlim _aiConcurrencyLimit = new(2, 2);
-
-public async Task<AIResponse> CallAIAsync(AIRequest request)
-{
-    await _aiConcurrencyLimit.WaitAsync();
-
-    try
-    {
-        return await Task.Run(async () =>
-        {
-            return await _aiClient.GenerateAsync(request);
-        });
-    }
-    finally
-    {
-        _aiConcurrencyLimit.Release();
-    }
-}
-```
-
-**🟡 4. Patch Worker Thread**
-
-- **Handles**: Roslyn parsing, AST transformations, graph updates
-- **Single-threaded** to prevent file race conditions
-- **Implementation**:
-
-```csharp
-public class PatchEngine
-{
-    private readonly SemaphoreSlim _patchLock = new(1, 1);
-
-    public async Task<PatchResult> ApplyPatchAsync(Patch patch)
-    {
-        await _patchLock.WaitAsync();
-
-        try
-        {
-            return await Task.Run(async () =>
-            {
-                // Roslyn operations here
-                return await ApplyPatchInternalAsync(patch);
-            });
-        }
-        finally
-        {
-            _patchLock.Release();
-        }
-    }
-}
-```
-
-**🔴 5. Build Worker Thread**
-
-- **Handles**: dotnet restore, dotnet build, log parsing
-- **Must run isolated. Must be killable.**
-- **Implementation**:
-
-```csharp
-public class BuildKernel
-{
-    private Process _currentBuildProcess;
-
-    public async Task<BuildResult> BuildProjectAsync(string projectPath)
-    {
-        return await Task.Run(async () =>
-        {
-            _currentBuildProcess = new Process { /* ... */ };
-
-            try
-            {
-                return await ExecuteBuildAsync();
-            }
-            finally
-            {
-                _currentBuildProcess = null;
-            }
-        });
-    }
-
-    public void CancelBuild()
-    {
-        _currentBuildProcess?.Kill();
-    }
-}
-```
-
-**⚪ 6. Background Maintenance Thread**
-
-- **Low priority thread**:
-  - Snapshot pruning
-  - SQLite vacuum
-  - Disk usage monitoring
-  - Index consistency check
-- **Runs when idle only**
-- **Implementation**:
-
-```csharp
-public class BackgroundMaintenance
-{
-    private readonly Timer _maintenanceTimer;
-
-    public void StartMaintenance()
-    {
-        _maintenanceTimer = new Timer(
-            callback: RunMaintenanceAsync,
-            state: null,
-            dueTime: TimeSpan.FromMinutes(5),
-            period: TimeSpan.FromMinutes(10)
-        );
-    }
-
-    private async void RunMaintenanceAsync(object state)
-    {
-        // Only run if orchestrator is idle
-        if (_orchestrator.CurrentState != OrchestratorState.IDLE)
-            return;
-
-        await Task.Run(async () =>
-        {
-            await _snapshotPruner.PruneOldSnapshotsAsync();
-            await _database.VacuumAsync();
-            await _resourceMonitor.CheckDiskUsageAsync();
-            await _indexer.ValidateConsistencyAsync();
-        });
-    }
-}
-```
-
-### 11.4 Thread Communication Model
-
-**Use**:
-
-- Channels or BlockingCollection
-- Immutable command objects
-- Event-driven architecture
-- CancellationToken everywhere
-
-**Never**:
-
-- Share mutable state across threads
-- Allow patch + build concurrently
-- Allow two builds at once
-
-**Implementation**:
-
-```csharp
-// Immutable command
-public record GenerateCommand(string Prompt, string ProjectId);
-
-// Event-driven
-public class EventAggregator
-{
-    private readonly ConcurrentDictionary<Type, List<Delegate>> _subscribers = new();
-
-    public void Subscribe<T>(Action<T> handler)
-    {
-        _subscribers.GetOrAdd(typeof(T), _ => new List<Delegate>()).Add(handler);
-    }
-
-    public async Task PublishAsync<T>(T @event)
-    {
-        if (_subscribers.TryGetValue(typeof(T), out var handlers))
-        {
-            foreach (var handler in handlers.Cast<Action<T>>())
-            {
-                await Task.Run(() => handler(@event));
-            }
-        }
-    }
-}
-```
-
-### 11.5 Complete Boot Sequence (6 Stages)
+#### Additional Boot Stages (Merged)
 
 When user launches the app:
 
@@ -2284,75 +2411,269 @@ private async Task FinalizeBootAsync()
 }
 ```
 
-### 11.6 Execution Phases
 
-#### Phase 0: Pre-Execution Guard (UI Thread)
+### 11.3 Six-Thread Architecture
 
-- **Validation**: Checks if Orchestrator is IDLE.
-- **Lock**: Acquires workspace lock.
-- **Session Init**: Creates `ExecutionSession` with unique ID.
-- **UI Update**: Sets status to "Thinking...".
+The system uses a deterministic threading model with 6 specialized thread types:
 
-#### Phase 1: AI Planning (Worker Thread)
+#### Thread Types and Responsibilities
 
-- **Context Retrieval**: Pulls relevant snippets from Vector DB.
-- **Symbol Resolution**: Queries SQLite for referenced symbols.
-- **Planner Agent**: Generates Task Graph (DAG).
-- **Validation**: Checks for circular dependencies in tasks.
+**🟢 1. UI Thread (DispatcherQueue)**
 
-#### Phase 2: Task Execution Loop (Orchestrator Thread)
+- **Handles**: Rendering, button clicks, ViewModel updates, animations, status updates
+- **Never blocks**: All heavy operations offloaded to worker threads
+- **Implementation**:
 
-- **Topological Sort**: Orders tasks by dependency.
-- **Snapshot**: Creates `pre-task` snapshot.
-- **Dispatch**: Sends tasks to Worker Pool.
+```csharp
+// All UI updates must use DispatcherQueue
+private async Task UpdateUIAsync(Action action)
+{
+    await _dispatcherQueue.EnqueueAsync(action);
+}
+```
 
-#### Phase 3: Patch Application (Worker Thread)
+**🔵 2. Orchestrator Thread**
 
-- **Code Gen**: AI Coder produces C# code.
-- **AST Parsing**: Roslyn parses code to SyntaxTree.
-- **Mutation**: Applies changes to existing files via `SyntaxRewriter`.
-- **Atomic Write**: Saves to `.tmp` then moves to target.
+- **Single background thread** responsible for:
+  - State machine transitions
+  - Task queue management
+  - Retry controller
+  - Lock control
+- **Must be sequential** - No parallel task execution
+- **Implementation**:
 
-#### Phase 4: Build Execution (Worker Thread)
+```csharp
+public class Orchestrator
+{
+    private readonly Thread _orchestratorThread;
+    private readonly BlockingCollection<ExecutionSession> _executionQueue;
 
-- **Restore**: `dotnet restore` (in-process).
-- **Build**: `dotnet build` (in-process).
-- **Error Capture**: StructuredLogger intercepts errors.
+    public Orchestrator()
+    {
+        _executionQueue = new BlockingCollection<ExecutionSession>();
 
-#### Phase 5: Silent Retry Loop (AI Fix Worker)
+        _orchestratorThread = new Thread(OrchestratorLoop)
+        {
+            Name = "Orchestrator",
+            IsBackground = true,
+            Priority = ThreadPriority.AboveNormal
+        };
 
-_Only if Build fails (max 3 times)_
+        _orchestratorThread.Start();
+    }
 
-- **Analysis**: Classifies error (Syntax vs Logic).
-- **Fix Gen**: AI Fixer proposes solution.
-- **Patch**: Applies fix.
-- **Retry**: Jumps back to Phase 4.
+    private void OrchestratorLoop()
+    {
+        foreach (var session in _executionQueue.GetConsumingEnumerable())
+        {
+            try
+            {
+                ExecuteSessionAsync(session).Wait();
+            }
+            catch (Exception ex)
+            {
+                HandleExecutionErrorAsync(session, ex).Wait();
+            }
+        }
+    }
+}
+```
 
-#### Phase 6: Finalization (Orchestrator Thread)
+**🟣 3. AI Worker Thread Pool**
 
-- **Commit**: Marks session as Success.
-- **Preview**: Updates Live Preview.
-- **Unlock**: Releases workspace lock.
+- **Canonical Name**: `AI_Planning_Worker` / `AI_Fix_Worker`
+- **Used for**: SDK API calls, context preparation, JSON validation
+- **Parallel safe** (but limit concurrency to 2 max)
+- **Implementation**:
 
-```mermaid
-sequenceDiagram
-    participant UI as UI Thread
-    participant Orch as Orchestrator
-    participant Worker as Worker Thread
-    participant Kernel as Build Kernel
+```csharp
+private static readonly SemaphoreSlim _aiConcurrencyLimit = new(2, 2);
 
-    UI->>Orch: Submit Prompt
-    Orch->>Worker: Phase 1: Plan
-    Worker-->>Orch: Task Graph
-    loop For Each Task
-        Orch->>Worker: Phase 3: Patch
-        Worker->>Kernel: Phase 4: Build
-        Kernel-->>Orch: Result (Success/Fail)
-        alt Fail
-            Orch->>Worker: Phase 5: Silent Retry
-        end
-    end
-    Orch->>UI: Phase 6: Finalize (Update Preview)
+public async Task<AIResponse> CallAIAsync(AIRequest request)
+{
+    await _aiConcurrencyLimit.WaitAsync();
+
+    try
+    {
+        return await Task.Run(async () =>
+        {
+            return await _aiClient.GenerateAsync(request);
+        });
+    }
+    finally
+    {
+        _aiConcurrencyLimit.Release();
+    }
+}
+```
+
+**🟡 4. Patch Worker Thread**
+
+- **Canonical Name**: `Patch_Worker`
+- **Handles**: Roslyn parsing, AST transformations, graph updates
+- **Single-threaded** to prevent file race conditions
+- **Implementation**:
+
+```csharp
+public class PatchEngine
+{
+    private readonly SemaphoreSlim _patchLock = new(1, 1);
+
+    public async Task<PatchResult> ApplyPatchAsync(Patch patch)
+    {
+        await _patchLock.WaitAsync();
+
+        try
+        {
+            return await Task.Run(async () =>
+            {
+                // Roslyn operations here
+                return await ApplyPatchInternalAsync(patch);
+            });
+        }
+        finally
+        {
+            _patchLock.Release();
+        }
+    }
+}
+```
+
+**🔴 5. Build Worker Thread**
+
+- **Handles**: In-process NuGet restore via NuGet.Commands, In-process MSBuild via Microsoft.Build API, log parsing
+- **Must run isolated. Must be killable.**
+- **Implementation**:
+
+```csharp
+public class BuildKernel
+{
+    private Process _currentBuildProcess;
+
+    public async Task<BuildResult> BuildProjectAsync(string projectPath)
+    {
+        return await Task.Run(async () =>
+        {
+            _currentBuildProcess = new Process { /* ... */ };
+
+            try
+            {
+                return await ExecuteBuildAsync();
+            }
+            finally
+            {
+                _currentBuildProcess = null;
+            }
+        });
+    }
+
+    public void CancelBuild()
+    {
+        _currentBuildProcess?.Kill();
+    }
+}
+```
+
+**⚪ 6. Background Maintenance Thread**
+
+- **Low priority thread**:
+  - Snapshot pruning
+  - SQLite vacuum
+  - Disk usage monitoring
+  - Index consistency check
+- **Runs when idle only**
+- **Implementation**:
+
+```csharp
+public class BackgroundMaintenance
+{
+    private readonly Timer _maintenanceTimer;
+
+    public void StartMaintenance()
+    {
+        _maintenanceTimer = new Timer(
+            callback: RunMaintenanceAsync,
+            state: null,
+            dueTime: TimeSpan.FromMinutes(5),
+            period: TimeSpan.FromMinutes(10)
+        );
+    }
+
+    private async void RunMaintenanceAsync(object state)
+    {
+        // Only run if orchestrator is idle
+        if (_orchestrator.CurrentState != OrchestratorState.IDLE)
+            return;
+
+        await Task.Run(async () =>
+        {
+            await _snapshotPruner.PruneOldSnapshotsAsync();
+            await _database.VacuumAsync();
+            await _resourceMonitor.CheckDiskUsageAsync();
+            await _indexer.ValidateConsistencyAsync();
+        });
+    }
+}
+```
+
+### 11.4 Threading & Parallelism Model
+
+#### 11.4.1 Parallelism Model (Authoritative)
+
+> **WARNING**: Strict adherence required.
+
+-   **AI Planning**: May execute in **parallel threads** (max 2 concurrent agents).
+-   **Roslyn Indexing**: May run **asynchronously** (background thread).
+-   **Background Maintenance**: Runs **concurrently** (idle priority).
+
+-   **Filesystem Mutation (PatchEngine)**: **STRICTLY SERIALIZED** (Monitored by Mutex).
+-   **Build Execution**: **STRICTLY SERIALIZED** (One active build at a time).
+-   **Snapshot Creation**: **STRICTLY SERIALIZED** (Blocks all mutations).
+
+> **Invariant**: At most **ONE** active mutation pipeline exists per ExecutionSession.
+
+#### 11.4.2 Thread Communication Model
+
+**Use**:
+
+- Channels or BlockingCollection
+- Immutable command objects
+- Event-driven architecture
+- CancellationToken everywhere
+
+**Never**:
+
+- Share mutable state across threads
+- Allow patch + build concurrently
+- Allow two builds at once
+
+**Implementation**:
+
+```csharp
+// Immutable command
+public record GenerateCommand(string Prompt, string ProjectId);
+
+// Event-driven
+public class EventAggregator
+{
+    private readonly ConcurrentDictionary<Type, List<Delegate>> _subscribers = new();
+
+    public void Subscribe<T>(Action<T> handler)
+    {
+        _subscribers.GetOrAdd(typeof(T), _ => new List<Delegate>()).Add(handler);
+    }
+
+    public async Task PublishAsync<T>(T @event)
+    {
+        if (_subscribers.TryGetValue(typeof(T), out var handlers))
+        {
+            foreach (var handler in handlers.Cast<Action<T>>())
+            {
+                await Task.Run(() => handler(@event));
+            }
+        }
+    }
+}
 ```
 
 ### 11.7 Crash Recovery Flow
@@ -2411,11 +2732,28 @@ private async Task EnforceSafetyControlsAsync()
 
 ### 11.9 Detailed State Machine Transitions
 
+### 11.9 Authoritative State Machine
+
+```csharp
+public enum OrchestratorState
+{
+    IDLE,
+    AI_PLANNING,
+    SPEC_PARSED,
+    TASK_GRAPH_READY,
+    TASK_EXECUTING,
+    VALIDATING,
+    RETRYING,
+    COMPLETED,
+    FAILED
+}
+```
+
 ```mermaid
 stateDiagram-v2
     [*] --> IDLE
     IDLE --> AI_PLANNING: Submit Prompt
-    AI_PLANNING --> SPEC_PARSED: Parse Complete
+    AI_PLANNING --> SPEC_PARSED: Spec Generated
     SPEC_PARSED --> TASK_GRAPH_READY: Graph Built
     TASK_GRAPH_READY --> TASK_EXECUTING: Dispatch Task
     TASK_EXECUTING --> VALIDATING: Patch Applied
@@ -2462,7 +2800,7 @@ stateDiagram-v2
 
 #### 14.3 Corrupted Runtime
 
-- **Symptom**: `dotnet build` fails with obscure SDK errors.
+- **Symptom**: `In-process MSBuild via Microsoft.Build API` fails with obscure SDK errors.
 - **Mitigation**:
   - Built-in "Doctor" command runs `dotnet --info` and checks `global.json`.
   - Auto-generates `global.json` pointing to bundled/verified SDK version.
@@ -2504,7 +2842,7 @@ Parallel.ForEach(agents, agent =>
     var intent = agent.Analyze(prompt);
     _orchestrator.Dispatch(new AgentResultParams(intent));
 });
-````
+```
 
 #### 4. Patch Worker (Single-Writer)
 
@@ -2527,7 +2865,8 @@ public async Task ModifyGraphAsync(Action<Workspace> mutation)
 // Waits on external process
 public async Task BuildAsync()
 {
-    var process = Process.Start("dotnet", "build");
+    // Embedded Build (No Process.Start)
+    var result = await _buildManager.BuildAsync(projectPath);
     await process.WaitForExitAsync(); // Async wait, doesn't block thread
 }
 ```
@@ -2590,8 +2929,7 @@ private async Task EnforceSafetyControlsAsync()
 
 ---
 
-
-### 11.4 Workspace Mutex Pattern (Authoritative)
+### 11.5 Workspace Mutex Pattern (Authoritative)
 
 **Purpose**: Prevent concurrent access to the same workspace across process boundaries.
 
@@ -2679,7 +3017,6 @@ public class Orchestrator
 ```
 
 > **INVARIANT**: No mutation operation may proceed without acquiring the workspace mutex first. This applies across ALL processes (including advanced mode external editors).
-
 
 ## 12. Background Systems
 
@@ -3149,8 +3486,8 @@ Users can activate Advanced Mode via:
 
 **AllowedCommands**:
 
-- `dotnet restore`
-- `dotnet build`
+- `In-process NuGet restore via NuGet.Commands`
+- `In-process MSBuild via Microsoft.Build API`
 - `dotnet run`
 - `dotnet publish`
 - `dotnet test`
@@ -3180,12 +3517,12 @@ public class SecurityBoundary
 
     private static readonly HashSet<string> AllowedCommands = new()
     {
-        "dotnet restore",
-        "dotnet build",
-        "dotnet run",
-        "dotnet publish",
-        "dotnet test",
-        "dotnet clean"
+        "In-process NuGet restore via NuGet.Commands",
+        "In-process MSBuild via Microsoft.Build API",
+        "Restore",
+        "Build",
+        "Test",
+        "Clean"
     };
 
     public bool IsPathAllowed(string filePath)
@@ -3527,16 +3864,32 @@ The kernel must detect and mitigate machine variability that cloud-based systems
 
 ### 16.1 Deployment Philosophy: Local-First vs Cloud
 
-| Dimension      | Cloud Containers               | Sync AI (Local Native)             |
-| :------------- | :----------------------------- | :--------------------------------- |
-| **OS API**     | Linux (Emulated/Containerized) | **Windows Native** (Exact Target)  |
-| **Filesystem** | Virtual/Ephemeral              | **NTFS** (Real Persistence)        |
-| **Latency**    | Network RTT + Boot (7-15s)     | **Zero** (In-Process)              |
-| **Offline**    | No                             | **Yes** (After AI reasoning)       |
-| **Data**       | Lives on server                | **Stays on device**                |
-| **Cost**       | $27-65/user/month              | **$0** (User Hardware)             |
+| Dimension      | Cloud Containers               | Sync AI (Local Native)            |
+| :------------- | :----------------------------- | :-------------------------------- |
+| **OS API**     | Linux (Emulated/Containerized) | **Windows Native** (Exact Target) |
+| **Filesystem** | Virtual/Ephemeral              | **NTFS** (Real Persistence)       |
+| **Latency**    | Network RTT + Boot (7-15s)     | **Zero** (In-Process)             |
+| **Offline**    | No                             | **Yes** (After AI reasoning)      |
+| **Data**       | Lives on server                | **Stays on device**               |
+| **Cost**       | $27-65/user/month              | **$0** (User Hardware)            |
 
 > **Implication**: Sync AI builds are **deployment-ready binaries**, not just prototypes.
+
+### 16.1.1 Cloud Dependencies Clarification
+
+To be precise regarding "Zero Cloud":
+
+- **Build Infrastructure**: **Local-First**. MSBuild, NuGet, Compilers, and Runtime are embedded locally.
+- **AI Reasoning**: **Cloud-Dependent**. Requires internet for LLM token generation.
+- **AI Reasoning**: **Cloud Required**. Large Language Model inference (Architect/Coder agents) runs in the cloud.
+
+| Feature             | Location  | Connection Needed? |
+| :------------------ | :-------- | :----------------- |
+| **Code Generation** | Cloud API | **Yes**            |
+| **Compilation**     | Local PC  | **No**             |
+| **NuGet Restore**   | Local PC  | **No** (if cached) |
+| **App Execution**   | Local PC  | **No**             |
+| **Vector Indexing** | Local PC  | **No**             |
 
 ### 16.2 Hybrid Architecture (Future)
 
@@ -3700,11 +4053,9 @@ Complete stack when fully internalized:
 
 ---
 
-
-
 ## 20. Implementation Roadmap
 
-### 28.1 Phase 1: Core Infrastructure (Weeks 1-4)
+### 20.1 Phase 1: Core Infrastructure (Weeks 1-4)
 
 - [ ] **Project Setup**
   - Initialize WinUI 3 project structure
@@ -3721,7 +4072,7 @@ Complete stack when fully internalized:
   - Navigation framework
   - Theme system
 
-### 28.2 Phase 2: AI Integration (Weeks 5-8)
+### 20.2 Phase 2: AI Integration (Weeks 5-8)
 
 - [ ] **SDK Integration**
   - Integrate `z-ai-web-dev-sdk`
@@ -3741,7 +4092,7 @@ Complete stack when fully internalized:
   - Create context retrieval logic
   - Build dependency graph
 
-### 28.3 Phase 3: Build System (Weeks 9-12)
+### 20.3 Phase 3: Build System (Weeks 9-12)
 
 - [ ] **Build Kernel**
   - Implement `BuildKernel`
@@ -3758,7 +4109,7 @@ Complete stack when fully internalized:
   - Add rollback capability
   - Create pruning logic
 
-### 28.4 Phase 4: Polish & Safety (Weeks 13-16)
+### 20.4 Phase 4: Polish & Safety (Weeks 13-16)
 
 - [ ] **Error Handling**
   - Implement retry controller
@@ -3775,7 +4126,7 @@ Complete stack when fully internalized:
   - Add path validation
   - Create security boundary
 
-### 28.5 Phase 5: Testing & Deployment (Weeks 17-20)
+### 20.5 Phase 5: Testing & Deployment (Weeks 17-20)
 
 - [ ] **Testing**
   - Unit tests for core components
@@ -3792,7 +4143,7 @@ Complete stack when fully internalized:
   - App signing
   - Store submission preparation
 
-### 28.6 Module Dependency Mapping
+### 20.6 Module Dependency Mapping
 
 ```mermaid
 graph TD
@@ -3821,7 +4172,7 @@ graph TD
     L --> I
 ```
 
-### 28.7 Risk Mitigation Strategies
+### 20.7 Risk Mitigation Strategies
 
 | Risk                         | Mitigation                                                                |
 | ---------------------------- | ------------------------------------------------------------------------- |
@@ -3834,7 +4185,7 @@ graph TD
 
 ---
 
-### 28.8 Accelerated Implementation Schedule (15-Week)
+### 20.8 Accelerated Implementation Schedule (15-Week)
 
 #### Phase 1: Foundation
 
@@ -3867,8 +4218,6 @@ graph TD
 15. Documentation (ongoing)
 
 ---
-
-
 
 ## 21. Key Architectural Decisions
 
@@ -4560,338 +4909,6 @@ Optimized for token efficiency.
 *   **Validation**: Run `BuildKernelValidator` before every build.
 *   **Logs**: Use structured logging (`Serilog`) for tracing deterministic flows.
 
-```
-
----
-
-## 29. Error Handling Architecture
-
-### 29.1 Error Handling Philosophy
-
-1. **User Never Sees Technical Details** - All errors translated to user-friendly messages
-2. **Silent Recovery When Possible** - Retry automatically before showing errors
-3. **Actionable Guidance** - Every error message includes next steps
-4. **Preserve User Work** - Never lose user data, always snapshot before risky operations
-5. **Graceful Degradation** - System remains usable even with partial failures
-
-### 29.2 Error Severity Levels
-
-| Level        | User Impact           | UI Indicator        | Action Required      |
-| ------------ | --------------------- | ------------------- | -------------------- |
-| **Info**     | None                  | Blue info icon      | None                 |
-| **Warning**  | Minor, non-blocking   | Yellow warning icon | Optional user action |
-| **Error**    | Blocking, recoverable | Red error icon      | User must resolve    |
-| **Critical** | System-level failure  | Red with alert      | Immediate attention  |
-
-### 29.3 Detailed Error Classification
-
-#### 29.3.1 Domain-Level Error Taxonomy (Complete)
-
-**Category 1: Build Domain Errors**
-
-| Sub-Domain         | Error Code Range | Examples                              | Auto-Fixable |
-| ------------------ | ---------------- | ------------------------------------- | ------------ |
-| **C# Syntax**      | CS1000-CS1999    | Missing semicolons, unmatched braces  | ✅ Yes       |
-| **C# Semantic**    | CS0001-CS0999    | Type mismatches, missing references   | ✅ Yes       |
-| **C# Nullability** | CS8600-CS8999    | Nullable reference warnings           | ⚠️ Partial   |
-| **XAML Parse**     | XDG0001-XDG0999  | Malformed XAML, missing attributes    | ✅ Yes       |
-| **XAML Binding**   | XDG1000-XDG1999  | Invalid bindings, missing DataContext | ⚠️ Partial   |
-| **NuGet**          | NU0001-NU9999    | Package not found, version conflicts  | ✅ Yes       |
-| **MSBuild**        | MSB0001-MSB9999  | Project file errors, target failures  | ⚠️ Partial   |
-
-**Category 2: AI Domain Errors**
-
-| Sub-Domain   | Error Type | Examples                         | Auto-Fixable        |
-| ------------ | ---------- | -------------------------------- | ------------------- |
-| **API**      | Network    | Timeout, connection refused      | ✅ Yes (retry)      |
-| **API**      | Auth       | Invalid key, quota exceeded      | ❌ No               |
-| **Response** | Parse      | Malformed JSON, schema mismatch  | ✅ Yes (re-request) |
-| **Response** | Content    | Policy violation, empty response | ⚠️ Partial          |
-
-**Category 3: Filesystem Domain Errors**
-
-| Sub-Domain   | Error Type | Examples                        | Auto-Fixable      |
-| ------------ | ---------- | ------------------------------- | ----------------- |
-| **IO**       | Access     | Permission denied, file locked  | ⚠️ Partial        |
-| **IO**       | Space      | Disk full                       | ❌ No             |
-| **Sandbox**  | Security   | Path traversal, restricted file | ❌ No (fatal)     |
-| **Snapshot** | Corruption | Checksum mismatch               | ✅ Yes (rollback) |
-
-**Category 4: Orchestrator Domain Errors**
-
-| Sub-Domain  | Error Type | Examples                   | Auto-Fixable        |
-| ----------- | ---------- | -------------------------- | ------------------- |
-| **State**   | Invalid    | Invalid state transition   | ❌ No (bug)         |
-| **Session** | Timeout    | Build exceeded 5 min limit | ✅ Yes (retry)      |
-| **Retry**   | Exhausted  | Max retries exceeded       | ❌ No (escalate)    |
-| **Lock**    | Conflict   | Workspace already locked   | ❌ No (user action) |
-
-> **INVARIANT**: Errors marked ❌ No must surface to user. Errors marked ✅ Yes are silently handled. Errors marked ⚠️ Partial require context-dependent handling.
-
-#### Build Error Types
-
-```csharp
-public enum BuildErrorType
-{
-    // C# Compiler Errors (CS0001-CS9999)
-    CSharpSyntaxError,              // CS1001-CS1999: Syntax errors
-    CSharpSemanticError,            // CS0001-CS0999: Type/member errors
-    CSharpNullabilityWarning,       // CS8600-CS8999: Nullable reference warnings
-
-    // XAML Errors (XDG0001-XDG9999)
-    XamlParseError,                 // XDG0001-XDG0999: XML/XAML syntax
-    XamlBindingError,               // XDG1000-XDG1999: Data binding
-    XamlResourceError,              // XDG2000-XDG2999: Resource resolution
-
-    // NuGet Errors (NU0001-NU9999)
-    NuGetPackageNotFound,           // NU1101: Package doesn't exist
-    NuGetVersionConflict,           // NU1107: Version conflict
-    NuGetRestoreFailed,             // NU1000: General restore failure
-
-    // MSBuild Errors (MSB0001-MSB9999)
-    MSBuildProjectFileError,        // MSB4000-MSB4999: .csproj issues
-    MSBuildTargetError,             // MSB3000-MSB3999: Build target failures
-
-    // SDK Errors
-    SdkNotFound,                    // .NET SDK not installed
-    SdkVersionMismatch,             // Wrong SDK version
-
-    // Timeout
-    BuildTimeout,                   // Build exceeded timeout
-
-    // Unknown
-    UnknownBuildError
-}
-```
-
-#### AI Engine Error Types
-
-```csharp
-public enum AIErrorType
-{
-    // API Errors
-    ApiKeyMissing,                  // No API key configured
-    ApiKeyInvalid,                  // Invalid API key
-    ApiRateLimitExceeded,           // Too many requests
-    ApiQuotaExceeded,               // Monthly quota exceeded
-    ApiNetworkError,                // Network connectivity issue
-    ApiTimeout,                     // Request timeout
-
-    // Response Errors
-    InvalidJsonResponse,            // Malformed JSON
-    SchemaValidationFailed,         // Response doesn't match schema
-    EmptyResponse,                  // No content returned
-
-    // Content Errors
-    ContentPolicyViolation,         // Prompt violates content policy
-    TokenLimitExceeded,             // Prompt too long
-
-    // Model Errors
-    ModelNotAvailable,              // Selected model unavailable
-    ModelDeprecated,                // Model no longer supported
-
-    UnknownAIError
-}
-```
-
-### 29.4 Retry Strategy with Exponential Backoff
-
-```csharp
-public class RetryPolicy
-{
-    public int MaxRetries { get; set; } = 3;
-    public TimeSpan InitialDelay { get; set; } = TimeSpan.FromSeconds(1);
-    public double BackoffMultiplier { get; set; } = 2.0;
-    public TimeSpan MaxDelay { get; set; } = TimeSpan.FromSeconds(30);
-
-    public async Task<T> ExecuteAsync<T>(
-        Func<Task<T>> operation,
-        Func<Exception, bool> shouldRetry)
-    {
-        var attempt = 0;
-        var delay = InitialDelay;
-
-        while (true)
-        {
-            try
-            {
-                return await operation();
-            }
-            catch (Exception ex) when (shouldRetry(ex) && attempt < MaxRetries)
-            {
-                attempt++;
-                _logger.LogWarning(ex, "Attempt {Attempt} failed, retrying in {Delay}ms",
-                    attempt, delay.TotalMilliseconds);
-
-                await Task.Delay(delay);
-                delay = TimeSpan.FromMilliseconds(
-                    Math.Min(delay.TotalMilliseconds * BackoffMultiplier, MaxDelay.TotalMilliseconds));
-            }
-        }
-    }
-}
-```
-
-### 29.5 Retry Decision Matrix
-
-| Error Type          | Retry? | Max Retries | Strategy             |
-| ------------------- | ------ | ----------- | -------------------- |
-| **Network Errors**  | ✅ Yes | 3           | Exponential backoff  |
-| **API Rate Limit**  | ✅ Yes | 5           | Fixed delay (60s)    |
-| **Syntax Errors**   | ✅ Yes | 3           | AI re-generation     |
-| **Build Timeout**   | ✅ Yes | 1           | Increase timeout     |
-| **SDK Not Found**   | ❌ No  | 0           | User must install    |
-| **API Key Invalid** | ❌ No  | 0           | User must fix        |
-| **Disk Full**       | ❌ No  | 0           | User must free space |
-
-### 29.6 Auto-Fix Strategies
-
-```csharp
-public class BuildErrorRecoveryService
-{
-    public async Task<RecoveryResult> RecoverFromBuildErrorAsync(BuildError error)
-    {
-        return error.ErrorType switch
-        {
-            BuildErrorType.CSharpSyntaxError => await RecoverFromSyntaxErrorAsync(error),
-            BuildErrorType.XamlParseError => await RecoverFromXamlErrorAsync(error),
-            BuildErrorType.NuGetPackageNotFound => await RecoverFromNuGetErrorAsync(error),
-            BuildErrorType.BuildTimeout => await RecoverFromTimeoutAsync(error),
-            _ => RecoveryResult.Failed("No recovery strategy available")
-        };
-    }
-
-    private async Task<RecoveryResult> RecoverFromSyntaxErrorAsync(BuildError error)
-    {
-        // 1. Extract error context
-        var context = await ExtractErrorContextAsync(error);
-
-        // 2. Ask AI to fix
-        var fixPrompt = $@"
-            The following code has a syntax error:
-
-            File: {error.FilePath}
-            Line: {error.LineNumber}
-            Error: {error.Message}
-
-            Code context:
-            {context}
-
-            Please provide a patch to fix this error.
-        ";
-
-        var patch = await _aiEngine.GeneratePatchAsync(fixPrompt);
-
-        // 3. Apply patch
-        var result = await _patchEngine.ApplyPatchAsync(patch);
-
-        if (result.Success)
-        {
-            return RecoveryResult.Success("Syntax error fixed automatically");
-        }
-
-        return RecoveryResult.Failed("Unable to fix syntax error automatically");
-    }
-}
-```
-
-### 29.7 Circuit Breaker Pattern
-
-```csharp
-public class CircuitBreaker
-{
-    private int _failureCount;
-    private DateTime _lastFailureTime;
-    private CircuitState _state = CircuitState.Closed;
-
-    private readonly int _failureThreshold = 5;
-    private readonly TimeSpan _timeout = TimeSpan.FromMinutes(1);
-
-    public async Task<T> ExecuteAsync<T>(Func<Task<T>> operation)
-    {
-        if (_state == CircuitState.Open)
-        {
-            if (DateTime.UtcNow - _lastFailureTime > _timeout)
-            {
-                _state = CircuitState.HalfOpen;
-            }
-            else
-            {
-                throw new CircuitBreakerOpenException("Circuit breaker is open");
-            }
-        }
-
-        try
-        {
-            var result = await operation();
-
-            if (_state == CircuitState.HalfOpen)
-            {
-                _state = CircuitState.Closed;
-                _failureCount = 0;
-            }
-
-            return result;
-        }
-        catch (Exception ex)
-        {
-            _failureCount++;
-            _lastFailureTime = DateTime.UtcNow;
-
-            if (_failureCount >= _failureThreshold)
-            {
-                _state = CircuitState.Open;
-            }
-
-            throw;
-        }
-    }
-}
-
-public enum CircuitState
-{
-    Closed,     // Normal operation
-    Open,       // Failing, reject all requests
-    HalfOpen    // Testing if service recovered
-}
-```
-
-### 29.8 Global Exception Handler
-
-```csharp
-public class GlobalExceptionHandler
-{
-    public void Initialize()
-    {
-        // Catch unhandled exceptions
-        AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
-        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
-        Application.Current.UnhandledException += OnApplicationUnhandledException;
-    }
-
-    private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
-    {
-        var ex = e.ExceptionObject as Exception;
-        _logger.LogCritical(ex, "Unhandled exception in AppDomain");
-
-        // Show crash dialog
-        ShowCrashDialog(ex);
-
-        // Save crash dump
-        SaveCrashDump(ex);
-    }
-
-    private void OnApplicationUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
-    {
-        _logger.LogError(e.Exception, "Unhandled UI exception");
-
-        // Mark as handled to prevent crash
-        e.Handled = true;
-
-        // Show error dialog
-        ShowErrorDialog(e.Exception);
-    }
-}
 ```
 
 ---
