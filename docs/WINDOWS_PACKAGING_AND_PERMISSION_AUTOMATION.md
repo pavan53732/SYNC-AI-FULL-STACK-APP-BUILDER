@@ -186,6 +186,17 @@ Install certificate to TrustedPeople store
 Proceed with MSIX installation or app launch
 ```
 
+### 6.5 Packaging Failure Classification
+
+| Error | Retry | Behavior |
+| :--- | :--- | :--- |
+| **MAKEAPPX_DISK** | No | Abort - disk corruption/I/O failure |
+| **SIGNING_ERROR** | No | Abort - certificate or key issue |
+| **CAPABILITY_MISSING** | 1 | Inject capability + rebuild manifest |
+| **MANIFEST_INVALID** | 1 | Regenerate from template |
+
+**Critical Rule**: Disk exhaustion, SDK missing, and certificate corruption are FATAL and do not consume retry budget.
+
 ---
 
 ## 7. Integration Contract
