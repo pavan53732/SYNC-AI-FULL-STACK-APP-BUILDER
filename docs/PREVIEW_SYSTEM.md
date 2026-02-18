@@ -71,7 +71,20 @@ public class PreviewService
     // User consent is required before first launch.
     public async Task<Process> LaunchFullPreviewAsync(string projectPath)
     {
-        // ... (Security checks omitted for brevity) ...
+        // SECURITY STEP 1: Verify Windows Sandbox is available
+        if (!IsWindowsSandboxAvailable())
+        {
+             // Fallback: Show error or require admin override (Not implemented for safety)
+             throw new SecurityException("Windows Sandbox is required for safe execution of AI-generated code.");
+        }
+
+        // SECURITY STEP 2: Show consent dialog
+        var consent = await ShowSecurityConsentDialogAsync();
+        if (!consent)
+        {
+            _logger.LogInformation("User declined to launch generated application");
+            return null;
+        }
 
         // Step 3: Build the project
         var buildResult = await _buildService.BuildAsync(projectPath);
@@ -115,6 +128,12 @@ public class PreviewService
                     {
                         Text = "Only proceed if you trust the generated application.",
                         TextWrapping = TextWrapping.Wrap
+                    },
+                    new InfoBar
+                    {
+                        Severity = InfoBarSeverity.Warning,
+                        IsOpen = true,
+                        Message = "Future versions will support Windows Sandbox for isolated execution."
                     }
                 }
             },
