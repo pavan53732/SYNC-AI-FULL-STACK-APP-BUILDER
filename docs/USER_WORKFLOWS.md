@@ -17,6 +17,19 @@
 7. [Design Philosophy & UX Principles](#7-design-philosophy--ux-principles)
 8. [Error Handling Strategy](#8-error-handling-strategy)
 
+## 8.1 Environment Failure States
+
+The system monitors for fatal environment conditions that prevent successful construction.
+
+| State                   | Detection                        | Recovery Strategy                 | User Message                                             |
+| :---------------------- | :------------------------------- | :-------------------------------- | :------------------------------------------------------- |
+| **LOW_DISK_SPACE**      | Free space < 500MB               | Abort operation, prompt cleanup   | "Disk space critical. Please free up space to continue." |
+| **NO_ADMIN_PRIVILEGE**  | Admin required but denied        | Request UAC elevation             | "Admin checks failed. Please restart as Administrator."  |
+| **SDK_MISSING**         | `dotnet --version` fails         | Trigger SDK download flow         | ".NET SDK not found. Downloading installer..."           |
+| **SDK_CORRUPTED**       | Build fails with known SDK error | Repair/Reinstall SDK              | "SDK appears corrupted. Attempting repair..."            |
+| **CERTIFICATE_EXPIRED** | Date > Expiry                    | Regenerate & Re-sign              | "Certificate expired. Renewing security credentials..."  |
+| **NUGET_CACHE_CORRUPT** | Restore fails repeatedly         | `dotnet nuget locals all --clear` | "Clearing corrupted package cache..."                    |
+
 ---
 
 ## 1. Core Features Overview
@@ -50,7 +63,7 @@ It is not just a UI prototyping tool; it is a full-cycle software construction e
 | :-------------------------------- | :---------------------------------------------------------------- | :-------------------------------------------------- |
 | **Natural Language Construction** | Build full apps by describing them in plain English.              | Semantic Intent Parsing → Multi-Agent Orchestration |
 | **Silent Auto-Fix Loop**          | Compiler errors are detected and fixed without user intervention. | MSBuild Log Parsing + Roslyn Code Fix Providers     |
-| **Live Native Preview**           | See changes reflected quickly via shadow copy launch.             | Shadow Copy Launch / Window Hosting                  |
+| **Live Native Preview**           | See changes reflected quickly via shadow copy launch.             | Shadow Copy Launch / Window Hosting                 |
 | **Project Time Travel**           | Undo/redo entire generations or specific refinement steps.        | Snapshot System (Git-based under the hood)          |
 | **Installer Generation**          | Every successful build produces a signed MSIX bundle.             | Windows App SDK Build Tools + MSIX                  |
 | **Permission Automation**         | APIs like Location/Camera are auto-detected and declared.         | Roslyn AST Scanning → Capability Injection          |
@@ -117,6 +130,7 @@ Based on evidence-driven analysis:
 ### Architecture Implied By Behavior
 
 **Input Processing Pipeline**:
+
 ```
 Natural Language Prompt
     ↓
@@ -131,6 +145,7 @@ Structured Intent Objects
 ```
 
 **Generation Pipeline**:
+
 ```
 Intent Objects
     ↓
@@ -146,6 +161,7 @@ Generated Files (Real C# / XAML code)
 ```
 
 **Validation Pipeline**:
+
 ```
 Generated Code
     ↓
@@ -163,6 +179,7 @@ Generated Code
 ```
 
 **Update Pipeline (For Refinements)**:
+
 ```
 User says: "Change to dark mode"
     ↓
@@ -230,6 +247,7 @@ PREVIEW_UPDATE (maps to UI State: PREVIEW_READY)
 ```
 
 **User sees**:
+
 - "Updating your app…" (with shimmer)
 - Preview updates smoothly
 - No task names, no file operations
@@ -245,10 +263,12 @@ When "Improve this app" is clicked:
 ### Refinement Failure UX
 
 **Soft Failure** (retries ongoing):
+
 - Message: "Working on that change…"
 - Silent retry continues
 
 **Hard Failure** (retry budget exhausted):
+
 - Message: "I couldn't safely apply that change. You can refine your request."
 - Action buttons: "Retry", "Edit Prompt"
 
@@ -277,14 +297,17 @@ Every successful build creates a **Snapshot**. Users can browse history like a t
 ### Timeline Micro-Animations
 
 **On hover**:
+
 - Scale: 1.02f
 - Elevation: `Translation(0, -2, 8)`
 
 **On click**:
+
 - Accent border: 2px
 - Details panel slides down: 180ms
 
 **Smooth scroll snap**:
+
 - `VerticalSnapPointsType="Mandatory"`
 - `VerticalSnapPointsAlignment="Near"`
 
@@ -317,12 +340,14 @@ For users who want to peek behind the curtain or need granular control.
 ### The Advanced Panel
 
 **Layout Specifications**:
+
 - Default height: 320px
 - Resizable: Up to 50% screen height
 - Background: Neutral subtle dark acrylic
 - Collapse/Expand animation: 200ms
 
 **Design Rules** (Advanced Mode must):
+
 - ❌ Never auto-open
 - ❌ Never interrupt workflow
 - ❌ Never steal focus
@@ -416,6 +441,7 @@ Users can manually edit files in the **Code View**.
 #### Archive System
 
 **Archive workflow**:
+
 1. Move project to `WorkspacesPath/Archive/{projectName}`
 2. Update metadata: `IsArchived = true`
 3. Remove from main view
@@ -426,6 +452,7 @@ Users can manually edit files in the **Code View**.
 #### Safe Delete UX
 
 **Confirmation modal**:
+
 1. Title: "Delete this project permanently?"
 2. Message: "This action cannot be undone."
 3. Prompt: "Type the project name to confirm:"
@@ -439,15 +466,18 @@ Users can manually edit files in the **Code View**.
 #### Three Performance States
 
 **🟢 Normal Operation**:
+
 - User sees nothing
 - System monitors silently in background
 
 **🟡 Soft Performance Warning**:
+
 - **Trigger**: Build takes > 30 seconds
 - **UI**: InfoBar with message "Build is taking longer than usual…"
 - **Action button**: "Optimize Build" → opens optimization panel
 
 **🔴 Critical Resource Issue**:
+
 - **Trigger**: Disk space < 1GB
 - **UI**: Warning InfoBar with message "Low disk space may affect builds."
 - **Action button**: "Free Space" → opens disk cleanup
@@ -469,6 +499,7 @@ When "Optimize Build" is clicked:
 #### Snapshot Size Management
 
 **If snapshots exceed 5GB**:
+
 - Gentle notification: "Old versions will be automatically archived."
 - Non-alarmist tone
 - Archive runs in background
@@ -515,6 +546,7 @@ READY (installer available for download/install)
 ### On Packaging Success
 
 **Success panel displays**:
+
 - Green checkmark FontIcon (`\uE73E`)
 - File name of generated MSIX
 - Three action buttons:
@@ -525,6 +557,7 @@ READY (installer available for download/install)
 ### On Packaging Failure
 
 **Failure panel displays**:
+
 - Friendly translated message (not raw error)
 - "Retry" button
 - Collapsed Expander with technical details (for debugging)
@@ -608,14 +641,14 @@ Why this design works:
 
 ### Comparison: Hidden vs Exposed Complexity
 
-| Aspect | Hidden Complexity | Exposed Complexity |
-|--------|-------------------|-------------------|
-| **User Experience** | Smooth, magical | Confusing, overwhelming |
-| **Error Visibility** | 0% | 100% (frustrating) |
-| **Time to Working App** | Fast (steps hidden) | Slow (debugging) |
-| **Perceived Reliability** | High (always works) | Low (errors visible) |
-| **System Underneath** | Same | Same |
-| **User Satisfaction** | High | Low |
+| Aspect                    | Hidden Complexity   | Exposed Complexity      |
+| ------------------------- | ------------------- | ----------------------- |
+| **User Experience**       | Smooth, magical     | Confusing, overwhelming |
+| **Error Visibility**      | 0%                  | 100% (frustrating)      |
+| **Time to Working App**   | Fast (steps hidden) | Slow (debugging)        |
+| **Perceived Reliability** | High (always works) | Low (errors visible)    |
+| **System Underneath**     | Same                | Same                    |
+| **User Satisfaction**     | High                | Low                     |
 
 ---
 
@@ -637,28 +670,33 @@ User never sees:
 The system handles 5 categories of errors internally:
 
 #### 1. Parse Errors
+
 - **Response**: Retry with NLP fallback
 - **Fallback**: Use simpler interpretation
 - **Last resort**: Default features if parsing fails
 
 #### 2. Generation Errors
+
 - **Response**: Log error + context
 - **Action**: Classify error type
 - **Recovery**: Apply auto-fix, regenerate affected section
 - **Validation**: Revalidate after fix
 
 #### 3. Validation Errors
+
 - **Classification**: syntax, type, config, etc.
 - **Action**: Identify root cause
 - **Fix**: Apply targeted fix
 - **Loop**: Recompile, retry up to 5x
 
 #### 4. Deployment Errors
+
 - **Response**: Fallback to local preview
 - **Assistance**: Suggest manual fixes if necessary
 - **Support**: Offer help options
 
 #### 5. Unrecoverable Errors
+
 - **User message**: "Something went wrong"
 - **Suggestions**: "Try simpler prompt" or "Contact support"
 - **Safety**: Preserve work (auto-save)
@@ -666,6 +704,7 @@ The system handles 5 categories of errors internally:
 ### Automatic Error Detection & Fixing
 
 **Error Classification**:
+
 - Syntax errors (CS1002, CS1003)
 - Type mismatches (CS1503)
 - Missing references (CS0106)
@@ -674,6 +713,7 @@ The system handles 5 categories of errors internally:
 - Configuration errors
 
 **Auto-Fix Strategies**:
+
 - Insert missing using statements
 - Add type conversions (`int.Parse`, `Convert.ToInt32`)
 - Add missing attributes (`[Required]`, `[StringLength]`)

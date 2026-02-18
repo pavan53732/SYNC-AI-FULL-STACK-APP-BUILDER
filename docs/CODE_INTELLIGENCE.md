@@ -185,11 +185,11 @@ public class SymbolExtractor
 
 Stored in the `dependencies` table:
 
-| id  | from_symbol      | to_symbol        | type        |
-| :-- | :--------------- | :--------------- | :---------- |
-| 1   | `LoginPage`      | `LoginViewModel` | `binding`   |
-| 2   | `TaskService`    | `TaskRepository` | `dependency`|
-| 3   | `DashboardPage`  | `NavigationService` | `navigation` |
+| id  | from_symbol     | to_symbol           | type         |
+| :-- | :-------------- | :------------------ | :----------- |
+| 1   | `LoginPage`     | `LoginViewModel`    | `binding`    |
+| 2   | `TaskService`   | `TaskRepository`    | `dependency` |
+| 3   | `DashboardPage` | `NavigationService` | `navigation` |
 
 **Best For**: UI-heavy apps, <50 files, clear file-to-component mapping.
 
@@ -248,6 +248,14 @@ public class CompilationModelBuilder
     public async Task<Compilation> BuildCompilationAsync(string projectPath)
     {
         var syntaxTrees = new List<SyntaxTree>();
+
+### 3.1 Incremental Workspace Reuse (Phase 2)
+
+> **Optimization**: Avoid full recompilation on every keystroke.
+
+1.  **Use AdhocWorkspace**: accurate in-memory representation.
+2.  **Reuse Compilation**: Create `CSharpCompilation` once, then use `compilation.ReplaceSyntaxTree(oldTree, newTree)`.
+3.  **Partial Recomputation**: Only affected semantic models are recomputed; symbol graph for unaffected trees is preserved.
         var csFiles = Directory.GetFiles(projectPath, "*.cs", SearchOption.AllDirectories);
 
         foreach (var file in csFiles)

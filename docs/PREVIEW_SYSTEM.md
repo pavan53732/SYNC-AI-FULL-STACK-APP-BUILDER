@@ -73,6 +73,19 @@ The Preview System provides **three modes** for users to visualize generated Win
 
 ---
 
+
+## 1.2 PREVIEW PIPELINE (MANDATORY ORDER)
+
+> **Invariant**: This sequence is strict. No step may be skipped or reordered.
+
+1.  **Build (Debug)**: Generate binaries.
+2.  **Roslyn Reindex**: Update semantic model.
+3.  **Capability Inference**: Scan code for required capabilities.
+4.  **Manifest Evaluation**:
+    *   If manifest changed → **Inject** → **Rebuild** (Resource Injection).
+    *   If no change → Proceed.
+5.  **Launch**: Execute in isolated environment.
+
 ## Architecture
 
 ### Preview Service Layer

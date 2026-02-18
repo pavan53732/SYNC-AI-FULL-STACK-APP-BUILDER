@@ -162,7 +162,10 @@ public enum ErrorType
     MANIFEST_ERROR,      // Invalid Package.appxmanifest
     CAPABILITY_ERROR,    // Missing/Excessive capabilities
     SIGNING_ERROR,       // Certificate or signing failure
-    PACKAGING_ERROR      // MSIX bundling failure
+    PACKAGING_ERROR,     // MSIX bundling failure
+    RUNTIME_PREVIEW_ERROR, // App crashed during preview
+    SANDBOX_ESCAPE_ATTEMPT, // Security violation
+    PROCESS_CRASH        // Host process termination
 }
 ```
 
@@ -307,8 +310,7 @@ public class BuilderContext
     public List<BuilderEvent> EventLog { get; } = new();
 
     // Budget/limits
-    public int TotalRetryBudget { get; set; } = 50;   // System-wide retry budget
-    public int UsedRetry { get; set; } = 0;
+    public GlobalExecutionBudget Budget { get; } = new(); // Global retry budget & circuit breaker
 
     // Project metadata
     public string ProjectName { get; set; }
@@ -818,6 +820,7 @@ public enum RetryPolicy
 ```
 
 **Fatal Packaging Errors (No Retry)**:
+
 - Disk exhaustion
 - SDK missing
 - Certificate corruption
@@ -1821,6 +1824,15 @@ public class CircuitBreaker
             throw;
         }
     }
+}
+
+public class GlobalExecutionBudget
+{
+    public int TotalRetryCount { get; set; }
+    public int MaxSessionRetries { get; set; } = 25;
+    public TimeSpan MaxExecutionTime { get; set; } = TimeSpan.FromMinutes(10);
+
+    public bool IsExhausted() => TotalRetryCount >= MaxSessionRetries;
 }
 
 public enum CircuitState

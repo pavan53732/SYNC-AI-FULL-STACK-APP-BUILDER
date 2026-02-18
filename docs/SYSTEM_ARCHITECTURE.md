@@ -292,7 +292,7 @@ public class ExecutionKernel
             try
             {
                 // Load project into memory
-                var project = projectCollection.LoadProject(projectPath);
+                var project = projectCollection.LoadProject(Path.Combine(isolatedPath, "SyncAIAppBuilder.csproj"));
 
                 // Set properties
                 project.SetProperty("Configuration", configuration);
@@ -4843,3 +4843,50 @@ The system automatically degrades to the safest possible view to prevent UI cras
 - **Thread Affinity**: All `XamlReader` operations are marshaled to the **UI Thread** via `DispatcherQueue`.
 - **Sandboxing**: Mode 3 launches the app as a separate process. Future versions will utilize **Windows Sandbox** for isolation.
 - **Security**: `XamlReader` is configured to disallow hazardous types (`ObjectDataProvider`, `Assembly` calls) to prevent XAML injection attacks.
+## 32. Architectural Hardening Contracts
+
+### 32.1 Snapshot-Version Binding Contract
+
+> **Invariant**: A snapshot is an atomic unit of versioned truth.
+
+Each Snapshot MUST store and bind:
+
+```json
+{
+  "SnapshotId": "UUID",
+  "Version": "1.0.4",
+  "ManifestHash": "SHA256(Package.appxmanifest)",
+  "CertificateThumbprint": "Thumbprint(PFX)",
+  "BuildConfiguration": "Release"
+}
+```
+
+- **Installer Version** MUST match **Snapshot Version**.
+- **Rollback** MUST restore the exact version authority.
+
+### 32.2 Execution Isolation Enforcement Policy
+
+> **Invariant**: No user code runs with host privileges.
+
+1.  **Windows Sandbox** (Preferred):
+    - Fully ephemeral VM.
+    - No persistence.
+2.  **AppContainer Fallback** (If Sandbox unavailable):
+    - `broadFileSystemAccess`: **DENIED** (unless explicitly granted).
+    - Host Registry Write: **DENIED**.
+    - `powershell.exe`, `cmd.exe`, `reg.exe`: **BLOCKED** (Child process restriction).
+    - Network: **Restricted** (Outbound only if `internetClient` declared).
+3.  **Job Object Constraints**:
+    - Memory Limit: 1GB (Preview).
+    - CPU Limit: 50% (Preview).
+
+### 32.3 Token Budget Guard
+
+> **Invariant**: AI consumption must be bounded to prevent cost overruns.
+
+| Parameter                | Limit           | Action on Overflow                             |
+| :----------------------- | :-------------- | :--------------------------------------------- |
+| **MaxPromptTokens**      | 16,000          | Truncate oldest context                        |
+| **MaxReasoningTokens**   | 8,000           | Abort generation                               |
+| **MaxRetriesPerRequest** | 3               | Fail Task                                      |
+| **CriticalOverflow**     | > $5.00/session | **Hard Circuit Break** (Require User Approval) |
