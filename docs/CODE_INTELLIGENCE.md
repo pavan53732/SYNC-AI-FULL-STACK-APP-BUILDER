@@ -149,6 +149,57 @@ public class FileLevelIndex
 }
 ```
 
+### Symbol-Level Index (Shallow)
+
+Lightweight symbol extraction using regex — no full AST required.
+
+```sql
+CREATE TABLE symbols (
+    id TEXT PRIMARY KEY,
+    file_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL, -- 'class', 'function', 'component', 'route', 'model'
+    exported BOOLEAN,
+    FOREIGN KEY (file_id) REFERENCES files(id)
+);
+```
+
+```csharp
+public class SymbolExtractor
+{
+    public async Task<List<Symbol>> ExtractSymbolsAsync(string filePath)
+    {
+        var code = await File.ReadAllTextAsync(filePath);
+        var symbols = new List<Symbol>();
+
+        // Lightweight parsing (regex)
+        var classMatches = Regex.Matches(code, @"class\s+(\w+)");
+        foreach (Match match in classMatches)
+        {
+            symbols.Add(new Symbol
+            {
+                Name = match.Groups[1].Value,
+                Kind = "class",
+                Exported = code.Contains($"export class {match.Groups[1].Value}")
+            });
+        }
+
+        var functionMatches = Regex.Matches(code, @"(?:function|async function)\s+(\w+)");
+        foreach (Match match in functionMatches)
+        {
+            symbols.Add(new Symbol
+            {
+                Name = match.Groups[1].Value,
+                Kind = "function",
+                Exported = code.Contains($"export function {match.Groups[1].Value}")
+            });
+        }
+
+        return symbols;
+    }
+}
+```
+
 ### Dependency Mapping (Shallow)
 
 Stored in the `dependencies` table:
@@ -545,10 +596,14 @@ CREATE TABLE Settings (
     ModifiedDate DATETIME NOT NULL
 );
 
-INSERT INTO Settings (Key, Value, DataType, ModifiedDate) VALUES
-('AutoSaveInterval', '5', 'Integer', CURRENT_TIMESTAMP),
-('Theme', 'Dark', 'String', CURRENT_TIMESTAMP),
-('MaxHistory', '50', 'Integer', CURRENT_TIMESTAMP);
+-- Default settings (aligned with DATABASE_SPECIFICATION.md §2.1)
+INSERT INTO Settings (Key, Value, Category, DataType, ModifiedDate) VALUES
+    ('AI.ApiKey', '', 'AI', 'String', datetime('now')),
+    ('AI.Model', 'gpt-4', 'AI', 'String', datetime('now')),
+    ('Build.MaxRetries', '5', 'Build', 'Integer', datetime('now')),
+    ('Build.TimeoutSeconds', '60', 'Build', 'Integer', datetime('now')),
+    ('UI.Theme', 'System', 'UI', 'String', datetime('now')),
+    ('UI.ShowPreviewByDefault', '1', 'UI', 'Boolean', datetime('now'));
 
 CREATE TABLE RecentPrompts (
     Id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -660,12 +715,12 @@ CREATE INDEX idx_symbol_edges_from ON symbol_edges(from_symbol_id);
 CREATE INDEX idx_symbol_edges_to ON symbol_edges(to_symbol_id);
 
 -- Snapshot layer (Graph Versioning)
+-- NOTE: DATABASE_SPECIFICATION.md §2.2 uses 'snapshots'; orchestrator.db uses 'Snapshots'/'TaskSnapshots'
 CREATE TABLE snapshots (
     id INTEGER PRIMARY KEY,
     parent_snapshot_id INTEGER,
-    description TEXT,
     created_utc TEXT NOT NULL,
-    is_active INTEGER DEFAULT 0,
+    reason TEXT NOT NULL,          -- 'Pre-Generation', 'Post-Patch', 'Manual'
     FOREIGN KEY(parent_snapshot_id) REFERENCES snapshots(id)
 );
 
@@ -706,6 +761,38 @@ CREATE TABLE file_edges (
     FOREIGN KEY(from_file_id) REFERENCES file_nodes(id),
     FOREIGN KEY(to_file_id) REFERENCES file_nodes(id)
 );
+
+-- XAML Node Layer (Enterprise XAML Binding Graph)
+-- From: INDEXING_ARCHITECTURE_SPECIFICATION.md Part 2 §3
+CREATE TABLE xaml_nodes (
+    id TEXT PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    element_type TEXT NOT NULL  -- 'Button', 'TextBox', 'ListView', etc.
+);
+CREATE INDEX idx_xaml_nodes_path ON xaml_nodes(file_path);
+
+CREATE TABLE binding_edges (
+    id TEXT PRIMARY KEY,
+    xaml_node_id TEXT NOT NULL,
+    viewmodel_symbol_id TEXT NOT NULL,
+    binding_type TEXT NOT NULL, -- 'property', 'command', 'event'
+    FOREIGN KEY(xaml_node_id) REFERENCES xaml_nodes(id),
+    FOREIGN KEY(viewmodel_symbol_id) REFERENCES symbol_nodes(id)
+);
+CREATE INDEX idx_binding_edges_xaml ON binding_edges(xaml_node_id);
+CREATE INDEX idx_binding_edges_vm ON binding_edges(viewmodel_symbol_id);
+
+-- Vector Embeddings Layer
+-- From: INDEXING_ARCHITECTURE_SPECIFICATION.md Part 1 §6
+CREATE TABLE file_embeddings (
+    id INTEGER PRIMARY KEY,
+    file_id INTEGER NOT NULL,
+    vector BLOB NOT NULL,           -- Serialized float array
+    model TEXT,                     -- e.g., 'text-embedding-3-small'
+    created_utc TEXT NOT NULL,
+    FOREIGN KEY(file_id) REFERENCES files(id)
+);
+CREATE INDEX idx_file_embeddings_file ON file_embeddings(file_id);
 
 -- Version Control (Enterprise)
 CREATE TABLE graph_deltas (
@@ -1489,6 +1576,14 @@ public class XamlBindingIndexer
             // Fallback to regex-only results if XML is broken
         }
     }
+
+    // Extracts the binding path from a XAML binding expression.
+    // Handles both {Binding PropertyName} and {Binding Path=PropertyName} forms.
+    private string ExtractBindingPath(string bindingExpression)
+    {
+        var match = Regex.Match(bindingExpression, @"\{Binding\s+(?:Path=)?([^,}]+)");
+        return match.Success ? match.Groups[1].Value.Trim() : null;
+    }
 }
 ```
 
@@ -1834,11 +1929,11 @@ public class VectorIndex
             new { Id = GetFileId(filePath), Vector = embedding });
     }
 
-    public async Task<List<string>> SemanticSearchAsync(string query)
+    public async Task<List<string>> SemanticSearchAsync(string query, int topK = 5)
     {
         var queryVector = await _embeddingService.GenerateAsync(query);
         // Cosine similarity search (using SQLite-vss or manual math)
-        return await _db.SearchAsync(queryVector, limit: 10);
+        return await _db.SearchAsync(queryVector, topK);
     }
 }
 ```
@@ -1863,11 +1958,36 @@ public class DapperRepository<T> : IRepository<T> where T : class
 {
     private readonly IDbConnection _connection;
 
+    public DapperRepository(IDbConnection connection) { _connection = connection; }
+
     public async Task<T> GetByIdAsync(object id)
     {
         var tableName = typeof(T).Name + "s";
         return await _connection.QuerySingleOrDefaultAsync<T>(
             $"SELECT * FROM {tableName} WHERE Id = @Id", new { Id = id });
+    }
+
+    public async Task<IEnumerable<T>> GetAllAsync()
+    {
+        var tableName = typeof(T).Name + "s";
+        return await _connection.QueryAsync<T>($"SELECT * FROM {tableName}");
+    }
+
+    public async Task<T> AddAsync(T entity)
+    {
+        await _connection.InsertAsync(entity);
+        return entity;
+    }
+
+    public async Task UpdateAsync(T entity)
+    {
+        await _connection.UpdateAsync(entity);
+    }
+
+    public async Task DeleteAsync(object id)
+    {
+        var tableName = typeof(T).Name + "s";
+        await _connection.ExecuteAsync($"DELETE FROM {tableName} WHERE Id = @Id", new { Id = id });
     }
 }
 ```
@@ -1875,12 +1995,62 @@ public class DapperRepository<T> : IRepository<T> where T : class
 ### Specialized Repositories
 
 ```csharp
-public interface IProjectRepository : IRepository<Project> { }
+public interface IProjectRepository : IRepository<Project>
+{
+    Task<IEnumerable<Project>> GetRecentProjectsAsync(int count);
+    Task<Project> GetByWorkspacePathAsync(string path);
+    Task UpdateHealthStatusAsync(string projectId, string healthStatus);
+}
+
+public class ProjectRepository : DapperRepository<Project>, IProjectRepository
+{
+    public ProjectRepository(IDbConnection connection) : base(connection) { }
+
+    public async Task<IEnumerable<Project>> GetRecentProjectsAsync(int count)
+    {
+        return await _connection.QueryAsync<Project>(@"
+            SELECT * FROM Projects
+            WHERE IsArchived = 0
+            ORDER BY LastOpenedDate DESC
+            LIMIT @Count", new { Count = count });
+    }
+
+    public async Task<Project> GetByWorkspacePathAsync(string path)
+    {
+        return await _connection.QuerySingleOrDefaultAsync<Project>(
+            "SELECT * FROM Projects WHERE WorkspacePath = @Path", new { Path = path });
+    }
+
+    public async Task UpdateHealthStatusAsync(string projectId, string healthStatus)
+    {
+        await _connection.ExecuteAsync(@"
+            UPDATE Projects SET HealthStatus = @HealthStatus, ModifiedDate = @Now WHERE Id = @ProjectId",
+            new { ProjectId = projectId, HealthStatus = healthStatus, Now = DateTime.UtcNow });
+    }
+}
+
 public interface ISymbolRepository : IRepository<Symbol>
 {
     Task<IEnumerable<Symbol>> GetByFileAsync(long fileId);
 }
+
+public class SymbolRepository : DapperRepository<Symbol>, ISymbolRepository
+{
+    public SymbolRepository(IDbConnection connection) : base(connection) { }
+
+    public async Task<IEnumerable<Symbol>> GetByFileAsync(long fileId)
+    {
+        return await _connection.QueryAsync<Symbol>(
+            "SELECT * FROM symbol_nodes WHERE file_id = @FileId", new { FileId = fileId });
+    }
+}
+
 public interface ITaskRepository : IRepository<TaskItem> { }
+
+public class TaskRepository : DapperRepository<TaskItem>, ITaskRepository
+{
+    public TaskRepository(IDbConnection connection) : base(connection) { }
+}
 ```
 
 ### Unit of Work Pattern
@@ -1896,6 +2066,47 @@ public interface IUnitOfWork : IDisposable
     Task BeginTransactionAsync();
     Task CommitAsync();
     Task RollbackAsync();
+}
+
+public class UnitOfWork : IUnitOfWork
+{
+    private readonly IDbConnection _connection;
+    private IDbTransaction _transaction;
+
+    public IProjectRepository Projects { get; }
+    public ISymbolRepository Symbols { get; }
+    public ITaskRepository Tasks { get; }
+
+    public UnitOfWork(IDbConnection connection)
+    {
+        _connection = connection;
+        Projects = new ProjectRepository(connection);
+        Symbols = new SymbolRepository(connection);
+        Tasks = new TaskRepository(connection);
+    }
+
+    public async Task BeginTransactionAsync()
+    {
+        _transaction = _connection.BeginTransaction();
+    }
+
+    public async Task CommitAsync()
+    {
+        _transaction?.Commit();
+        _transaction?.Dispose();
+        _transaction = null;
+    }
+
+    public async Task RollbackAsync()
+    {
+        _transaction?.Rollback();
+        _transaction?.Dispose();
+        _transaction = null;
+    }
+
+    public async Task<int> SaveChangesAsync() => await Task.FromResult(0);
+
+    public void Dispose() => _transaction?.Dispose();
 }
 ```
 
@@ -1948,6 +2159,12 @@ public class MigrationRunner
             );");
     }
 
+    private async Task<int> GetCurrentVersionAsync()
+    {
+        return await _connection.QuerySingleAsync<int>(
+            "SELECT COALESCE(MAX(Version), 0) FROM Migrations");
+    }
+
     private async Task RecordMigrationAsync(int version, string description)
     {
         await _connection.ExecuteAsync(
@@ -1979,8 +2196,26 @@ public class DatabaseBackupService
         await source.CopyToAsync(dest);
     }
 
-    public Task CreateAutoBackupAsync(string dbPath) =>
-        CreateBackupAsync(dbPath, $"{dbPath}.{DateTime.Now:yyyyMMddHHmmss}.bak");
+    /// <summary>
+    /// Creates automatic backups of both project_graph.db and orchestrator.db.
+    /// From: DATABASE_SPECIFICATION.md §9.1
+    /// </summary>
+    public async Task CreateAutoBackupAsync(string projectId)
+    {
+        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        var backupDir = Path.Combine(GetProjectPath(projectId), ".builder", "backups");
+        Directory.CreateDirectory(backupDir);
+
+        // Backup project graph database
+        await CreateBackupAsync(
+            GetDatabasePath(projectId, "project_graph.db"),
+            Path.Combine(backupDir, $"project_graph_{timestamp}.db"));
+
+        // Backup orchestrator database
+        await CreateBackupAsync(
+            GetDatabasePath(projectId, "orchestrator.db"),
+            Path.Combine(backupDir, $"orchestrator_{timestamp}.db"));
+    }
 }
 
 ### Connection Pooling Model
@@ -2038,6 +2273,23 @@ CREATE INDEX idx_edges_composite ON symbol_edges(from_symbol_id, edge_type, snap
 - Cache frequently accessed symbols (e.g., `MainViewModel`, `App.xaml.cs`)
 - Cache hot dependency edges
 - Invalidate cache entries on file modification
+
+### Query Optimization Patterns
+
+From: `DATABASE_SPECIFICATION.md` §10.3
+
+```csharp
+// ✅ Use parameterized queries — prevents SQL injection & enables query plan caching
+var sql = "SELECT * FROM symbol_nodes WHERE file_id = @FileId";
+var symbols = await connection.QueryAsync<Symbol>(sql, new { FileId = fileId });
+
+// ✅ Use LIMIT for large result sets — prevents memory exhaustion
+var sql = "SELECT * FROM BuildResults ORDER BY StartTime DESC LIMIT 100";
+
+// ✅ Use EXISTS instead of COUNT for existence checks — stops at first match
+var sql = "SELECT EXISTS(SELECT 1 FROM Projects WHERE Id = @Id)";
+var exists = await connection.QuerySingleAsync<bool>(sql, new { Id = projectId });
+```
 
 ### Caching Strategies
 
