@@ -15,10 +15,11 @@
 5. [State Reducer](#5-state-reducer)
 6. [Retry Controller](#6-retry-controller)
 7. [Concurrency Rules](#7-concurrency-rules)
-8. [Build System](#8-build-system)
-9. [Error Handling](#9-error-handling)
-10. [API Contracts](#10-api-contracts)
-11. [Implementation Sequence](#11-implementation-sequence)
+8. [Validation Layer](#8-validation-layer)
+9. [Build System](#9-build-system)
+10. [Error Handling](#10-error-handling)
+11. [API Contracts](#11-api-contracts)
+12. [Implementation Sequence](#12-implementation-sequence)
 
 ---
 
@@ -97,17 +98,29 @@ Without a deterministic orchestrator:
 ```csharp
 public enum TaskType
 {
-    /// Project-level operations
-    CREATE_PROJECT,
-    MIGRATE_SCHEMA,
-    ADD_DEPENDENCY,
+    // Infrastructure
+    INITIALIZE_WORKSPACE,
+    RESTORE_NUGET,
+    BUILD_PROJECT,
+    RUN_TESTS,
 
-    /// Architectural-level operations
+    // Model & Logic
+    CREATE_MODEL,
+    UPDATE_SERVICE,
+
+    // UI
     ADD_VIEW,
-    ADD_VIEWMODEL,
-    ADD_SERVICE,
+    MODIFY_LAYOUT,
 
-    /// File-level operations
+    // Integration & Fix
+    INTEGRATION_TEST,
+    APPLY_FIX,
+
+    // Legacy support
+    MUTATION_TASK,
+    QUERY_TASK,
+
+    // File-level operations
     MODIFY_FILE,
     PATCH_FILE,
     ADD_FILE,
@@ -136,11 +149,27 @@ public enum TaskStatus
 
 public enum ErrorType
 {
-    BUILD_ERROR,         // C# compiler error (CSxxxx)
-    XAML_ERROR,          // XAML compiler error (XDGxxxx)
-    NUGET_ERROR,         // NuGet restore error (NUxxxx)
-    PATCH_CONFLICT,      // Roslyn patch failed to apply
-    VALIDATION_TIMEOUT   // Build took too long
+    // Build Errors
+    CSHARP_COMPILER_ERROR, // CSxxxx
+    XAML_COMPILER_ERROR,   // XDGxxxx
+    NUGET_RESTORE_ERROR,   // NUxxxx
+    MSBUILD_ERROR,         // MSBxxxx
+    PROJECT_FILE_ERROR,    // .csproj issues
+
+    // AI/Patch Errors
+    PATCH_CONFLICT,
+    AI_GENERATION_FAILED,
+
+    // Validation Errors
+    VALIDATION_TIMEOUT,
+    SCHEMA_VALIDATION_FAILED,
+    DAG_VALIDATION_FAILED,
+    SYMBOL_MISSING,
+
+    // Infrastructure
+    FILE_SYSTEM_ERROR,
+    SDK_NOT_FOUND,
+    UNKNOWN_ERROR
 }
 ```
 
@@ -189,17 +218,25 @@ public class Task
 ### Builder States
 
 ```csharp
-public enum OrchestratorState
+public enum BuilderState
 {
-    IDLE,
-    AI_PLANNING,
-    SPEC_PARSED,
-    TASK_GRAPH_READY,
-    TASK_EXECUTING,
-    VALIDATING,
-    RETRYING,
-    COMPLETED,
-    FAILED
+    IDLE = 0,                // Awaiting user action or spec
+    SPEC_PARSING = 1,        // User intent → structured spec
+    SPEC_PARSED = 2,         // Spec validated, ready for planning
+    TASK_GRAPH_BUILDING = 3, // Planning service creating DAG
+    TASK_GRAPH_BUILT = 4,    // Task DAG complete, ready to execute
+    // Execution Breakdown
+    MUTATION_GUARD = 5,      // Pre-execution safety check (Impact/Breaking Change)
+    PATCHING = 6,            // Roslyn AST transformation
+    INDEXING = 7,            // Updating semantic graph post-patch
+    BUILDING = 8,            // MSBuild / Dotnet CLI execution
+    // Validation & Result
+    VALIDATING = 9,          // Final integrity check
+    RETRYING = 10,           // Retry in progress
+    BUILD_SUCCEEDED = 11,    // All tasks completed
+    BUILD_FAILED = 12,       // Unrecoverable failure
+    RECOVERY_ACTIVE = 13,    // Attempting auto-fix via BuildErrorRecoveryService
+    ROLLBACK_ACTIVE = 14     // Reverting to last known good snapshot
 }
 
 ```
@@ -209,21 +246,35 @@ public enum OrchestratorState
 ```
 IDLE
   ↓ (prompt submitted)
-AI_PLANNING
-  ↓ (planning complete)
+SPEC_PARSING
+  ↓ (spec parsed successfully)
 SPEC_PARSED
-  ↓ (graph generated)
-TASK_GRAPH_READY
+  ↓ (task graph generation started)
+TASK_GRAPH_BUILDING
+  ↓ (task graph complete)
+TASK_GRAPH_BUILT
   ↓ (dispatch task)
-TASK_EXECUTING
-  ↓ (patch applied & indexed)
+MUTATION_GUARD
+  ↓ (impact analysis passed)
+PATCHING
+  ↓ (patch applied)
+INDEXING
+  ↓ (symbols indexed)
+BUILDING
+  ↓ (build complete)
 VALIDATING
-  ↓ (validation succeeds)    ↓ (validation fails)
-COMPLETED                  RETRYING
-                              ↓ (retry < maxRetries)
-                           TASK_EXECUTING
-                              ↓ (retry >= maxRetries)
-                           FAILED
+  ↓ (validation succeeds)         ↓ (validation fails & retries available)
+BUILD_SUCCEEDED                RETRYING
+                                   ↓ (retry budget available)
+                                MUTATION_GUARD
+                                   ↓ (retries exhausted)
+                                BUILD_FAILED
+                                   ↓ (recovery attempted)
+                                RECOVERY_ACTIVE
+                                   ↓ (recovery failed)
+                                ROLLBACK_ACTIVE
+                                   ↓ (rollback complete)
+                                IDLE
 ```
 
 ---
@@ -235,7 +286,7 @@ COMPLETED                  RETRYING
 ```csharp
 public class BuilderContext
 {
-    public OrchestratorState State { get; set; }
+    public BuilderState State { get; set; }
 
     // Task execution
     public List<Task> AllTasks { get; } = new();
@@ -297,9 +348,15 @@ public record TaskFailedEvent : BuilderEvent
 }
 
 // System-level events
-public record BuildCompletedEvent : BuilderEvent { public int TasksCompleted { get; init; }; public TimeSpan TotalDuration { get; init; }; public List<string> GeneratedFiles { get; init; } }
+public record TaskBuildCompletedEvent : BuilderEvent { public string TaskId { get; init; }; public TimeSpan BuildDuration { get; init; }; public List<string> ModifiedFiles { get; init; } }
+public record GraphBuildCompletedEvent : BuilderEvent { public int TasksCompleted { get; init; }; public TimeSpan TotalDuration { get; init; }; public List<string> GeneratedFiles { get; init; } }
 public record BuildFailedEvent : BuilderEvent { public string FailureReason { get; init; }; public string TaskIdThatFailed { get; init; } }
 public record RetryStartedEvent : BuilderEvent { public string TaskId { get; init; }; public int CurrentRetry { get; init; }; public ErrorType PreviousError { get; init; } }
+public record RecoveryStartedEvent : BuilderEvent { public string TaskId { get; init; }; public ErrorType ErrorType { get; init; } }
+public record RecoveryCompletedEvent : BuilderEvent { public string TaskId { get; init; }; public bool Success { get; init; }; public string FixApplied { get; init; } }
+public record RollbackCompletedEvent : BuilderEvent { public string SnapshotId { get; init; }; public bool Success { get; init; } }
+public record SnapshotCreatedEvent : BuilderEvent { public string SnapshotId { get; init; }; public string TaskId { get; init; }; public string SnapshotPath { get; init; } }
+public record SnapshotCommittedEvent : BuilderEvent { public string SnapshotId { get; init; }; public string TaskId { get; init; } }
 ```
 
 **Design**: Events are immutable records. Full event log enables perfect replay for debugging or audit.
@@ -320,53 +377,74 @@ public class BuilderReducer
         return (context.State, @event) switch
         {
             // === SPEC PARSING ===
-            (OrchestratorState.IDLE, SpecParsedEvent e) => context with
+            (BuilderState.IDLE, SpecParsedEvent e) => context with
             {
-                State = OrchestratorState.SPEC_PARSED,
+                State = BuilderState.SPEC_PARSED,
                 EventLog = [..context.EventLog, @event],
                 ProjectMetadata = e.ExtractedFeatures.ToDictionary(f => f, f => (object)true)
             },
 
             // === TASK GRAPH BUILDING ===
-            (OrchestratorState.SPEC_PARSED, var e) when @event is TaskStartedEvent te && te.TaskId == "graph-builder" =>
-                context with { State = OrchestratorState.AI_PLANNING, EventLog = [..context.EventLog, @event] },
+            (BuilderState.SPEC_PARSED, TaskStartedEvent e) when e.TaskId == "graph-builder" =>
+                context with { State = BuilderState.TASK_GRAPH_BUILDING, EventLog = [..context.EventLog, @event] },
 
-            (OrchestratorState.AI_PLANNING, var e) when @event is TaskCompletedEvent te && te.TaskId == "graph-builder" =>
-                context with { State = OrchestratorState.TASK_GRAPH_READY, EventLog = [..context.EventLog, @event] },
+            (BuilderState.TASK_GRAPH_BUILDING, TaskCompletedEvent e) when e.TaskId == "graph-builder" =>
+                context with { State = BuilderState.TASK_GRAPH_BUILT, EventLog = [..context.EventLog, @event] },
 
             // === TASK EXECUTION PHASES ===
-            (OrchestratorState.TASK_GRAPH_READY, TaskStartedEvent e) =>
-                UpdateTaskAndTransition(context, e.TaskId, OrchestratorState.TASK_EXECUTING, @event),
+            (BuilderState.TASK_GRAPH_BUILT, TaskStartedEvent e) =>
+                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.MUTATION_GUARD, @event),
 
-            (OrchestratorState.TASK_EXECUTING, TaskGuardPassedEvent e) =>
-                UpdateTaskAndTransition(context, e.TaskId, OrchestratorState.TASK_EXECUTING, @event),
+            (BuilderState.MUTATION_GUARD, TaskGuardPassedEvent e) =>
+                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.PATCHING, @event),
 
-            (OrchestratorState.TASK_EXECUTING, TaskPatchedEvent e) =>
-                UpdateTaskAndTransition(context, e.TaskId, OrchestratorState.TASK_EXECUTING, @event),
+            (BuilderState.PATCHING, TaskPatchedEvent e) =>
+                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.INDEXING, @event),
 
-            (OrchestratorState.TASK_EXECUTING, TaskIndexedEvent e) =>
-                UpdateTaskAndTransition(context, e.TaskId, OrchestratorState.VALIDATING, @event),
+            (BuilderState.INDEXING, TaskIndexedEvent e) =>
+                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.BUILDING, @event),
 
-            (OrchestratorState.VALIDATING, TaskValidatingEvent e) =>
-                context with { State = OrchestratorState.VALIDATING, EventLog = [..context.EventLog, @event] },
+            (BuilderState.BUILDING, TaskBuildCompletedEvent e) =>
+                 UpdateTaskAndTransition(context, context.CurrentTaskId, BuilderState.VALIDATING, @event),
 
             // === SUCCESS PATH ===
-            (OrchestratorState.VALIDATING, TaskCompletedEvent e) =>
-                UpdateTaskAndTransition(context, e.TaskId, OrchestratorState.TASK_GRAPH_READY, @event),
+            (BuilderState.VALIDATING, TaskCompletedEvent e) =>
+                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.TASK_GRAPH_BUILT, @event),
 
             // === FAILURE & RETRY PATH ===
-            (OrchestratorState.VALIDATING, TaskFailedEvent e) when e.CurrentRetry < e.MaxRetries =>
-                context with { State = OrchestratorState.RETRYING, EventLog = [..context.EventLog, @event] },
+            (BuilderState.VALIDATING, TaskFailedEvent e) when e.CurrentRetry < e.MaxRetries =>
+                 context with { State = BuilderState.RETRYING, EventLog = [..context.EventLog, @event] },
 
-            (OrchestratorState.RETRYING, TaskStartedEvent e) =>
-                context with { State = OrchestratorState.TASK_EXECUTING, EventLog = [..context.EventLog, @event] },
+            (BuilderState.RETRYING, RetryStartedEvent e) =>
+                 context with { State = BuilderState.MUTATION_GUARD, EventLog = [..context.EventLog, @event] },
 
-            (OrchestratorState.VALIDATING, TaskFailedEvent e) when e.CurrentRetry >= e.MaxRetries =>
-                context with { State = OrchestratorState.FAILED, EventLog = [..context.EventLog, @event] },
+            (BuilderState.VALIDATING, TaskFailedEvent e) when e.CurrentRetry >= e.MaxRetries =>
+                 context with { State = BuilderState.BUILD_FAILED, EventLog = [..context.EventLog, @event] },
+
+            // === RECOVERY PATH ===
+            (BuilderState.BUILD_FAILED, RecoveryStartedEvent e) =>
+                 context with { State = BuilderState.RECOVERY_ACTIVE, EventLog = [..context.EventLog, @event] },
+
+            (BuilderState.RECOVERY_ACTIVE, RecoveryCompletedEvent e) when e.Success =>
+                 context with { State = BuilderState.RETRYING, EventLog = [..context.EventLog, @event] },
+
+            (BuilderState.RECOVERY_ACTIVE, RecoveryCompletedEvent e) when !e.Success =>
+                 context with { State = BuilderState.ROLLBACK_ACTIVE, EventLog = [..context.EventLog, @event] },
+
+            // === ROLLBACK PATH ===
+            (BuilderState.ROLLBACK_ACTIVE, RollbackCompletedEvent e) =>
+                 context with { State = BuilderState.IDLE, EventLog = [..context.EventLog, @event] },
 
             // === COMPLETION ===
-            (OrchestratorState.TASK_GRAPH_READY, BuildCompletedEvent e) =>
-                context with { State = OrchestratorState.COMPLETED, EventLog = [..context.EventLog, @event] },
+            (BuilderState.TASK_GRAPH_BUILT, GraphBuildCompletedEvent e) =>
+                 context with { State = BuilderState.BUILD_SUCCEEDED, EventLog = [..context.EventLog, @event] },
+
+            // === SNAPSHOT EVENTS (Logged but don't change state) ===
+            (BuilderState.MUTATION_GUARD, SnapshotCreatedEvent e) =>
+                 context with { EventLog = [..context.EventLog, @event] },
+
+            (BuilderState.BUILD_SUCCEEDED, SnapshotCommittedEvent e) =>
+                 context with { EventLog = [..context.EventLog, @event] },
 
             // === INVALID TRANSITION ===
             _ => throw new InvalidOperationException(
@@ -377,16 +455,19 @@ public class BuilderReducer
     private static BuilderContext UpdateTaskAndTransition(
         BuilderContext context,
         string taskId,
-        OrchestratorState newState,
+        BuilderState newState,
         BuilderEvent @event)
     {
-        if (context.TaskMap.TryGetValue(taskId, out var task))
+        if (taskId != null && context.TaskMap.TryGetValue(taskId, out var task))
         {
             task.Status = newState switch
             {
-                OrchestratorState.TASK_EXECUTING => TaskStatus.RUNNING,
-                OrchestratorState.VALIDATING => TaskStatus.VALIDATING,
-                OrchestratorState.TASK_GRAPH_READY => TaskStatus.COMPLETED,
+                BuilderState.MUTATION_GUARD => TaskStatus.RUNNING,
+                BuilderState.PATCHING => TaskStatus.RUNNING,
+                BuilderState.INDEXING => TaskStatus.RUNNING,
+                BuilderState.BUILDING => TaskStatus.RUNNING,
+                BuilderState.VALIDATING => TaskStatus.VALIDATING,
+                BuilderState.TASK_GRAPH_BUILT => TaskStatus.COMPLETED,
                 _ => task.Status
             };
         }
@@ -394,7 +475,7 @@ public class BuilderReducer
         return context with
         {
             State = newState,
-            CurrentTaskId = newState == OrchestratorState.TASK_GRAPH_READY ? null : taskId,
+            CurrentTaskId = newState == BuilderState.TASK_GRAPH_BUILT ? null : taskId,
             EventLog = [..context.EventLog, @event]
         };
     }
@@ -410,7 +491,8 @@ public class BuilderReducer
 ```csharp
 public class RetryController
 {
-    public static bool ShouldRetry(Task task, BuilderContext context) =>
+    public static bool ShouldRetry(Task task, BuilderContext context, ErrorClassification error) =>
+        error.IsRetryable &&
         task.RetryCount < task.MaxRetries &&
         context.UsedRetry < context.TotalRetryBudget;
 
@@ -419,14 +501,15 @@ public class RetryController
         Task failedTask,
         ErrorClassification errorClassification)
     {
-        if (!ShouldRetry(failedTask, context))
+        if (!ShouldRetry(failedTask, context, errorClassification))
         {
-            return new BuilderReducer().Reduce(context,
+            // Create a temporary usage of Reducer for failure event
+            return BuilderReducer.Reduce(context,
                 new TaskFailedEvent
                 {
                     TaskId = failedTask.Id,
                     ErrorType = errorClassification.Type,
-                    ErrorMessage = $"Exhausted retries ({failedTask.RetryCount}/{failedTask.MaxRetries})",
+                    ErrorMessage = $"Retry rejected: {errorClassification.Type} (Retries: {failedTask.RetryCount}/{failedTask.MaxRetries})",
                     CurrentRetry = failedTask.RetryCount,
                     MaxRetries = failedTask.MaxRetries
                 });
@@ -437,7 +520,7 @@ public class RetryController
 
         return context with
         {
-            State = OrchestratorState.RETRYING,
+            State = BuilderState.RETRYING,
             EventLog = [..context.EventLog, new RetryStartedEvent
             {
                 TaskId = failedTask.Id,
@@ -500,6 +583,86 @@ public class RetryPolicy
 | **API Key Invalid** | ❌ No  | 0           | User must fix        |
 | **Disk Full**       | ❌ No  | 0           | User must free space |
 
+### Retry System Integration
+
+The orchestrator has two complementary retry mechanisms that work together:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    RETRY SYSTEM ARCHITECTURE                     │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────────────┐     ┌─────────────────────┐            │
+│  │   RetryController   │     │    RetryPolicy      │            │
+│  │   (State-Based)     │     │ (Exception-Based)   │            │
+│  │                     │     │                     │            │
+│  │ • Checks budget     │     │ • Exponential delay │            │
+│  │ • Task-scoped       │     │ • Exception filter  │            │
+│  │ • Logs RetryEvent   │     │ • Async execution   │            │
+│  └─────────┬───────────┘     └─────────┬───────────┘            │
+│            │                           │                         │
+│            │   ┌───────────────────────┘                         │
+│            │   │                                                 │
+│            ▼   ▼                                                 │
+│  ┌─────────────────────────────────────────────────────┐        │
+│  │              UnifiedRetryCoordinator                │        │
+│  │                                                     │        │
+│  │  1. RetryController.ShouldRetry() → Check budget    │        │
+│  │  2. RetryPolicy.ExecuteAsync() → Add delay          │        │
+│  │  3. RetryController.ExecuteRetry() → Emit event     │        │
+│  └─────────────────────────────────────────────────────┘        │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```csharp
+/// <summary>
+/// Coordinates RetryController (state-based) and RetryPolicy (delay-based).
+/// This unifies the two retry systems into a coherent flow.
+/// </summary>
+public class UnifiedRetryCoordinator
+{
+    private readonly RetryController _retryController;
+    private readonly RetryPolicy _retryPolicy;
+
+    public async Task<BuilderContext> ExecuteWithRetryAsync(
+        BuilderContext context,
+        Task task,
+        ErrorClassification error,
+        Func<Task<BuilderContext>> operation)
+    {
+        // Step 1: Check if retry is allowed (budget and task limits)
+        if (!RetryController.ShouldRetry(task, context, error))
+        {
+            return _retryController.ExecuteRetry(context, task, error);
+        }
+
+        // Step 2: Use RetryPolicy for exponential backoff delay
+        var delay = CalculateDelay(task.RetryCount);
+
+        // Step 3: Apply delay before retry
+        await Task.Delay(delay);
+
+        // Step 4: Execute retry and emit event
+        return _retryController.ExecuteRetry(context, task, error);
+    }
+
+    private TimeSpan CalculateDelay(int retryCount)
+    {
+        var initialDelay = TimeSpan.FromSeconds(1);
+        var multiplier = 2.0;
+        var maxDelay = TimeSpan.FromSeconds(30);
+
+        var delay = TimeSpan.FromMilliseconds(
+            Math.Min(
+                initialDelay.TotalMilliseconds * Math.Pow(multiplier, retryCount),
+                maxDelay.TotalMilliseconds));
+
+        return delay;
+    }
+}
+```
+
 ---
 
 ## 7. Concurrency Rules
@@ -535,7 +698,10 @@ public class ConcurrencyPolicy
         BuilderContext context,
         Task incomingTask)
     {
-        if (context.State == OrchestratorState.TASK_EXECUTING && IsMutationTask(incomingTask.Type))
+        // Any state from MUTATION_GUARD (5) to RETRYING (10) implies a task is active.
+        if ((int)context.State >= (int)BuilderState.MUTATION_GUARD &&
+            (int)context.State <= (int)BuilderState.RETRYING &&
+            IsMutationTask(incomingTask.Type))
         {
             throw new InvalidOperationException(
                 "Cannot start mutation task while another task is executing. " +
@@ -549,7 +715,139 @@ public class ConcurrencyPolicy
 
 ---
 
-## 8. Build System
+## 8. Validation Layer
+
+### Schema Validation
+
+All AI Engine outputs must pass strict JSON Schema validation before processing.
+
+- **ProjectSpec**: Validates project structure and initial stack.
+- **TaskGraph**: Validates task dependencies and types.
+- **CodePatch**: Validates file paths and patch actions.
+
+### Dependency Validation (DAG)
+
+The Task Graph must be a Directed Acyclic Graph (DAG).
+
+- **Cycle Detection**: Using Kahn's algorithm or DFS.
+- **Orphan Detection**: All tasks must be reachable or have clear entry points.
+
+#### DAG Validator Implementation
+
+```csharp
+public class DagValidator
+{
+    /// <summary>
+    /// Validates that the task graph is a valid DAG (no cycles).
+    /// Uses Kahn's algorithm for cycle detection.
+    /// </summary>
+    public DagValidationResult Validate(List<Task> tasks)
+    {
+        var taskIds = tasks.Select(t => t.Id).ToHashSet();
+        var inDegree = tasks.ToDictionary(t => t.Id, t => 0);
+        var adjacencyList = tasks.ToDictionary(t => t.Id, t => new List<string>());
+
+        // Build adjacency list and calculate in-degrees
+        foreach (var task in tasks)
+        {
+            foreach (var depId in task.DependsOnTaskIds)
+            {
+                if (!taskIds.Contains(depId))
+                {
+                    return DagValidationResult.Failed($"Task '{task.Id}' depends on non-existent task '{depId}'");
+                }
+                adjacencyList[depId].Add(task.Id);
+                inDegree[task.Id]++;
+            }
+        }
+
+        // Kahn's algorithm - find all nodes with no incoming edges
+        var queue = new Queue<string>();
+        foreach (var kvp in inDegree)
+        {
+            if (kvp.Value == 0)
+                queue.Enqueue(kvp.Key);
+        }
+
+        var sortedTasks = new List<string>();
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            sortedTasks.Add(current);
+
+            foreach (var neighbor in adjacencyList[current])
+            {
+                inDegree[neighbor]--;
+                if (inDegree[neighbor] == 0)
+                    queue.Enqueue(neighbor);
+            }
+        }
+
+        // If not all tasks are in sorted order, there's a cycle
+        if (sortedTasks.Count != tasks.Count)
+        {
+            var cycleTasks = tasks.Where(t => !sortedTasks.Contains(t.Id)).Select(t => t.Id);
+            return DagValidationResult.Failed($"Cycle detected in task graph. Involved tasks: {string.Join(", ", cycleTasks)}");
+        }
+
+        // Check for orphan tasks (tasks that are not reachable from any entry point)
+        var reachableFromRoot = new HashSet<string>();
+        var rootTasks = tasks.Where(t => t.DependsOnTaskIds.Count == 0).Select(t => t.Id);
+        
+        foreach (var rootId in rootTasks)
+        {
+            DfsCollectReachable(rootId, adjacencyList, reachableFromRoot);
+        }
+
+        var orphanTasks = taskIds.Except(reachableFromRoot).ToList();
+        if (orphanTasks.Any())
+        {
+            return DagValidationResult.Warning($"Orphan tasks detected (not reachable from root): {string.Join(", ", orphanTasks)}");
+        }
+
+        return DagValidationResult.Success(sortedTasks);
+    }
+
+    private void DfsCollectReachable(string taskId, Dictionary<string, List<string>> adjacencyList, HashSet<string> visited)
+    {
+        if (visited.Contains(taskId)) return;
+        visited.Add(taskId);
+        
+        foreach (var neighbor in adjacencyList[taskId])
+        {
+            DfsCollectReachable(neighbor, adjacencyList, visited);
+        }
+    }
+}
+
+public class DagValidationResult
+{
+    public bool IsValid { get; set; }
+    public string ErrorMessage { get; set; }
+    public List<string> ExecutionOrder { get; set; }
+    public bool HasWarnings { get; set; }
+
+    public static DagValidationResult Success(List<string> executionOrder) =>
+        new DagValidationResult { IsValid = true, ExecutionOrder = executionOrder };
+
+    public static DagValidationResult Failed(string message) =>
+        new DagValidationResult { IsValid = false, ErrorMessage = message };
+
+    public static DagValidationResult Warning(string message) =>
+        new DagValidationResult { IsValid = true, ErrorMessage = message, HasWarnings = true };
+}
+```
+
+### Semantic Validation
+
+Before applying patches:
+
+- **Symbol Existence**: Verify target symbols exist using Roslyn Indexer.
+- **File Existence**: Verify target files exist (unless creating new ones).
+
+---
+
+## 9. Build System
 
 ### Responsibilities
 
@@ -794,8 +1092,12 @@ public class StructuredLogger : ILogger
 ```csharp
 public class SnapshotManager
 {
+    private const int MaxSnapshotsToRetain = 5;
+    private readonly string _snapshotDir = ".builder/snapshots";
+
     public async Task<string> CreateSnapshotAsync(string workspacePath, string taskId)
     {
+        Directory.CreateDirectory(_snapshotDir);
         var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
         var snapshotName = $"snapshot_{taskId}_{timestamp}.zip";
         var snapshotPath = Path.Combine(_snapshotDir, snapshotName);
@@ -806,9 +1108,60 @@ public class SnapshotManager
 
     public async Task RestoreSnapshotAsync(string snapshotPath, string workspacePath)
     {
-        Directory.Delete(workspacePath, recursive: true);
+        if (Directory.Exists(workspacePath))
+            Directory.Delete(workspacePath, recursive: true);
+
         Directory.CreateDirectory(workspacePath);
         ZipFile.ExtractToDirectory(snapshotPath, workspacePath);
+    }
+
+    public async Task RollbackToLastGoodStateAsync(string workspacePath)
+    {
+        var statePath = Path.Combine(_snapshotDir, "state.json");
+        if (!File.Exists(statePath)) return;
+
+        var stateJson = await File.ReadAllTextAsync(statePath);
+        var state = System.Text.Json.JsonDocument.Parse(stateJson);
+        if (state.RootElement.TryGetProperty("LastSuccessfulSnapshot", out var snapshotProp))
+        {
+            var lastSnapshot = snapshotProp.GetString();
+            var snapshotPath = Path.Combine(_snapshotDir, lastSnapshot);
+            await RestoreSnapshotAsync(snapshotPath, workspacePath);
+        }
+    }
+
+    public async Task CommitSnapshotAsync(string snapshotPath)
+    {
+        // 1. Mark as successful/permanent
+        var snapshotName = Path.GetFileName(snapshotPath);
+        var statePath = Path.Combine(_snapshotDir, "state.json");
+
+        var state = new
+        {
+            LastSuccessfulSnapshot = snapshotName,
+            Timestamp = DateTime.UtcNow,
+            Status = "COMMITTED"
+        };
+
+        await File.WriteAllTextAsync(statePath, System.Text.Json.JsonSerializer.Serialize(state));
+
+        // 2. Trigger cleanup
+        await CleanupSnapshotsAsync();
+    }
+
+    public async Task CleanupSnapshotsAsync()
+    {
+        if (!Directory.Exists(_snapshotDir)) return;
+
+        var snapshots = Directory.GetFiles(_snapshotDir, "snapshot_*.zip")
+            .Select(f => new FileInfo(f))
+            .OrderByDescending(f => f.CreationTime)
+            .ToList();
+
+        foreach (var snapshot in snapshots.Skip(MaxSnapshotsToRetain))
+        {
+            try { snapshot.Delete(); } catch { /* Ignore locked files */ }
+        }
     }
 }
 ```
@@ -887,7 +1240,7 @@ public class BuildCacheService
 
 ---
 
-## 9. Error Handling
+## 10. Error Handling
 
 ### Error Handling Philosophy
 
@@ -1050,16 +1403,84 @@ public class ErrorClassifier
     {
         if (!string.IsNullOrEmpty(error.Code))
         {
-            if (error.Code.StartsWith("CS")) return ErrorType.CSharpCompiler;
-            if (error.Code.StartsWith("XDG") || error.Code.StartsWith("XLS")) return ErrorType.XamlCompiler;
-            if (error.Code.StartsWith("NU")) return ErrorType.NuGetRestore;
-            if (error.Code.StartsWith("MSB")) return ErrorType.MSBuildInfrastructure;
+            if (error.Code.StartsWith("CS")) return ErrorType.CSHARP_COMPILER_ERROR;
+            if (error.Code.StartsWith("XDG") || error.Code.StartsWith("XLS")) return ErrorType.XAML_COMPILER_ERROR;
+            if (error.Code.StartsWith("NU")) return ErrorType.NUGET_RESTORE_ERROR;
+            if (error.Code.StartsWith("MSB")) return ErrorType.MSBUILD_ERROR;
         }
 
         if (error.File != null && error.File.EndsWith(".csproj"))
-            return ErrorType.ProjectFile;
+            return ErrorType.PROJECT_FILE_ERROR;
 
-        return ErrorType.Unknown;
+        return ErrorType.UNKNOWN_ERROR;
+    }
+
+    public ErrorType MapBuildError(BuildErrorType buildError) => buildError switch
+    {
+        BuildErrorType.CSharpSyntaxError => ErrorType.CSHARP_COMPILER_ERROR,
+        BuildErrorType.CSharpSemanticError => ErrorType.CSHARP_COMPILER_ERROR,
+        BuildErrorType.CSharpNullabilityWarning => ErrorType.CSHARP_COMPILER_ERROR,
+        
+        BuildErrorType.XamlParseError => ErrorType.XAML_COMPILER_ERROR,
+        BuildErrorType.XamlBindingError => ErrorType.XAML_COMPILER_ERROR,
+        BuildErrorType.XamlResourceError => ErrorType.XAML_COMPILER_ERROR,
+        
+        BuildErrorType.NuGetRestoreFailed => ErrorType.NUGET_RESTORE_ERROR,
+        BuildErrorType.NuGetPackageNotFound => ErrorType.NUGET_RESTORE_ERROR,
+        BuildErrorType.NuGetVersionConflict => ErrorType.NUGET_RESTORE_ERROR,
+        
+        BuildErrorType.MSBuildProjectFileError => ErrorType.MSBUILD_ERROR,
+        BuildErrorType.MSBuildTargetError => ErrorType.MSBUILD_ERROR,
+        
+        BuildErrorType.SdkNotFound => ErrorType.SDK_NOT_FOUND,
+        BuildErrorType.SdkVersionMismatch => ErrorType.SDK_NOT_FOUND,
+        
+        BuildErrorType.BuildTimeout => ErrorType.VALIDATION_TIMEOUT,
+        
+        _ => ErrorType.UNKNOWN_ERROR
+    };
+
+    public static ErrorClassification ClassifyBuildError(string buildOutput)
+    {
+        if (buildOutput.Contains("error CS"))
+            return new ErrorClassification
+            {
+                Type = ErrorType.CSHARP_COMPILER_ERROR,
+                Code = ExtractErrorCode(buildOutput),
+                AutoFixStrategy = "roslyn-patch-and-retry",
+                IsRetryable = true
+            };
+
+        if (buildOutput.Contains("XDG") || buildOutput.Contains("XLS"))
+            return new ErrorClassification
+            {
+                Type = ErrorType.XAML_COMPILER_ERROR,
+                AutoFixStrategy = "xaml-syntax-fix",
+                IsRetryable = true
+            };
+
+        if (buildOutput.Contains("NU") || buildOutput.Contains("NuGet"))
+            return new ErrorClassification
+            {
+                Type = ErrorType.NUGET_RESTORE_ERROR,
+                AutoFixStrategy = "nuget-restore",
+                IsRetryable = true
+            };
+
+        return new ErrorClassification
+        {
+            Type = ErrorType.UNKNOWN_ERROR,
+            AutoFixStrategy = "unknown-strategy",
+            IsRetryable = false
+        };
+    }
+
+    private static CompilerErrorCode? ExtractErrorCode(string buildOutput)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(buildOutput, @"(CS|XDG|XLS|NU|MSB)(\d+)");
+        if (match.Success && Enum.TryParse<CompilerErrorCode>(match.Value, out var code))
+            return code;
+        return null;
     }
 }
 ```
@@ -1099,53 +1520,7 @@ public record ErrorClassification
     public bool IsRetryable { get; init; }
 }
 
-public class ErrorClassifier
-{
-    public static ErrorClassification ClassifyBuildError(string buildOutput)
-    {
-        // Parse dotnet build output
 
-        if (buildOutput.Contains("error CS"))
-            return new ErrorClassification
-            {
-                Type = ErrorType.BUILD_ERROR,
-                Code = ExtractErrorCode(buildOutput),
-                AutoFixStrategy = "roslyn-patch-and-retry",
-                IsRetryable = true
-            };
-
-        if (buildOutput.Contains("XDG") || buildOutput.Contains("XLS"))
-            return new ErrorClassification
-            {
-                Type = ErrorType.XAML_ERROR,
-                AutoFixStrategy = "xaml-syntax-fix",
-                IsRetryable = true
-            };
-
-        if (buildOutput.Contains("NU") || buildOutput.Contains("NuGet"))
-            return new ErrorClassification
-            {
-                Type = ErrorType.NUGET_ERROR,
-                AutoFixStrategy = "nuget-restore",
-                IsRetryable = true
-            };
-
-        return new ErrorClassification
-        {
-            Type = ErrorType.BUILD_ERROR,
-            AutoFixStrategy = "unknown-strategy",
-            IsRetryable = false
-        };
-    }
-
-    private static CompilerErrorCode? ExtractErrorCode(string buildOutput)
-    {
-        var match = System.Text.RegularExpressions.Regex.Match(buildOutput, @"(CS|XDG|XLS|NU|MSB)(\d+)");
-        if (match.Success && Enum.TryParse<CompilerErrorCode>(match.Value, out var code))
-            return code;
-        return null;
-    }
-}
 ```
 
 **Key Insight**: Error classification must happen BEFORE retry decision. The orchestrator never retries blindly.
@@ -1165,10 +1540,10 @@ public class BuildErrorRecoveryService
     {
         return error.ErrorType switch
         {
-            BuildErrorType.CSharpSyntaxError => await RecoverFromSyntaxErrorAsync(error),
-            BuildErrorType.XamlParseError => await RecoverFromXamlErrorAsync(error),
-            BuildErrorType.NuGetPackageNotFound => await RecoverFromNuGetErrorAsync(error),
-            BuildErrorType.BuildTimeout => await RecoverFromTimeoutAsync(error),
+            ErrorType.CSHARP_COMPILER_ERROR => await RecoverFromSyntaxErrorAsync(error),
+            ErrorType.XAML_COMPILER_ERROR => await RecoverFromXamlErrorAsync(error),
+            ErrorType.NUGET_RESTORE_ERROR => await RecoverFromNuGetErrorAsync(error),
+            ErrorType.VALIDATION_TIMEOUT => await RecoverFromTimeoutAsync(error),
             _ => RecoveryResult.Failed("No recovery strategy available")
         };
     }
@@ -1304,7 +1679,107 @@ public class RecoveryResult
 }
 ```
 
-### Snapshot Rollback Service
+### Recovery & Rollback Event Emission
+
+The recovery and rollback services must emit events to the orchestrator for proper state machine transitions. This section documents the integration bridge between services and the reducer.
+
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│              RECOVERY/ROLLBACK EVENT FLOW                             │
+├───────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│  BUILD_FAILED State                                                   │
+│       │                                                               │
+│       ▼                                                               │
+│  ┌─────────────────────────────┐                                     │
+│  │ BuildErrorRecoveryService  │                                     │
+│  │                             │                                     │
+│  │ 1. RecoverFromBuildError() │                                     │
+│  │ 2. Emit RecoveryStarted    │──→ State = RECOVERY_ACTIVE          │
+│  │ 3. Apply AI fix            │                                     │
+│  │ 4. Emit RecoveryCompleted  │──→ Success: RETRYING                │
+│  │                             │──→ Failure: ROLLBACK_ACTIVE         │
+│  └─────────────────────────────┘                                     │
+│                                       │                               │
+│                                       ▼                               │
+│  ┌─────────────────────────────┐                                     │
+│  │  SnapshotRollbackService   │                                     │
+│  │                             │                                     │
+│  │ 1. RollbackToLastGood()    │                                     │
+│  │ 2. Emit RollbackCompleted  │──→ State = IDLE                     │
+│  │ 3. Emit SnapshotCommitted  │                                     │
+│  └─────────────────────────────┘                                     │
+│                                                                       │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+```csharp
+/// <summary>
+/// Coordinates recovery/rollback with event emission to the orchestrator.
+/// This is the integration bridge between services and the state machine.
+/// </summary>
+public class RecoveryOrchestratorBridge
+{
+    private readonly BuildErrorRecoveryService _recoveryService;
+    private readonly SnapshotRollbackService _rollbackService;
+    private readonly IEventDispatcher _eventDispatcher;
+
+    public async Task<BuilderContext> HandleBuildFailureAsync(
+        BuilderContext context,
+        BuildError error)
+    {
+        // Step 1: Emit RecoveryStartedEvent
+        await _eventDispatcher.DispatchAsync(new RecoveryStartedEvent
+        {
+            TaskId = context.CurrentTaskId,
+            ErrorType = error.ErrorType
+        });
+
+        // Step 2: Attempt recovery
+        var recoveryResult = await _recoveryService.RecoverFromBuildErrorAsync(error);
+
+        // Step 3: Emit RecoveryCompletedEvent
+        await _eventDispatcher.DispatchAsync(new RecoveryCompletedEvent
+        {
+            TaskId = context.CurrentTaskId,
+            Success = recoveryResult.Success,
+            FixApplied = recoveryResult.Message
+        });
+
+        return context;
+    }
+
+    public async Task<BuilderContext> HandleRecoveryFailureAsync(
+        BuilderContext context,
+        string projectId)
+    {
+        // Step 1: Get last good snapshot
+        var snapshotId = await _rollbackService.GetLastGoodSnapshotIdAsync(projectId);
+
+        // Step 2: Attempt rollback
+        var rollbackResult = await _rollbackService.RollbackToLastGoodStateAsync(projectId);
+
+        // Step 3: Emit RollbackCompletedEvent
+        await _eventDispatcher.DispatchAsync(new RollbackCompletedEvent
+        {
+            SnapshotId = snapshotId,
+            Success = rollbackResult.Success
+        });
+
+        return context;
+    }
+}
+
+/// <summary>
+/// Event dispatcher interface for emitting events to the orchestrator.
+/// </summary>
+public interface IEventDispatcher
+{
+    Task DispatchAsync(BuilderEvent @event);
+}
+```
+
+### Snapshot Rollback Service (With Event Emission)
 
 ```csharp
 public class SnapshotRollbackService
@@ -1312,6 +1787,7 @@ public class SnapshotRollbackService
     private readonly ISnapshotRepository _snapshotRepository;
     private readonly IFileSystemSandbox _fileSystemSandbox;
     private readonly ICodeIndexer _codeIndexer;
+    private readonly IEventDispatcher _eventDispatcher;
     private readonly ILogger<SnapshotRollbackService> _logger;
 
     public async Task<RollbackResult> RollbackToLastGoodStateAsync(string projectId)
@@ -1321,6 +1797,12 @@ public class SnapshotRollbackService
 
         if (lastGoodSnapshot == null)
         {
+            // Emit failure event
+            await _eventDispatcher.DispatchAsync(new RollbackCompletedEvent
+            {
+                SnapshotId = null,
+                Success = false
+            });
             return RollbackResult.Failed("No good snapshot found");
         }
 
@@ -1335,13 +1817,34 @@ public class SnapshotRollbackService
             _logger.LogInformation("Rolled back project {ProjectId} to snapshot {SnapshotId}",
                 projectId, lastGoodSnapshot.Id);
 
+            // Emit success event
+            await _eventDispatcher.DispatchAsync(new RollbackCompletedEvent
+            {
+                SnapshotId = lastGoodSnapshot.Id,
+                Success = true
+            });
+
             return RollbackResult.Success($"Restored to snapshot from {lastGoodSnapshot.CreatedDate}");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Rollback failed for project {ProjectId}", projectId);
+
+            // Emit failure event
+            await _eventDispatcher.DispatchAsync(new RollbackCompletedEvent
+            {
+                SnapshotId = lastGoodSnapshot.Id,
+                Success = false
+            });
+
             return RollbackResult.Failed($"Rollback failed: {ex.Message}");
         }
+    }
+
+    public async Task<string> GetLastGoodSnapshotIdAsync(string projectId)
+    {
+        var snapshot = await _snapshotRepository.GetLastCommittedSnapshotAsync(projectId);
+        return snapshot?.Id;
     }
 }
 
@@ -1580,9 +2083,9 @@ public class ErrorLog
 ```csharp
 public class ErrorMessageProvider
 {
-    private readonly Dictionary<BuildErrorType, ErrorMessageTemplate> _buildErrorMessages = new()
+    private readonly Dictionary<ErrorType, ErrorMessageTemplate> _buildErrorMessages = new()
     {
-        [BuildErrorType.CSharpSyntaxError] = new ErrorMessageTemplate
+        [ErrorType.CSHARP_COMPILER_ERROR] = new ErrorMessageTemplate
         {
             Title = "Code Syntax Error",
             Message = "There's a syntax error in the generated code.",
@@ -1590,7 +2093,7 @@ public class ErrorMessageProvider
             Icon = "Error",
             Severity = ErrorSeverity.Error
         },
-        [BuildErrorType.XamlParseError] = new ErrorMessageTemplate
+        [ErrorType.XAML_COMPILER_ERROR] = new ErrorMessageTemplate
         {
             Title = "XAML Parsing Error",
             Message = "There's an issue with the XAML markup.",
@@ -1598,7 +2101,7 @@ public class ErrorMessageProvider
             Icon = "Error",
             Severity = ErrorSeverity.Error
         },
-        [BuildErrorType.NuGetPackageNotFound] = new ErrorMessageTemplate
+        [ErrorType.NUGET_RESTORE_ERROR] = new ErrorMessageTemplate
         {
             Title = "Package Not Found",
             Message = "A required NuGet package could not be found.",
@@ -1606,7 +2109,7 @@ public class ErrorMessageProvider
             Icon = "Warning",
             Severity = ErrorSeverity.Warning
         },
-        [BuildErrorType.SdkNotFound] = new ErrorMessageTemplate
+        [ErrorType.SDK_NOT_FOUND] = new ErrorMessageTemplate
         {
             Title = ".NET SDK Required",
             Message = "The .NET 8.0 SDK is not installed on your system.",
@@ -1619,7 +2122,7 @@ public class ErrorMessageProvider
                 Url = "https://dotnet.microsoft.com/download/dotnet/8.0"
             }
         },
-        [BuildErrorType.BuildTimeout] = new ErrorMessageTemplate
+        [ErrorType.VALIDATION_TIMEOUT] = new ErrorMessageTemplate
         {
             Title = "Build Timeout",
             Message = "The build is taking longer than expected.",
@@ -1629,15 +2132,15 @@ public class ErrorMessageProvider
         }
     };
 
-    public ErrorMessageTemplate GetTemplate(BuildErrorType errorType)
+    public ErrorMessageTemplate GetTemplate(ErrorType errorType)
     {
         return _buildErrorMessages.TryGetValue(errorType, out var template)
             ? template
             : new ErrorMessageTemplate
             {
-                Title = "Build Error",
+                Title = "Unknown Error",
                 Message = "An unexpected error occurred.",
-                UserAction = "Please try again.",
+                UserAction = "Check the logs for more details.",
                 Severity = ErrorSeverity.Error
             };
     }
@@ -1898,18 +2401,64 @@ public class PreconditionResult
 
 ---
 
-## 10. API Contracts
+## 11. API Contracts
 
 ### Internal Service Interfaces
 
 #### Orchestrator Service (`IOrchestrator`)
 
 ```csharp
+/// <summary>
+/// Primary entry point for the App Builder UI and AI Agents.
+/// </summary>
 public interface IOrchestrator
 {
-    Task<BuilderState> DispatchAsync(BuilderEvent @event);
-    Task<TaskResult> ExecuteTaskAsync(TaskDefinition task);
+    /// <summary>
+    /// Dispatches a high-level command to the builder.
+    /// Returns the initial state after processing the command.
+    /// </summary>
+    Task<BuilderState> DispatchAsync(BuilderCommand command);
+
+    /// <summary>
+    /// Executes a specific task graph.
+    /// This is the main execution loop entry point.
+    /// </summary>
+    Task<TaskResult> ExecuteTaskAsync(string taskId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Retrieves the current snapshot of the builder state.
+    /// </summary>
     BuilderContext GetCurrentContext();
+
+    /// <summary>
+    /// Subscribes to state change events.
+    /// </summary>
+    IObservable<BuilderEvent> Events { get; }
+}
+```
+
+#### Execution Kernel (`IExecutionKernel`)
+
+```csharp
+/// <summary>
+/// Abstraction for the underlying build and execution tools.
+/// </summary>
+public interface IExecutionKernel
+{
+    /// <summary>
+    /// Runs the .NET build process.
+    /// </summary>
+    Task<BuildResult> BuildAsync(string projectPath, BuildOptions options);
+
+    /// <summary>
+    /// Executes the test suite.
+    /// </summary>
+    Task<TestResult> RunTestsAsync(string projectPath, TestOptions options);
+
+    /// <summary>
+    /// Launches the application in a controlled environment.
+    /// </summary>
+    Task<ProcessResult> RunAppAsync(string projectPath, RunOptions options);
 }
 ```
 
@@ -1931,17 +2480,6 @@ public interface IPatchEngine
 {
     Task<string> ApplyPatchAsync(string filePath, PatchDefinition patch);
     Task<bool> ValidatePatchAsync(string filePath, PatchDefinition patch);
-}
-```
-
-#### Execution Kernel (`IExecutionKernel`)
-
-```csharp
-public interface IExecutionKernel
-{
-    Task<BuildResult> BuildAsync(string projectPath);
-    Task<TestResult> RunTestsAsync(string projectPath);
-    Task<ExecutionResult> RunAppAsync(string projectPath);
 }
 ```
 
@@ -2263,7 +2801,7 @@ public class SourceFile
 
 ---
 
-## 11. Implementation Sequence
+## 12. Implementation Sequence
 
 ### Phase 1A: Foundation (Mandatory before any other work)
 
