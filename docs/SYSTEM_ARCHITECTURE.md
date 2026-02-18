@@ -201,17 +201,28 @@ graph TD
 ├── Workspaces/
 │   └── {ProjectId}/
 │       ├── src/                    ← Generated code
-│       ├── .snapshots/             ← Version history
+│       ├── .snapshots/             ← Version history (compressed diffs)
+│       ├── .diffs/                 ← Patch files for version control
+│       │   ├── diff_001-002.patch
+│       │   └── diff_002-003.patch
 │       ├── .metadata.json          ← Project metadata
 │       └── .build-output/          ← Compiled binaries
+├── Temp/
+│   ├── build_workspace_001/        ← Per-build isolated workspace
+│   ├── build_workspace_002/
+│   └── (cleaned after each build)
 ├── Database/
 │   └── sync-ai.db                  ← SQLite graph DB
 ├── Cache/
 │   ├── NuGet/                      ← Local NuGet cache
-│   └── Embeddings/                 ← Vector cache
+│   ├── Embeddings/                 ← Vector cache
+│   ├── roslyn_symbols/             ← Cached Roslyn symbol data
+│   └── dependency_graph/           ← Cached dependency graph data
 └── Logs/
     └── execution.log               ← Debug log (hidden from user)
 ```
+
+> **Source**: `EXECUTION_ARCHITECTURE.md` — Part 3.1 (Filesystem Sandbox Subsystem Architecture)
 
 #### Layer 2: Execution Kernel
 
@@ -389,10 +400,15 @@ public class BuildPhase
 public interface IPatchTransaction : IAsyncDisposable
 {
     Task AddAttributeAsync(string className, string attributeName);
+    Task AddUsingAsync(string namespaceName);
+    Task ModifyPropertyAsync(string propertyName, string newValue);
+    Task AddMethodAsync(string methodCode);
     Task CommitAsync();
     Task RollbackAsync();
 }
 ```
+
+> **Source**: `EXECUTION_ARCHITECTURE.md` — Section 3.4 (`IPatchTransaction` interface definition)
 
 **Guarantees**:
 
@@ -522,6 +538,25 @@ public class RoslynCodeIntelligenceService
     }
 }
 ```
+
+### Roslyn Workspace Allocation Strategies
+
+Three options were evaluated for Roslyn workspace management:
+
+**Option A (Recommended): Single shared AdhocWorkspace with incremental updates**
+- One `AdhocWorkspace` instance per project, protected by `_workspaceLock`
+- Files updated incrementally via `IncrementalIndexFileAsync()`
+- Lowest memory overhead; best performance for iterative patch cycles
+
+**Option B: Per-session AdhocWorkspace**
+- New workspace created for each `ExecutionSession`
+- Ensures isolation but incurs full re-index cost per session
+- Rejected: too slow for iterative generation
+
+**Option C: MSBuildWorkspace (full fidelity)**
+- Loads full project via MSBuild for maximum accuracy
+- Rejected for primary path: slow startup, SDK dependency complexity
+- Acceptable for one-time diagnostics only
 
 ### detailed Schema
 
@@ -1199,7 +1234,8 @@ The Orchestrator is the deterministic "brain" that governs all operations. It en
 ```mermaid
 stateDiagram-v2
     [*] --> IDLE
-    IDLE --> SPEC_PARSED: User Prompt
+    IDLE --> AI_PLANNING: User Prompt Submitted
+    AI_PLANNING --> SPEC_PARSED: Spec Generated
     SPEC_PARSED --> TASK_GRAPH_READY: AI Planning
     TASK_GRAPH_READY --> TASK_EXECUTING: Dispatch
     TASK_EXECUTING --> VALIDATING: Patch Applied
@@ -1213,16 +1249,19 @@ stateDiagram-v2
 
 #### 6.1.1 State Definitions (Formal)
 
-| State                | Description                        | Allowed Transitions        |
-| :------------------- | :--------------------------------- | :------------------------- |
-| **IDLE**             | System waiting for user input.     | `SPEC_PARSED`              |
-| **SPEC_PARSED**      | Intent understood, spec generated. | `TASK_GRAPH_READY`         |
-| **TASK_GRAPH_READY** | DAG created, ready to execute.     | `TASK_EXECUTING`           |
-| **TASK_EXECUTING**   | Agent/Compiler working.            | `VALIDATING`               |
-| **VALIDATING**       | Checks (Tests, Build) running.     | `RETRYING`, `COMPLETED`    |
-| **RETRYING**         | Error found, attempting fix.       | `TASK_EXECUTING`, `FAILED` |
-| **COMPLETED**        | Success.                           | `IDLE`                     |
-| **FAILED**           | Max retries exhausted.             | `IDLE`                     |
+| State                | Description                                                   | Allowed Transitions        |
+| :------------------- | :------------------------------------------------------------ | :------------------------- |
+| **IDLE**             | System waiting for user input.                                | `AI_PLANNING`              |
+| **AI_PLANNING**      | Prompt submitted; workspace locked; AI context being prepared. Set immediately upon session submission in Pre-Execution Guard. | `SPEC_PARSED`              |
+| **SPEC_PARSED**      | Intent understood, spec generated.                            | `TASK_GRAPH_READY`         |
+| **TASK_GRAPH_READY** | DAG created, ready to execute.                                | `TASK_EXECUTING`           |
+| **TASK_EXECUTING**   | Agent/Compiler working.                                       | `VALIDATING`               |
+| **VALIDATING**       | Checks (Tests, Build) running.                                | `RETRYING`, `COMPLETED`    |
+| **RETRYING**         | Error found, attempting fix.                                  | `TASK_EXECUTING`, `FAILED` |
+| **COMPLETED**        | Success.                                                      | `IDLE`                     |
+| **FAILED**           | Max retries exhausted.                                        | `IDLE`                     |
+
+> **Source**: `EXECUTION_LIFECYCLE_SPECIFICATION.md` — Phase 0, Pre-Execution Guard: `_currentState = OrchestratorState.AI_PLANNING` set immediately upon session submission.
 
 **Key Responsibilities**:
 
@@ -1231,7 +1270,29 @@ stateDiagram-v2
 - **Error Classification**: Maps huge MSBuild logs to actionable error codes.
 - **Timeout Management**: Kills hung processes after 5 minutes (configurable).
 
-### 6.2 Application Data Flow
+### 6.2 The 15-Step Hidden Engine Stack
+
+The following is the complete, explicit sequential flow from user prompt to completed generation:
+
+| Step | Action | Thread |
+|------|--------|---------|
+| 1 | User submits prompt → `GenerateCommand` record created | UI Thread |
+| 2 | `GenerateCommand` enqueued to `_sessionQueue` | UI Thread |
+| 3 | `OrchestratorLoop` dequeues session | Orchestrator Thread |
+| 4 | Pre-Execution Guard: state → `AI_PLANNING`, workspace locked | Orchestrator Thread |
+| 5 | `AIContextCache.PrepareContextAsync()` loads 3 cache keys | Orchestrator Thread |
+| 6 | AI model invoked → JSON task graph produced | AI Worker Pool |
+| 7 | Schema validation; on fail → `CorrectTaskGraphAsync()` | Orchestrator Thread |
+| 8 | `TaskGraph` materialized; state → `TASK_GRAPH_READY` | Orchestrator Thread |
+| 9 | For each task node: `GeneratePatchAsync()` (semaphore-gated, max 2) | AI Worker Pool |
+| 10 | `IPatchTransaction` applies patch; `IncrementalIndexFileAsync()` | Patch Worker |
+| 11 | `BuildAsync()` executed; on fail → `ParseBuildExceptions()` → retry | Build Worker |
+| 12 | Validation pass; `SnapshotService.CreateSnapshotAsync()` | Orchestrator Thread |
+| 13 | `ProjectVersion` entity written to database | Orchestrator Thread |
+| 14 | `EventAggregator.PublishAsync(new PreviewRefreshEvent {...})` | Orchestrator Thread |
+| 15 | `_workspaceLock` released; state → `COMPLETED` | Orchestrator Thread |
+
+### 6.3 Application Data Flow
 
 ```text
 User Prompt
@@ -1344,6 +1405,28 @@ Retry patch application
 - Send context to Fix Agent
 - Attempt automatic correction
 - Fallback to code view if unrecoverable
+
+### Debouncing
+Preview updates are debounced with a 500ms delay to avoid excessive re-renders during rapid code changes.
+
+```csharp
+private DispatcherTimer _debounceTimer;
+
+private void SchedulePreviewUpdate()
+{
+    _debounceTimer?.Stop();
+    _debounceTimer = new DispatcherTimer
+    {
+        Interval = TimeSpan.FromMilliseconds(500)
+    };
+    _debounceTimer.Tick += (s, e) =>
+    {
+        _debounceTimer.Stop();
+        RefreshPreview();
+    };
+    _debounceTimer.Start();
+}
+```
 
 ---
 
@@ -2068,6 +2151,22 @@ public class SnapshotCompression
 - **Faster Restoration**: Smaller archives extract quicker
 - **Disk Space Guard**: Prevents snapshots if available space < 500MB
 
+**Snapshot Constraints (formally enforced):**
+```csharp
+private const int MaxSnapshots = 50;
+private const long MinDiskSpaceBytes = 500 * 1024 * 1024; // 500 MB
+
+// SnapshotPruner — standalone class, archives (does NOT delete) oldest snapshots
+// when count exceeds MaxSnapshots. Archives are moved to Temp/snapshot_archive/.
+public class SnapshotPruner
+{
+    public async Task PruneIfNeededAsync(string projectPath) { ... }
+}
+```
+- Hard cap: maximum **50 snapshots** per project
+- Disk guard: creation blocked if available disk space < **500 MB**
+- Pruning: `SnapshotPruner` archives (does not delete) oldest entries on cap breach
+
 ### 10.2 Execution Kernel (Deep Dive)
 
 **Overview**:
@@ -2193,6 +2292,27 @@ public async Task SubmitGenerateRequestAsync(string prompt)
 }
 ```
 
+**ExecutionSession fields:**
+- `SessionId`: Guid
+- `ProjectPath`: string  
+- `Prompt`: string
+- `RetryBudget`: int (default: 3 — maximum retry attempts per task node)
+
+**OrchestratorLoop (governing lifecycle pattern):**
+```csharp
+// Orchestrator thread — ThreadPriority.AboveNormal
+private readonly BlockingCollection<ExecutionSession> _sessionQueue = new();
+
+void OrchestratorLoop()
+{
+    foreach (var session in _sessionQueue.GetConsumingEnumerable())
+    {
+        ProcessSessionAsync(session).GetAwaiter().GetResult();
+    }
+}
+```
+Thread priority set to `ThreadPriority.AboveNormal` to ensure responsive session dispatch.
+
 #### 11.1.1 6 Named Thread Types
 
 The system uses a carefully designed threading model with 6 distinct thread types, each with specific responsibilities and constraints:
@@ -2235,6 +2355,34 @@ public record ExecuteTaskCommand(
 private readonly Channel<ExecuteTaskCommand> _orchestratorChannel = 
     Channel.CreateUnbounded<ExecuteTaskCommand>();
 ```
+
+### 11.2 Phase 1 — Spec Parsing (Orchestrator Thread)
+The GenerateCommand record is deserialized and validated. The AI model produces a structured JSON task graph. On schema validation failure, `CorrectTaskGraphAsync()` is invoked for one corrective round-trip before aborting.
+
+### 11.3 Phase 2 — Task Graph Construction (Orchestrator Thread)
+The validated JSON is materialized into a `TaskGraph` object. Dependency edges are resolved. State transitions: `SPEC_PARSED → TASK_GRAPH_READY`.
+
+### 11.4 Phase 3 — Task Execution Loop (Patch Worker + AI Worker Pool)
+Each task node is executed sequentially:
+1. AI Worker generates patch via `GeneratePatchAsync()`
+2. Patch Worker applies patch via `IPatchTransaction`
+3. Roslyn performs `IncrementalIndexFileAsync()` (mandatory between patch and build)
+4. Build Worker executes `BuildAsync()`
+5. On build failure: `ParseBuildExceptions(buildResult.Exception)` → retry or abort
+6. On retry: state transitions `TASK_EXECUTING → RETRYING → TASK_EXECUTING`
+
+### 11.5 Phase 4 — Validation (Build Worker)
+Full project build is executed. Output is validated against the original spec. State: `VALIDATING`.
+
+### 11.6 Phase 5 — Snapshot & Rollback (Orchestrator Thread)
+On success: `SnapshotService.CreateSnapshotAsync()` with `TriggerReason` recorded.
+On failure after retry budget exhausted: `SnapshotService.RollbackAsync()` → full Roslyn `IndexProjectAsync()` re-index required after rollback. State transitions to `FAILED`.
+
+### 11.7 Phase 6 — Finalization (Orchestrator Thread)
+1. `ProjectVersion` entity written to database (Id, ProjectId, SnapshotId, Description, Timestamp)
+2. `EventAggregator.PublishAsync(new PreviewRefreshEvent { ProjectPath = session.ProjectPath })` triggers Preview Service refresh
+3. Session marked `COMPLETED`
+4. Workspace lock (`_workspaceLock`) released — **Step 4 of finalization**
 
 ### 11.2 6 Boot Sequence Stages
 
@@ -2351,6 +2499,54 @@ Continuous background processes ensure system health and performance:
 | **D. AI Context Preparation** | Predictive loading | Pre-fetch likely needed context |
 | **E. Environment Validation** | Periodic checks | Verify SDK health, clear corrupted caches |
 
+**ProjectGraphSync — File System Watcher:**
+```csharp
+public class ProjectGraphSync
+{
+    private readonly FileSystemWatcher _watcher;
+
+    public ProjectGraphSync(string projectPath)
+    {
+        _watcher = new FileSystemWatcher(projectPath, "*.cs")
+        {
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
+            IncludeSubdirectories = true,
+            EnableRaisingEvents = true
+        };
+        _watcher.Changed += OnFileChanged;
+        _watcher.Created += OnFileCreated;
+        _watcher.Deleted += OnFileDeleted;
+    }
+
+    private async void OnFileChanged(object sender, FileSystemEventArgs e)
+    {
+        await _graphDb.UpdateFileMetadataAsync(e.FullPath);
+        await _roslynService.IncrementalIndexFileAsync(e.FullPath);
+    }
+    // OnFileCreated and OnFileDeleted follow same dual-call pattern
+}
+```
+Monitors `*.cs` files only. `IncludeSubdirectories = true`. Each change triggers both `UpdateFileMetadataAsync` AND `IncrementalIndexFileAsync`.
+
+**AIContextCache — Context Preparation:**
+```csharp
+public class AIContextCache
+{
+    // Three named cache keys
+    private const string ProjectSummaryKey   = "project_summary";
+    private const string DependencyGraphKey  = "dependency_graph";
+    private const string RecentChangesKey    = "recent_changes";
+
+    public async Task PrepareContextAsync(string projectPath)
+    {
+        // Step 1: Load project summary from graph DB
+        // Step 2: Serialize dependency graph edges
+        // Step 3: Collect recent file change metadata
+    }
+}
+```
+Called during `AI_PLANNING` state. Results cached under the three named keys above.
+
 ### 12.3 Operation Whitelist
 
 Only whitelisted operations are permitted from AI-generated patches:
@@ -2364,6 +2560,15 @@ private static readonly HashSet<string> AllowedOperations = new()
 ```
 
 **Security Note:** Any operation not in this list is automatically rejected, preventing potentially dangerous modifications.
+
+**OperationWhitelist.IsDependencySafe(packageName):**
+```csharp
+public bool IsDependencySafe(string packageName)
+{
+    return _approvedPackages.Contains(packageName.ToLowerInvariant());
+}
+```
+Called during Phase 3 task execution before any NuGet package addition. Packages not in the approved set are rejected without AI retry.
 
 ### 12.4 Token Budget Guard
 
@@ -2449,6 +2654,17 @@ public class AITrustBoundary
         ".git", ".vs", "bin", "obj", 
         ".metadata.json"
     };
+
+> **Note:** `*.csproj` files are intentionally excluded from `BannedDirectories` — they must remain accessible for build operations.
+
+**SandboxManager.CleanBuildArtifactsAsync():**
+```csharp
+public async Task CleanBuildArtifactsAsync(string projectPath)
+{
+    // Removes obj/, bin/ intermediate artifacts from Temp/build_workspace_*/
+    // Called after each completed or failed session
+}
+```
     
     private const long MaxFileSizeBytes = 1 * 1024 * 1024; // 1MB
     private const long MaxPatchSizeBytes = 5 * 1024 * 1024; // 5MB
@@ -2964,6 +3180,12 @@ public async Task ApplyPatchAsync(Patch patch)
     }
 }
 ```
+
+**AI Worker Concurrency Limit:**
+```csharp
+private readonly SemaphoreSlim _aiConcurrencyLimit = new SemaphoreSlim(2, 2);
+```
+Maximum **2 concurrent AI worker threads** at any time. All `GeneratePatchAsync()` calls must acquire this semaphore before invoking the model.
 
 ## 19. Local-Only Implementation Reality
 
@@ -3712,6 +3934,36 @@ Targeted modifications for the Patch Engine.
 }
 ```
 
+
+### EventAggregator
+```csharp
+public class EventAggregator
+{
+    public void Subscribe<T>(Action<T> handler) { ... }
+    public async Task PublishAsync<T>(T eventData) { ... }
+}
+```
+Cross-system event routing. Used by Orchestrator to trigger Preview Service refresh via `PreviewRefreshEvent`.
+
+### PreviewRefreshEvent
+```csharp
+public record PreviewRefreshEvent
+{
+    public string ProjectPath { get; init; }
+}
+```
+Published by Orchestrator at Phase 6 finalization. Consumed by Preview Service to trigger hot-reload.
+
+### GenerateCommand
+```csharp
+public sealed record GenerateCommand
+{
+    public Guid SessionId   { get; init; }
+    public string Prompt    { get; init; }
+    public string ProjectPath { get; init; }
+}
+```
+Immutable record. Submitted to `_sessionQueue` to initiate a generation session.
 ````
 
 ---
@@ -3811,6 +4063,26 @@ CREATE TABLE embedding_chunks (
     end_line INTEGER,
     FOREIGN KEY(embedding_id) REFERENCES embeddings(id)
 );
+
+-- Syntax nodes (required by Execution Context for Roslyn incremental indexing)
+CREATE TABLE syntax_nodes (
+    id INTEGER PRIMARY KEY,
+    file_id INTEGER NOT NULL,
+    node_kind TEXT NOT NULL,
+    start_line INTEGER,
+    end_line INTEGER,
+    snapshot_id INTEGER NOT NULL,
+    FOREIGN KEY(file_id) REFERENCES files(id)
+);
+
+-- Project Versions (timeline entries written at finalization)
+CREATE TABLE ProjectVersions (
+    Id TEXT PRIMARY KEY,
+    ProjectId TEXT NOT NULL,
+    SnapshotId TEXT NOT NULL,
+    Description TEXT,
+    Timestamp DATETIME NOT NULL
+);
 ```
 
 #### 3. Orchestrator Database (`orchestrator.db`)
@@ -3879,6 +4151,14 @@ CREATE TABLE ErrorHistory (
     FirstSeen DATETIME DEFAULT CURRENT_TIMESTAMP,
     LastSeen DATETIME DEFAULT CURRENT_TIMESTAMP,
     SuccessfulFix TEXT -- 'PATCH_JSON' that solved it
+);
+
+-- Snapshot metadata (TriggerReason required for audit trail)
+CREATE TABLE SnapshotMetadata (
+    Id TEXT PRIMARY KEY,
+    Timestamp DATETIME NOT NULL,
+    TriggerReason TEXT NOT NULL,
+    ProjectPath TEXT NOT NULL
 );
 ```
 
