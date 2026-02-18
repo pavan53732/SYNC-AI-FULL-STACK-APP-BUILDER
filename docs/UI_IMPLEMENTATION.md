@@ -129,6 +129,28 @@ public partial class App : Application
 
 ### Window Specifications
 
+```csharp
+// MainWindow.xaml.cs
+public sealed partial class MainWindow : Window
+{
+    public MainWindow()
+    {
+        InitializeComponent();
+
+        // Set window constraints
+        this.MinWidth = 1200;
+        this.MinHeight = 800;
+
+        // Set default size
+        this.Width = 1440;
+        this.Height = 900;
+
+        // Apply Mica background
+        this.SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+    }
+}
+```
+
 - **Minimum Width**: 1200px
 - **Minimum Height**: 800px
 - **Default Size**: 1440 × 900px
@@ -146,6 +168,17 @@ public partial class App : Application
 | `lg`  | 24px  | Major section spacing                    |
 | `xl`  | 32px  | Page margins                             |
 
+**ResourceDictionary Implementation**:
+```xaml
+<ResourceDictionary>
+    <x:Double x:Key="SpacingXS">4</x:Double>
+    <x:Double x:Key="SpacingSM">8</x:Double>
+    <x:Double x:Key="SpacingMD">16</x:Double>
+    <x:Double x:Key="SpacingLG">24</x:Double>
+    <x:Double x:Key="SpacingXL">32</x:Double>
+</ResourceDictionary>
+```
+
 ### Typography Scale
 
 | Style        | Size | Weight   | Usage                        |
@@ -157,6 +190,24 @@ public partial class App : Application
 | **Small**    | 12px | Regular  | Metadata, timestamps         |
 | **Code**     | 14px | Regular  | Code display (Cascadia Code) |
 
+**Style Definitions**:
+```xaml
+<Style x:Key="TitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="28"/>
+    <Setter Property="FontWeight" Value="Semibold"/>
+</Style>
+
+<Style x:Key="SubtitleStyle" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="20"/>
+    <Setter Property="FontWeight" Value="Semibold"/>
+</Style>
+
+<Style x:Key="CodeStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily" Value="Cascadia Code"/>
+    <Setter Property="FontSize" Value="14"/>
+</Style>
+```
+
 ### Color Palette — Status Indicators
 
 | State        | Color | Hex       | Behavior        |
@@ -166,7 +217,32 @@ public partial class App : Application
 | **Success**  | Green | `#107C10` | Flash 300ms     |
 | **Error**    | Red   | `#D13438` | Soft pulse      |
 
+**ResourceDictionary**:
+```xaml
+<ResourceDictionary>
+    <SolidColorBrush x:Key="StatusIdleBrush"     Color="#6B6B6B"/>
+    <SolidColorBrush x:Key="StatusBuildingBrush" Color="#0078D4"/>
+    <SolidColorBrush x:Key="StatusSuccessBrush"  Color="#107C10"/>
+    <SolidColorBrush x:Key="StatusErrorBrush"    Color="#D13438"/>
+</ResourceDictionary>
+```
+
 ### Material System
+
+**Background Brush Construction**:
+```csharp
+// Mica for main window background
+this.SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+
+// Acrylic for side panels
+var acrylicBrush = new AcrylicBrush
+{
+    TintColor = Colors.Transparent,
+    TintOpacity = 0.0,
+    TintLuminosityOpacity = 0.15,
+    FallbackColor = Colors.Transparent
+};
+```
 
 - **Main Window**: Mica BaseAlt
 - **Side Panels**: Acrylic (subtle, 15% luminosity)
@@ -238,6 +314,13 @@ public partial class App : Application
                           VerticalAlignment="Center"
                           ItemsSource="{x:Bind ViewModel.Projects, Mode=OneWay}"
                           SelectedItem="{x:Bind ViewModel.CurrentProject, Mode=TwoWay}"/>
+
+                <!-- Settings Button -->
+                <Button Content="&#xE713;"
+                        FontFamily="Segoe MDL2 Assets"
+                        Style="{StaticResource TransparentButtonStyle}"
+                        HorizontalAlignment="Right"
+                        Click="OnSettingsClick"/>
             </StackPanel>
         </Grid>
 
@@ -311,58 +394,427 @@ public partial class App : Application
 
 ## 5. Page Specifications
 
-### ProjectsPage
+### ProjectsPage.xaml
 
 **Purpose:** List and manage local workspaces
 
-Key elements:
+```xaml
+<Page x:Class="SyncAIAppBuilder.UI.Pages.ProjectsPage">
+    <Grid Padding="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
-- Header with title + CommandBar (New Project, Refresh, Delete)
-- ListView with project cards showing: icon, name, path, last modified date, health badge
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Spacing="16">
+            <TextBlock Text="Projects"
+                       Style="{StaticResource TitleTextBlockStyle}"/>
 
-### EditorPage
+            <CommandBar DefaultLabelPosition="Right">
+                <AppBarButton Icon="Add"
+                              Label="New Project"
+                              Click="{x:Bind ViewModel.CreateProject}"/>
+                <AppBarButton Icon="Refresh"
+                              Label="Refresh"
+                              Click="{x:Bind ViewModel.RefreshProjects}"/>
+                <AppBarButton Icon="Delete"
+                              Label="Delete"
+                              Click="{x:Bind ViewModel.DeleteProject}"
+                              IsEnabled="{x:Bind ViewModel.HasSelection, Mode=OneWay}"/>
+            </CommandBar>
+        </StackPanel>
+
+        <!-- Project List -->
+        <ListView Grid.Row="1"
+                  ItemsSource="{x:Bind ViewModel.Projects, Mode=OneWay}"
+                  SelectedItem="{x:Bind ViewModel.SelectedProject, Mode=TwoWay}"
+                  SelectionMode="Single">
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="models:Project">
+                    <Grid Padding="12" ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="48"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Project Icon -->
+                        <FontIcon Grid.Column="0"
+                                  Glyph="&#xE8F1;"
+                                  FontSize="32"/>
+
+                        <!-- Project Info -->
+                        <StackPanel Grid.Column="1" Spacing="4">
+                            <TextBlock Text="{x:Bind Name}"
+                                       FontWeight="SemiBold"
+                                       FontSize="16"/>
+                            <TextBlock Text="{x:Bind Path}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       FontSize="12"/>
+                            <TextBlock Text="{x:Bind LastModified, Converter={StaticResource DateTimeConverter}}"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                       FontSize="11"/>
+                        </StackPanel>
+
+                        <!-- Health Status -->
+                        <InfoBadge Grid.Column="2"
+                                   Value="{x:Bind HealthStatus}"
+                                   Severity="{x:Bind HealthSeverity}"/>
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </Grid>
+</Page>
+```
+
+### EditorPage.xaml
 
 **Purpose:** Prompt input and generation control
 
-Key elements:
+```xaml
+<Page x:Class="SyncAIAppBuilder.UI.Pages.EditorPage">
+    <Grid Padding="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
 
-- Multi-line prompt TextBox with placeholder text
-- Generation mode ComboBox + Max retries NumberBox
-- Generate (accent) and Cancel buttons
-- Active tasks ListView with progress rings
-- InfoBar progress indicator during generation
+        <!-- Prompt Editor -->
+        <StackPanel Grid.Row="0" Spacing="12">
+            <TextBlock Text="Describe your application"
+                       Style="{StaticResource SubtitleTextBlockStyle}"/>
 
-### BuildMonitorPanel
+            <TextBox x:Name="PromptInput"
+                     Text="{x:Bind ViewModel.Prompt, Mode=TwoWay}"
+                     PlaceholderText="E.g., Build a todo app with SQLite database and dark mode support..."
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     MinHeight="120"
+                     MaxHeight="300"/>
+
+            <!-- Generation Options -->
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <ComboBox Header="Generation Mode"
+                          ItemsSource="{x:Bind ViewModel.GenerationModes}"
+                          SelectedItem="{x:Bind ViewModel.SelectedMode, Mode=TwoWay}"
+                          Width="200"/>
+
+                <NumberBox Header="Max Retries"
+                           Value="{x:Bind ViewModel.MaxRetries, Mode=TwoWay}"
+                           Minimum="0"
+                           Maximum="10"
+                           Width="120"/>
+            </StackPanel>
+
+            <!-- Action Buttons -->
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Generate Application"
+                        Style="{StaticResource AccentButtonStyle}"
+                        Click="{x:Bind ViewModel.GenerateApp}"
+                        IsEnabled="{x:Bind ViewModel.CanGenerate, Mode=OneWay}">
+                    <Button.Icon>
+                        <FontIcon Glyph="&#xE768;"/>
+                    </Button.Icon>
+                </Button>
+
+                <Button Content="Cancel"
+                        Click="{x:Bind ViewModel.CancelGeneration}"
+                        IsEnabled="{x:Bind ViewModel.IsGenerating, Mode=OneWay}">
+                    <Button.Icon>
+                        <FontIcon Glyph="&#xE711;"/>
+                    </Button.Icon>
+                </Button>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Task List -->
+        <Grid Grid.Row="1" Margin="0,24,0,0">
+            <ListView ItemsSource="{x:Bind ViewModel.ActiveTasks, Mode=OneWay}"
+                      Header="Active Tasks">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="models:TaskItem">
+                        <Grid Padding="12" ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <ProgressRing Grid.Column="0"
+                                          IsActive="{x:Bind IsRunning}"
+                                          Width="24" Height="24"/>
+
+                            <StackPanel Grid.Column="1" Spacing="4">
+                                <TextBlock Text="{x:Bind Description}"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="{x:Bind Status}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           FontSize="12"/>
+                            </StackPanel>
+
+                            <TextBlock Grid.Column="2"
+                                       Text="{x:Bind RetryCount, Converter={StaticResource RetryCountConverter}}"
+                                       Foreground="{ThemeResource SystemErrorTextColor}"
+                                       Visibility="{x:Bind HasRetries}"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+
+        <!-- Progress Indicator -->
+        <InfoBar Grid.Row="2"
+                 IsOpen="{x:Bind ViewModel.IsGenerating, Mode=OneWay}"
+                 Severity="Informational"
+                 Title="Generating Application"
+                 Message="{x:Bind ViewModel.CurrentTaskDescription, Mode=OneWay}">
+            <InfoBar.Content>
+                <ProgressBar IsIndeterminate="True"/>
+            </InfoBar.Content>
+        </InfoBar>
+    </Grid>
+</Page>
+```
+
+### BuildMonitorPanel.xaml
 
 **Purpose:** Real-time orchestrator state visualization (Developer Mode)
 
-Key elements:
+```xaml
+<UserControl x:Class="SyncAIAppBuilder.UI.Components.BuildMonitorPanel">
+    <Grid Padding="16" RowSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
-- Orchestrator state icon + description
-- Current task name + progress bar + retry counter
-- Scrollable build log (Consolas font, selectable text)
+        <!-- Orchestrator State -->
+        <StackPanel Grid.Row="0" Spacing="8">
+            <TextBlock Text="Orchestrator State"
+                       Style="{StaticResource SubtitleTextBlockStyle}"/>
 
-### CodePreviewPage
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <FontIcon Grid.Column="0"
+                          Glyph="{x:Bind ViewModel.StateIcon, Mode=OneWay}"
+                          Foreground="{x:Bind ViewModel.StateColor, Mode=OneWay}"
+                          FontSize="32"/>
+
+                <StackPanel Grid.Column="1" Spacing="4">
+                    <TextBlock Text="{x:Bind ViewModel.CurrentState, Mode=OneWay}"
+                               FontSize="20"
+                               FontWeight="SemiBold"/>
+                    <TextBlock Text="{x:Bind ViewModel.StateDescription, Mode=OneWay}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
+            </Grid>
+        </StackPanel>
+
+        <!-- Current Task Info -->
+        <StackPanel Grid.Row="1" Spacing="8">
+            <TextBlock Text="Current Task"
+                       Style="{StaticResource BodyStrongTextBlockStyle}"/>
+
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Spacing="4">
+                    <TextBlock Text="{x:Bind ViewModel.CurrentTaskName, Mode=OneWay}"/>
+                    <ProgressBar Value="{x:Bind ViewModel.TaskProgress, Mode=OneWay}"
+                                 Maximum="100"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Spacing="4">
+                    <TextBlock Text="Retry Count"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               FontSize="12"/>
+                    <TextBlock Text="{x:Bind ViewModel.RetryCount, Mode=OneWay}"
+                               FontSize="24"
+                               FontWeight="Bold"
+                               Foreground="{x:Bind ViewModel.RetryCountColor, Mode=OneWay}"
+                               HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </StackPanel>
+
+        <!-- Build Log -->
+        <ScrollViewer Grid.Row="2">
+            <RichTextBlock x:Name="BuildLog"
+                           FontFamily="Consolas"
+                           FontSize="12"
+                           IsTextSelectionEnabled="True"/>
+        </ScrollViewer>
+    </Grid>
+</UserControl>
+```
+
+### CodePreviewPage.xaml
 
 **Purpose:** Read-only code viewer with syntax highlighting
 
-Key elements:
+```xaml
+<Page x:Class="SyncAIAppBuilder.UI.Pages.CodePreviewPage">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="250"/>
+            <ColumnDefinition Width="4"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
 
-- TreeView file explorer (left, 250px)
-- GridSplitter
-- Code display with file path header (Consolas, 14px)
+        <!-- File Tree -->
+        <TreeView Grid.Column="0"
+                  ItemsSource="{x:Bind ViewModel.FileTree, Mode=OneWay}"
+                  SelectionChanged="OnFileSelected">
+            <TreeView.ItemTemplate>
+                <DataTemplate x:DataType="models:FileNode">
+                    <TreeViewItem ItemsSource="{x:Bind Children}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="{x:Bind Icon}"/>
+                            <TextBlock Text="{x:Bind Name}"/>
+                        </StackPanel>
+                    </TreeViewItem>
+                </DataTemplate>
+            </TreeView.ItemTemplate>
+        </TreeView>
 
-### SettingsPage
+        <GridSplitter Grid.Column="1"/>
+
+        <!-- Code Viewer -->
+        <Grid Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- File Header -->
+            <Grid Grid.Row="0"
+                  Background="{ThemeResource LayerFillColorDefaultBrush}"
+                  Padding="16,8">
+                <TextBlock Text="{x:Bind ViewModel.CurrentFilePath, Mode=OneWay}"
+                           FontFamily="Consolas"/>
+            </Grid>
+
+            <!-- Code Display -->
+            <ScrollViewer Grid.Row="1">
+                <RichTextBlock x:Name="CodeDisplay"
+                               FontFamily="Consolas"
+                               FontSize="14"
+                               Padding="16"
+                               IsTextSelectionEnabled="True"/>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</Page>
+```
+
+### SettingsPage.xaml
 
 **Purpose:** Application configuration
 
-Key sections (Expander-based):
+```xaml
+<Page x:Class="SyncAIAppBuilder.UI.Pages.SettingsPage">
+    <ScrollViewer>
+        <StackPanel Padding="24" Spacing="24" MaxWidth="800">
 
-- AI Configuration (API key, model selection)
-- Build Configuration (retry budget, timeout)
-- Workspace path
-- SDK validation status
-- Developer Options (toggle for Developer Mode)
+            <!-- AI Configuration -->
+            <Expander Header="AI Configuration" IsExpanded="True">
+                <StackPanel Spacing="12" Padding="12">
+                    <PasswordBox Header="API Key"
+                                 Password="{x:Bind ViewModel.ApiKey, Mode=TwoWay}"
+                                 PlaceholderText="Enter your AI API key"/>
+
+                    <ComboBox Header="Model"
+                              ItemsSource="{x:Bind ViewModel.AvailableModels}"
+                              SelectedItem="{x:Bind ViewModel.SelectedModel, Mode=TwoWay}"
+                              Width="300"/>
+                </StackPanel>
+            </Expander>
+
+            <!-- Build Configuration -->
+            <Expander Header="Build Configuration">
+                <StackPanel Spacing="12" Padding="12">
+                    <NumberBox Header="Retry Budget"
+                               Value="{x:Bind ViewModel.RetryBudget, Mode=TwoWay}"
+                               Minimum="1"
+                               Maximum="20"/>
+
+                    <NumberBox Header="Build Timeout (seconds)"
+                               Value="{x:Bind ViewModel.BuildTimeout, Mode=TwoWay}"
+                               Minimum="30"
+                               Maximum="300"/>
+                </StackPanel>
+            </Expander>
+
+            <!-- Workspace Configuration -->
+            <Expander Header="Workspace">
+                <StackPanel Spacing="12" Padding="12">
+                    <TextBox Header="Workspace Path"
+                             Text="{x:Bind ViewModel.WorkspacePath, Mode=TwoWay}"
+                             IsReadOnly="True"/>
+
+                    <Button Content="Change Location"
+                            Click="{x:Bind ViewModel.ChangeWorkspacePath}"/>
+                </StackPanel>
+            </Expander>
+
+            <!-- SDK Validation -->
+            <Expander Header="SDK Status">
+                <StackPanel Spacing="12" Padding="12">
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Text="{x:Bind ViewModel.SdkVersion, Mode=OneWay}"/>
+
+                        <FontIcon Grid.Column="1"
+                                  Glyph="&#xE73E;"
+                                  Foreground="Green"
+                                  Visibility="{x:Bind ViewModel.IsSdkValid, Mode=OneWay}"/>
+                    </Grid>
+
+                    <Button Content="Validate SDK"
+                            Click="{x:Bind ViewModel.ValidateSdk}"/>
+                </StackPanel>
+            </Expander>
+
+            <!-- Developer Options -->
+            <Expander Header="Developer Options">
+                <StackPanel Spacing="12" Padding="12">
+                    <ToggleSwitch x:Name="DeveloperModeToggle"
+                                  Header="Developer Mode"
+                                  IsOn="{x:Bind ViewModel.DeveloperModeEnabled, Mode=TwoWay}"
+                                  OnContent="Enabled"
+                                  OffContent="Disabled"/>
+
+                    <InfoBar Severity="Informational"
+                             IsOpen="True"
+                             Message="Developer Mode is recommended only for debugging. Most users should keep this disabled for a cleaner experience."/>
+                </StackPanel>
+            </Expander>
+
+            <!-- Save Button -->
+            <Button Content="Save Settings"
+                    Style="{StaticResource AccentButtonStyle}"
+                    Click="{x:Bind ViewModel.SaveSettings}"
+                    HorizontalAlignment="Right"/>
+        </StackPanel>
+    </ScrollViewer>
+</Page>
+```
 
 ---
 
@@ -377,23 +829,172 @@ Key sections (Expander-based):
 | **Click**    | Shrink to 96% scale (80ms)                                    |
 | **Building** | Disabled, text "Building…", indeterminate progress bar inside |
 
+**Idle XAML**:
+```xaml
+<Button x:Name="GenerateButton"
+        Content="Generate Application"
+        Width="160"
+        Height="48"
+        CornerRadius="8"
+        Style="{StaticResource AccentButtonStyle}"/>
+```
+
+**Hover State**:
+```csharp
+private void OnGenerateButtonPointerEntered(object sender, PointerRoutedEventArgs e)
+{
+    // Increase brightness by 4%
+    var compositor = ElementCompositionPreview.GetElementVisual(GenerateButton).Compositor;
+    var brightnessEffect = new BrightnessEffect
+    {
+        Source = new CompositionEffectSourceParameter("source"),
+        BlackPoint = new Vector2(0.0f),
+        WhitePoint = new Vector2(1.04f) // +4% brightness
+    };
+
+    // Increase elevation shadow
+    GenerateButton.Translation = new Vector3(0, -2, 8);
+}
+```
+
+**Click Animation** (80ms shrink):
+```csharp
+private async void OnGenerateClick(object sender, RoutedEventArgs e)
+{
+    // Shrink to 96% scale for 80ms
+    var scaleAnimation = GenerateButton.Compositor.CreateVector3KeyFrameAnimation();
+    scaleAnimation.InsertKeyFrame(0.0f, new Vector3(1.0f, 1.0f, 1.0f));
+    scaleAnimation.InsertKeyFrame(1.0f, new Vector3(0.96f, 0.96f, 1.0f));
+    scaleAnimation.Duration = TimeSpan.FromMilliseconds(80);
+
+    GenerateButton.StartAnimation("Scale", scaleAnimation);
+    await Task.Delay(80);
+
+    // Transition to building state
+    TransitionToBuildingState();
+}
+```
+
+**Building State**:
+```csharp
+private void TransitionToBuildingState()
+{
+    GenerateButton.Content = "Building…";
+    GenerateButton.IsEnabled = false;
+
+    // Show progress bar inside button
+    var progressBar = new ProgressBar
+    {
+        IsIndeterminate = true,
+        Height = 4,
+        VerticalAlignment = VerticalAlignment.Bottom
+    };
+
+    // Add to button's visual tree
+    var grid = GenerateButton.Content as Grid;
+    grid?.Children.Add(progressBar);
+}
+```
+
 ### Status Indicator Pulse
 
-**Building State** (1.5s cycle):
+**Status Dot** (12px circle in status bar):
+```xaml
+<Ellipse x:Name="StatusDot"
+         Width="12"
+         Height="12"
+         Fill="{StaticResource StatusIdleBrush}"/>
+```
 
-- Scale: 1.0 → 1.15 → 1.0
-- Color: Blue (`#0078D4`)
-- Cubic bezier easing
+**Building State Pulse** (1.5s cycle):
+```csharp
+private void StartStatusPulse()
+{
+    var compositor = ElementCompositionPreview.GetElementVisual(StatusDot).Compositor;
+
+    // Scale animation: 1.0 → 1.15 → 1.0
+    var scaleAnimation = compositor.CreateVector3KeyFrameAnimation();
+    scaleAnimation.InsertKeyFrame(0.0f, new Vector3(1.0f, 1.0f, 1.0f));
+    scaleAnimation.InsertKeyFrame(0.5f, new Vector3(1.15f, 1.15f, 1.0f));
+    scaleAnimation.InsertKeyFrame(1.0f, new Vector3(1.0f, 1.0f, 1.0f));
+    scaleAnimation.Duration = TimeSpan.FromSeconds(1.5);
+    scaleAnimation.IterationBehavior = AnimationIterationBehavior.Forever;
+
+    // Apply cubic easing
+    var easing = compositor.CreateCubicBezierEasingFunction(
+        new Vector2(0.42f, 0.0f),
+        new Vector2(0.58f, 1.0f)
+    );
+    scaleAnimation.InsertExpressionKeyFrame(0.5f, "this.FinalValue", easing);
+
+    StatusDot.StartAnimation("Scale", scaleAnimation);
+
+    // Change color to blue
+    StatusDot.Fill = (SolidColorBrush)Resources["StatusBuildingBrush"];
+}
+```
 
 **Success Flash** (300ms):
+```csharp
+private async void ShowSuccessFlash()
+{
+    // Quick green flash
+    StatusDot.Fill = (SolidColorBrush)Resources["StatusSuccessBrush"];
 
-- Quick green flash → fade back to idle gray (200ms)
+    await Task.Delay(300);
+
+    // Fade back to idle gray over 200ms
+    var fadeAnimation = StatusDot.Compositor.CreateColorKeyFrameAnimation();
+    fadeAnimation.InsertKeyFrame(1.0f, Color.FromArgb(255, 107, 107, 107)); // #6B6B6B
+    fadeAnimation.Duration = TimeSpan.FromMilliseconds(200);
+
+    StatusDot.StartAnimation("Fill.Color", fadeAnimation);
+}
+```
 
 ### Page Transitions
 
-- **Fade out** current page: 120ms, opacity → 0
-- **Slide in** new page from right: 160ms, +100px → 0px, cubic ease-out
-- **Fade in** simultaneously: 160ms, opacity 0 → 1
+**Smooth Fade + Slide** (120ms fade out, 160ms slide in):
+```csharp
+private async Task TransitionToPage(Page newPage, Page currentPage)
+{
+    var compositor = ElementCompositionPreview.GetElementVisual(currentPage).Compositor;
+
+    // Step 1: Fade out current page (120ms)
+    var fadeOut = compositor.CreateScalarKeyFrameAnimation();
+    fadeOut.InsertKeyFrame(1.0f, 0.0f);
+    fadeOut.Duration = TimeSpan.FromMilliseconds(120);
+
+    currentPage.StartAnimation("Opacity", fadeOut);
+    await Task.Delay(120);
+
+    // Step 2: Swap pages
+    ContentFrame.Content = newPage;
+
+    // Step 3: Slide in new page from right (160ms)
+    var slideIn = compositor.CreateVector3KeyFrameAnimation();
+    slideIn.InsertKeyFrame(0.0f, new Vector3(100, 0, 0)); // Start 100px to the right
+    slideIn.InsertKeyFrame(1.0f, new Vector3(0, 0, 0));
+    slideIn.Duration = TimeSpan.FromMilliseconds(160);
+
+    // Cubic ease out
+    var easing = compositor.CreateCubicBezierEasingFunction(
+        new Vector2(0.0f, 0.0f),
+        new Vector2(0.2f, 1.0f)
+    );
+    slideIn.InsertExpressionKeyFrame(1.0f, "this.FinalValue", easing);
+
+    newPage.StartAnimation("Translation", slideIn);
+
+    // Fade in simultaneously
+    var fadeIn = compositor.CreateScalarKeyFrameAnimation();
+    fadeIn.InsertKeyFrame(0.0f, 0.0f);
+    fadeIn.InsertKeyFrame(1.0f, 1.0f);
+    fadeIn.Duration = TimeSpan.FromMilliseconds(160);
+
+    newPage.StartAnimation("Opacity", fadeIn);
+}
+```
 
 ### Silent Retry Feedback
 
@@ -403,14 +1004,44 @@ private void ShowSubtleRetryHint(int retryCount)
     if (retryCount <= 3)
     {
         // Silent - no UI change, only internal log
+        _logger.LogDebug("Retry attempt {Attempt} in progress", retryCount);
         return;
     }
 
     if (retryCount == 4)
     {
-        // Slight opacity shimmer (400ms) + subtext: "Optimizing build…"
+        // Slight opacity shimmer (400ms)
+        var shimmer = BuildStatusText.Compositor.CreateScalarKeyFrameAnimation();
+        shimmer.InsertKeyFrame(0.0f, 1.0f);
+        shimmer.InsertKeyFrame(0.5f, 0.85f);
+        shimmer.InsertKeyFrame(1.0f, 1.0f);
+        shimmer.Duration = TimeSpan.FromMilliseconds(400);
+
+        BuildStatusText.StartAnimation("Opacity", shimmer);
+
+        // Update subtext
         BuildStatusSubtext.Text = "Optimizing build…";
         BuildStatusSubtext.Visibility = Visibility.Visible;
+    }
+}
+```
+
+### Snapshot Restore (Invisible)
+
+```csharp
+private async Task RollbackToSnapshot(string snapshotId)
+{
+    // No UI flicker - seamless transition
+    await _snapshotService.RestoreAsync(snapshotId);
+
+    // Only visible if user is in Logs tab (Developer Mode)
+    if (DeveloperModeEnabled && CurrentTab == "Logs")
+    {
+        LogsPanel.AppendLine($"[INFO] Restored to stable state: {snapshotId}");
+
+        // Show diff indicator
+        DiffIndicator.Visibility = Visibility.Visible;
+        DiffIndicator.Text = "Reverted to last stable state";
     }
 }
 ```
@@ -426,9 +1057,9 @@ private void ShowSubtleRetryHint(int retryCount)
 > The UI abstracts complexity by mapping many backend states into few calm visual states.
 
 **Backend Reality**: 15+ orchestrator states
-**User Experience**: 7 simple states
+**User Experience**: 8 simple states
 
-### The 7 User-Visible States
+### The 8 User-Visible States
 
 #### 🔷 FIRST_LAUNCH
 
@@ -451,7 +1082,7 @@ private void ShowSubtleRetryHint(int retryCount)
 
 #### 🔷 BUILDING
 
-- **Trigger**: Orchestrator enters execution (maps from `SPEC_PARSED`, `TASK_GRAPH_READY`, `TASK_EXECUTING`, `VALIDATING`, `RETRYING` attempts 1-3)
+- **Trigger**: Orchestrator enters execution (maps from `SPEC_PARSED`, `TASK_GRAPH_READY`, `MUTATION_GUARD`, `PATCHING`, `INDEXING`, `TASK_EXECUTING`, `VALIDATING`, `RETRYING` attempts 1-3)
 - **UI**: "Building…" text, blue pulsing dot, soft shimmer, previous preview blurred
 - **Hidden**: Task names, retry counter, file operations, state transitions
 - **Critical**: Remain in `BUILDING` during retries 1-3 (silent recovery)
@@ -482,6 +1113,19 @@ private void ShowSubtleRetryHint(int retryCount)
 - **UI**: Warning InfoBar explaining dependency impact, Force Apply / Discard buttons
 - **→** `BUILDING` (Force Apply) or `EMPTY_IDLE` (Discard)
 
+### Orchestrator → UI State Mapping Table
+
+| UI State | Orchestrator States (Backend) |
+|----------|-------------------------------|
+| `FIRST_LAUNCH` | N/A (no orchestrator instance) |
+| `EMPTY_IDLE` | `IDLE` |
+| `TYPING` | `IDLE` (no backend change) |
+| `BUILDING` | `SPEC_PARSED`, `TASK_GRAPH_READY`, `MUTATION_GUARD`, `PATCHING`, `INDEXING`, `TASK_EXECUTING`, `VALIDATING`, `RETRYING` (attempts 1–3) |
+| `PREVIEW_READY` | `COMPLETED` |
+| `SOFT_RECOVERY` | `RETRYING` (attempts 4+) |
+| `HARD_FAILURE` | `FAILED` |
+| `INTERVENTION_REQUIRED` | `GUARD_REJECTED` |
+
 ### State Mapping
 
 ```csharp
@@ -489,17 +1133,144 @@ private UIState MapToUIState(OrchestratorState orchestratorState, int retryCount
 {
     return orchestratorState switch
     {
-        OrchestratorState.IDLE => UIState.EMPTY_IDLE,
-        OrchestratorState.SPEC_PARSED => UIState.BUILDING,
+        OrchestratorState.IDLE             => UIState.EMPTY_IDLE,
+        OrchestratorState.SPEC_PARSED      => UIState.BUILDING,
         OrchestratorState.TASK_GRAPH_READY => UIState.BUILDING,
-        OrchestratorState.TASK_EXECUTING => UIState.BUILDING,
-        OrchestratorState.VALIDATING => UIState.BUILDING,
+        OrchestratorState.MUTATION_GUARD   => UIState.BUILDING,
+        OrchestratorState.PATCHING         => UIState.BUILDING,
+        OrchestratorState.INDEXING         => UIState.BUILDING,
+        OrchestratorState.TASK_EXECUTING   => UIState.BUILDING,
+        OrchestratorState.VALIDATING       => UIState.BUILDING,
         OrchestratorState.RETRYING when retryCount <= 3 => UIState.BUILDING,
-        OrchestratorState.RETRYING when retryCount > 3 => UIState.SOFT_RECOVERY,
-        OrchestratorState.COMPLETED => UIState.PREVIEW_READY,
-        OrchestratorState.FAILED => UIState.HARD_FAILURE,
-        _ => UIState.EMPTY_IDLE
+        OrchestratorState.RETRYING when retryCount > 3  => UIState.SOFT_RECOVERY,
+        OrchestratorState.COMPLETED        => UIState.PREVIEW_READY,
+        OrchestratorState.FAILED           => UIState.HARD_FAILURE,
+        OrchestratorState.GUARD_REJECTED   => UIState.INTERVENTION_REQUIRED,
+        _                                  => UIState.EMPTY_IDLE
     };
+}
+```
+
+### ViewModel Implementation
+
+```csharp
+public class MainViewModel : ObservableObject
+{
+    private UIState _currentState = UIState.FIRST_LAUNCH;
+    private readonly IOrchestrator _orchestrator;
+    private readonly IProjectService _projectService;
+    private int _retryCount;
+
+    public UIState CurrentState
+    {
+        get => _currentState;
+        set
+        {
+            if (SetProperty(ref _currentState, value))
+            {
+                OnStateChanged(value);
+            }
+        }
+    }
+
+    private bool _developerModeEnabled;
+
+    [ObservableProperty]
+    public bool DeveloperModeEnabled
+    {
+        get => _developerModeEnabled;
+        set
+        {
+            SetProperty(ref _developerModeEnabled, value);
+            UpdateUIVisibility();
+        }
+    }
+
+    public MainViewModel(IOrchestrator orchestrator, IProjectService projectService)
+    {
+        _orchestrator = orchestrator;
+        _projectService = projectService;
+
+        // Subscribe to orchestrator events
+        _orchestrator.StateChanged += OnOrchestratorStateChanged;
+        _orchestrator.RetryAttempt += OnRetryAttempt;
+
+        // Initialize state
+        CurrentState = DetermineInitialState();
+    }
+
+    private UIState DetermineInitialState()
+    {
+        var projectCount = _projectService.GetProjectCount();
+        return projectCount == 0 ? UIState.FIRST_LAUNCH : UIState.EMPTY_IDLE;
+    }
+
+    private void OnOrchestratorStateChanged(object sender, StateChangedEvent e)
+    {
+        CurrentState = MapToUIState(e.NewState, _retryCount);
+    }
+
+    private void OnRetryAttempt(object sender, RetryEvent e)
+    {
+        _retryCount = e.AttemptNumber;
+
+        // Update UI state based on retry count
+        if (_retryCount > 3)
+        {
+            CurrentState = UIState.SOFT_RECOVERY;
+        }
+    }
+
+    private void OnStateChanged(UIState newState)
+    {
+        // Update UI elements based on state
+        UpdateGenerateButton(newState);
+        UpdateStatusDot(newState);
+        UpdatePreviewPanel(newState);
+        TriggerStateAnimation(newState);
+    }
+
+    private void UpdateUIVisibility()
+    {
+        if (DeveloperModeEnabled)
+        {
+            // Show BuildMonitorPanel in navigation
+            // Show detailed status bar info
+            // Enable advanced settings
+            UpdateNavigationItems();
+        }
+        else
+        {
+            // Hide advanced features
+            UpdateNavigationItems();
+        }
+    }
+
+    private void UpdateNavigationItems()
+    {
+        var navItems = new List<NavigationViewItem>
+        {
+            new() { Content = "Projects", Icon = new SymbolIcon(Symbol.Folder),  Tag = "projects" },
+            new() { Content = "Editor",   Icon = new SymbolIcon(Symbol.Edit),    Tag = "editor"   },
+            new() { Content = "Preview",  Icon = new SymbolIcon(Symbol.View),    Tag = "preview"  },
+            new() { Content = "Settings", Icon = new SymbolIcon(Symbol.Setting), Tag = "settings" }
+        };
+
+        // Only show Build Monitor if Developer Mode enabled
+        if (DeveloperModeEnabled)
+        {
+            navItems.Insert(3, new NavigationViewItem
+            {
+                Content = "Build Monitor",
+                Icon    = new SymbolIcon(Symbol.RepeatAll),
+                Tag     = "build"
+            });
+        }
+
+        NavView.MenuItems.Clear();
+        foreach (var item in navItems)
+            NavView.MenuItems.Add(item);
+    }
 }
 ```
 
@@ -573,6 +1344,167 @@ private UIState MapToUIState(OrchestratorState orchestratorState, int retryCount
 | `CS0103`: name doesn't exist   | "A variable name wasn't recognized. Retrying with corrections."                                              |
 | `MSB3073`: command exited      | "The build process encountered an issue. Retrying with different settings."                                  |
 
+### Failure Implementation
+
+**Tier 1 — `BuildWithSilentRetryAsync()`**:
+```csharp
+private async Task<BuildResult> BuildWithSilentRetryAsync(string projectPath)
+{
+    for (int attempt = 1; attempt <= 3; attempt++)
+    {
+        var result = await _buildService.BuildAsync(projectPath);
+
+        if (result.Success)
+        {
+            _logger.LogInformation("Build succeeded on attempt {Attempt}", attempt);
+            return result;
+        }
+
+        // Log internally, don't show to user
+        _logger.LogWarning("Build attempt {Attempt} failed: {Error}", attempt, result.Error);
+
+        // Exponential backoff
+        await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt - 1)));
+    }
+
+    // Escalate to Tier 2
+    return await HandleRecoverableFailureAsync(projectPath);
+}
+```
+
+**Tier 2 — `RecoverableFailureBar` XAML + `HandleRecoverableFailureAsync()`**:
+```xaml
+<InfoBar x:Name="RecoverableFailureBar"
+         Severity="Warning"
+         IsOpen="False"
+         Title="Build Issue Detected"
+         Message="We encountered an issue while building your app. Retrying with adjustments…">
+    <InfoBar.ActionButton>
+        <Button Content="Retry Now"
+                Click="{x:Bind ViewModel.RetryBuild}"/>
+    </InfoBar.ActionButton>
+</InfoBar>
+```
+
+```csharp
+private async Task<BuildResult> HandleRecoverableFailureAsync(string projectPath)
+{
+    // Show non-technical warning
+    RecoverableFailureBar.IsOpen = true;
+
+    // Make Logs tab available (but don't auto-open)
+    LogsTab.Visibility = Visibility.Visible;
+
+    // Try alternative build strategies
+    var strategies = new Func<Task<BuildResult>>[]
+    {
+        () => _buildService.BuildWithCleanAsync(projectPath),
+        () => _buildService.BuildWithRestoreAsync(projectPath),
+        () => _buildService.BuildWithFallbackConfigAsync(projectPath)
+    };
+
+    foreach (var strategy in strategies)
+    {
+        var result = await strategy();
+        if (result.Success)
+        {
+            RecoverableFailureBar.IsOpen = false;
+            return result;
+        }
+    }
+
+    // Escalate to Tier 3
+    return await HandleHardFailureAsync(projectPath);
+}
+```
+
+**Tier 3 — `HardFailureDialog` XAML + `HandleHardFailureAsync()`**:
+```xaml
+<ContentDialog x:Name="HardFailureDialog"
+               Title="Build Could Not Complete"
+               PrimaryButtonText="Retry"
+               SecondaryButtonText="Modify Prompt"
+               CloseButtonText="Cancel"
+               DefaultButton="ContentDialogButton.Close">
+    <StackPanel Spacing="16" Padding="24">
+        <!-- Warning Icon -->
+        <FontIcon Glyph="&#xE7BA;"
+                  FontSize="48"
+                  Foreground="{ThemeResource SystemFillColorCritical}"
+                  HorizontalAlignment="Center"/>
+
+        <!-- Main Message -->
+        <TextBlock Text="We couldn't complete this build."
+                   Style="{StaticResource SubtitleTextBlockStyle}"
+                   HorizontalAlignment="Center"/>
+
+        <!-- User-Friendly Reason -->
+        <TextBlock Text="{x:Bind ViewModel.FriendlyErrorMessage}"
+                   TextWrapping="Wrap"
+                   HorizontalAlignment="Center"/>
+
+        <!-- Technical Details (Collapsed) -->
+        <Expander Header="View Technical Details"
+                  HorizontalAlignment="Stretch">
+            <StackPanel Spacing="8" Padding="12">
+                <TextBlock Text="{x:Bind ViewModel.ErrorType}"    FontWeight="SemiBold"/>
+                <TextBlock Text="{x:Bind ViewModel.AffectedFile}"/>
+                <TextBlock Text="{x:Bind ViewModel.BuildCode}"    FontFamily="Consolas"/>
+                <TextBlock Text="{x:Bind ViewModel.RetryAttempts}"/>
+                <TextBlock Text="{x:Bind ViewModel.SnapshotId}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            </StackPanel>
+        </Expander>
+    </StackPanel>
+</ContentDialog>
+```
+
+```csharp
+private async Task<BuildResult> HandleHardFailureAsync(string projectPath)
+{
+    // Populate error details
+    ViewModel.FriendlyErrorMessage = TranslateErrorMessage(lastError);
+    ViewModel.ErrorType            = lastError.Type.ToString();
+    ViewModel.AffectedFile         = Path.GetFileName(lastError.FilePath);
+    ViewModel.BuildCode            = lastError.Code;
+    ViewModel.RetryAttempts        = $"Attempted {totalRetries} times";
+    ViewModel.SnapshotId           = await _snapshotService.GetLatestSnapshotIdAsync();
+
+    // Show dialog
+    var result = await HardFailureDialog.ShowAsync();
+
+    if (result == ContentDialogResult.Primary)
+    {
+        // User clicked Retry
+        return await BuildWithSilentRetryAsync(projectPath);
+    }
+    else if (result == ContentDialogResult.Secondary)
+    {
+        // User clicked Modify Prompt
+        NavigateToEditor();
+    }
+
+    return BuildResult.Failed(lastError);
+}
+```
+
+**`TranslateErrorMessage()` implementation**:
+```csharp
+public string TranslateErrorMessage(BuildError error)
+{
+    return error.Code switch
+    {
+        "CS0246" => "We couldn't find a required component. The system will attempt to add the missing reference automatically.",
+        "CS1061" => "There's a mismatch in the code structure. Attempting to fix automatically.",
+        "CS0103" => "A variable name wasn't recognized. Retrying with corrections.",
+        "CS0029" => "There's a type mismatch in the generated code. Adjusting automatically.",
+        "MSB3073" => "The build process encountered an issue. Retrying with different settings.",
+        "MSB4018" => "A build task failed. Attempting alternative build strategy.",
+        _        => "We encountered a build issue. Retrying with adjustments…"
+    };
+}
+```
+
 ### Anti-Terror UX Rules
 
 **Never show**:
@@ -614,6 +1546,37 @@ Enabled via Settings → Developer Options. Reveals:
 
 **Progressive Mastery**: After 3+ projects, subtly unlock History tab and Diff view with a one-time teaching tip.
 
+### `UpdateNavigationItems()` Implementation
+
+```csharp
+// MainWindow.xaml.cs — called by DeveloperModeEnabled setter
+private void UpdateNavigationItems()
+{
+    var navItems = new List<NavigationViewItem>
+    {
+        new() { Content = "Projects", Icon = new SymbolIcon(Symbol.Folder),  Tag = "projects" },
+        new() { Content = "Editor",   Icon = new SymbolIcon(Symbol.Edit),    Tag = "editor"   },
+        new() { Content = "Preview",  Icon = new SymbolIcon(Symbol.View),    Tag = "preview"  },
+        new() { Content = "Settings", Icon = new SymbolIcon(Symbol.Setting), Tag = "settings" }
+    };
+
+    // Only show Build Monitor if Developer Mode enabled
+    if (ViewModel.DeveloperModeEnabled)
+    {
+        navItems.Insert(3, new NavigationViewItem
+        {
+            Content = "Build Monitor",
+            Icon    = new SymbolIcon(Symbol.RepeatAll),
+            Tag     = "build"
+        });
+    }
+
+    NavView.MenuItems.Clear();
+    foreach (var item in navItems)
+        NavView.MenuItems.Add(item);
+}
+```
+
 ---
 
 ## 10. Onboarding & First Launch
@@ -650,6 +1613,60 @@ Enabled via Settings → Developer Options. Reveals:
 
 Small animated TeachingTip: "Your app is ready!" + subtle scale animation on preview panel (1.0 → 1.05 → 1.0, 200ms each).
 
+```csharp
+private async void CelebrateFirstSuccess()
+{
+    // Small animated toast
+    var toast = new TeachingTip
+    {
+        Title = "Your app is ready!",
+        Subtitle = "You can now preview, export, or improve it.",
+        IsLightDismissEnabled = true
+    };
+
+    await toast.ShowAsync();
+
+    // Subtle scale animation on preview
+    await PreviewPanel.ScaleAsync(1.0, 1.05, duration: 200);
+    await PreviewPanel.ScaleAsync(1.05, 1.0, duration: 200);
+}
+```
+
+### Progressive Mastery Unlock
+
+```csharp
+private void UnlockAdvancedFeatures()
+{
+    if (_projectService.GetProjectCount() >= 3)
+    {
+        // Subtle unlock
+        HistoryTab.Visibility = Visibility.Visible;
+        DiffViewTooltip.IsEnabled = true;
+
+        // Show one-time hint
+        ShowTeachingTip("Advanced features unlocked! Check Settings for Developer Mode.");
+    }
+}
+```
+
+### Empty Project State XAML
+
+If user opens a new project with no code yet:
+```xaml
+<StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+    <FontIcon Glyph="&#xE8F1;" FontSize="64" Opacity="0.3"/>
+
+    <TextBlock Text="This project doesn't have any features yet."
+               FontSize="16" Margin="0,16,0,8"/>
+
+    <TextBlock Text="Describe what you'd like to add."
+               FontSize="14"
+               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+    <Button Content="Add a Feature" Margin="0,16,0,0"/>
+</StackPanel>
+```
+
 ### Failure Psychology
 
 **❌ Never Use**: "Build failed", "Unhandled exception", red backgrounds, blame language
@@ -679,6 +1696,19 @@ Small animated TeachingTip: "Your app is ready!" + subtle scale animation on pre
 </Application.Resources>
 ```
 
+### Theme Toggle
+
+```csharp
+public void ToggleTheme()
+{
+    var currentTheme = Application.Current.RequestedTheme;
+    Application.Current.RequestedTheme =
+        currentTheme == ApplicationTheme.Light
+            ? ApplicationTheme.Dark
+            : ApplicationTheme.Light;
+}
+```
+
 ### Accessibility Requirements
 
 - All interactive elements must have `AutomationProperties.Name`
@@ -687,12 +1717,70 @@ Small animated TeachingTip: "Your app is ready!" + subtle scale animation on pre
 - Screen reader compatibility
 - Minimum touch target size: 44×44px
 
+**Example**:
+```xaml
+<Button Content="Generate"
+        AutomationProperties.Name="Generate Application Button"
+        AutomationProperties.HelpText="Starts the application generation process"
+        ToolTipService.ToolTip="Generate Application (Ctrl+G)"/>
+```
+
 ### Performance
 
 - `ListView` virtualization for large lists
 - Incremental loading for file trees
 - Lazy-load code preview content
 - All operations async with progress indication
+
+**Async Pattern**:
+```csharp
+// ✅ Good: Async with progress
+public async Task LoadProjectsAsync()
+{
+    IsLoading = true;
+    try
+    {
+        var projects = await _projectService.GetProjectsAsync();
+        Projects = new ObservableCollection<Project>(projects);
+    }
+    finally
+    {
+        IsLoading = false;
+    }
+}
+
+// ❌ Bad: Blocking UI thread
+public void LoadProjects()
+{
+    var projects = _projectService.GetProjects(); // Blocks!
+    Projects = new ObservableCollection<Project>(projects);
+}
+```
+
+### Unit Testing
+
+```csharp
+[TestClass]
+public class EditorViewModelTests
+{
+    [TestMethod]
+    public async Task GenerateApp_ValidPrompt_SendsCommand()
+    {
+        // Arrange
+        var mockOrchestrator = new Mock<IOrchestrator>();
+        var viewModel = new EditorViewModel(mockOrchestrator.Object);
+        viewModel.Prompt = "Build a todo app";
+
+        // Act
+        await viewModel.GenerateApp();
+
+        // Assert
+        mockOrchestrator.Verify(
+            o => o.SubmitCommandAsync(It.IsAny<GenerateProjectCommand>()),
+            Times.Once);
+    }
+}
+```
 
 ---
 
@@ -744,6 +1832,16 @@ public class BuildMonitorViewModel : ObservableObject
             CurrentState = e.NewState.ToString();
             StateDescription = e.Description;
             UpdateStateIcon(e.NewState);
+        });
+    }
+
+    private void OnTaskProgress(object sender, TaskProgressEvent e)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            CurrentTaskName = e.TaskName;
+            TaskProgress    = e.ProgressPercentage;
+            RetryCount      = e.RetryCount;
         });
     }
 }
