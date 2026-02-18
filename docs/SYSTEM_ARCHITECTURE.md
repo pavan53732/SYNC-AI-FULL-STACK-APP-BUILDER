@@ -93,11 +93,13 @@ Lovable feels completely "internal" and seamless, but behind the scenes it manag
 
 **Sync AI's Windows Equivalent**:
 
-- **Bundles Build Tools**: MSBuild, NuGet, and Roslyn assemblies are bundled with the app.
-- **SDK Dependency**: Requires .NET SDK installed on user's machine (validated at startup).
-- **Manages MSBuild**: Direct API calls, no `dotnet.exe` CLI usage.
+- **Bundles Build Tools**: MSBuild, NuGet, and Roslyn **assemblies** are bundled with the app (API wrappers only).
+- **SDK Dependency**: Requires **.NET SDK installed on user's machine** (validated at startup via MSBuildLocator).
+- **Manages MSBuild**: Direct API calls via bundled assemblies, which locate and use the system SDK.
 - **Wraps XAML Compilation**: Hidden behind the Preview System.
 - **Controls NuGet**: In-process restoration and caching.
+
+> **Architecture Clarification**: Sync AI does NOT bundle the full .NET SDK. It bundles the **MSBuild/NuGet/Roslyn API assemblies** that communicate with the user's installed .NET SDK. This is why the Boot Safety check validates ".NET SDK Availability" — the SDK must exist on the user's machine for the bundled build tools to function.
 
 **Users never see these tools.** They are managed entirely by the orchestrator. This "No IDE Required" model ensures that the complexity of the .NET ecosystem is fully abstracted.
 
@@ -229,7 +231,7 @@ public class ExecutionKernel
         try
         {
             var submission = _buildManager.PendBuildRequest(request);
-            submission.WaitHandle.WaitOne();  // Synchronous wait (can use Task.Run for async)
+            submission.Execute();  // Required: triggers the build execution
 
             return new BuildResult
             {
@@ -1729,8 +1731,8 @@ public class ProjectGraphService
 
 | Component         | Traditional Approach          | Sync AI Embedded Approach                           |
 | ----------------- | ----------------------------- | --------------------------------------------------- |
-| **Build**         | Shell out to `In-process MSBuild via Microsoft.Build API`   | `Microsoft.Build.Execution.BuildManager` in-process |
-| **NuGet**         | Shell out to `In-process NuGet restore via NuGet.Commands` | `NuGet.Commands.RestoreCommand` in-process          |
+| **Build**         | Shell out to `dotnet CLI`     | `Microsoft.Build.Execution.BuildManager` in-process |
+| **NuGet**         | Shell out to `dotnet CLI`     | `NuGet.Commands.RestoreCommand` in-process          |
 | **Code Analysis** | External linter               | `Microsoft.CodeAnalysis` (Roslyn) in-process        |
 | **Database**      | External DB server            | `Microsoft.Data.Sqlite` embedded                    |
 | **Preview**       | External browser              | WinUI 3 `WebView2` or XAML renderer                 |
