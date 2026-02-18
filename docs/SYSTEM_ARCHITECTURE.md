@@ -93,7 +93,8 @@ Lovable feels completely "internal" and seamless, but behind the scenes it manag
 
 **Sync AI's Windows Equivalent**:
 
-- **Embeds .NET SDK**: No "Install .NET" step for users.
+- **Bundles Build Tools**: MSBuild, NuGet, and Roslyn assemblies are bundled with the app.
+- **SDK Dependency**: Requires .NET SDK installed on user's machine (validated at startup).
 - **Manages MSBuild**: Direct API calls, no `dotnet.exe` CLI usage.
 - **Wraps XAML Compilation**: Hidden behind the Preview System.
 - **Controls NuGet**: In-process restoration and caching.
@@ -166,7 +167,7 @@ graph TD
 │  ─ Transactional code mutations, conflict detection          │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 2: Execution Kernel                                   │
-│  ─ In-process MSBuild, NuGet restore, dotnet run             │
+│  ─ In-process MSBuild, NuGet restore, app execution          │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 1: Filesystem Sandbox + SQLite Graph DB               │
 │  ─ Isolated projects, snapshots, symbol/dependency storage   │
@@ -209,10 +210,13 @@ graph TD
 ```csharp
 public class ExecutionKernel
 {
-    private readonly BuildManager _buildManager;  // Microsoft.Build
+    private readonly BuildManager _buildManager = BuildManager.DefaultBuildManager;
 
     public async Task<BuildResult> BuildAsync(string projectPath, string config)
     {
+        var stopwatch = Stopwatch.StartNew();
+        var globalProperties = new Dictionary<string, string> { { "Configuration", config } };
+
         var buildParams = new BuildParameters
         {
             MaxNodeCount = Environment.ProcessorCount,
@@ -222,16 +226,24 @@ public class ExecutionKernel
         var request = new BuildRequestData(projectPath, globalProperties, null, new[] { "Build" }, null);
 
         _buildManager.BeginBuild(buildParams);
-        var result = _buildManager.PendBuildRequest(request);
-
-        return new BuildResult
+        try
         {
-            Success = result.OverallResult == BuildResultCode.Success,
-            Errors = result.ResultsByTarget.Values
-                .SelectMany(r => r.Items.Where(i => i.ItemSpec.Contains("error")))
-                .ToList(),
-            Duration = stopwatch.Elapsed
-        };
+            var submission = _buildManager.PendBuildRequest(request);
+            submission.WaitHandle.WaitOne();  // Synchronous wait (can use Task.Run for async)
+
+            return new BuildResult
+            {
+                Success = submission.BuildResult.OverallResult == BuildResultCode.Success,
+                Errors = submission.BuildResult.ResultsByTarget.Values
+                    .SelectMany(r => r.Items.Where(i => i.ItemSpec.Contains("error")))
+                    .ToList(),
+                Duration = stopwatch.Elapsed
+            };
+        }
+        finally
+        {
+            _buildManager.EndBuild();
+        }
     }
 }
 ```
@@ -240,7 +252,7 @@ public class ExecutionKernel
 
 - `In-process NuGet restore via NuGet.Commands` → In-process NuGet restore via `NuGet.Commands`
 - `In-process MSBuild via Microsoft.Build API` → In-process MSBuild via `Microsoft.Build`
-- `dotnet run` → Managed `Process` with output capture
+- App execution via compiled assembly launch (ProcessSandbox with exe path)
 - Structured error output (not raw CLI text)
 
 #### Layer 3: Patch Engine
@@ -1091,7 +1103,7 @@ stateDiagram-v2
 - **Concurrency Control**: Enforces "One Mutation at a Time" rule.
 - **Retry Budget**: Tracks attempts (Max 3 per task, Max 10 total).
 - **Error Classification**: Maps huge MSBuild logs to actionable error codes.
-- **Timeout Management**: Kills hung processes after 60s.
+- **Timeout Management**: Kills hung processes after 5 minutes (configurable).
 
 ### 6.2 Application Data Flow
 
@@ -2103,7 +2115,7 @@ public class ExecutionSession
 
     // Lifecycle
     CancellationTokenSource CancellationToken;
-    ExecutionState CurrentState;
+    OrchestratorState CurrentState;  // Uses OrchestratorState enum (IDLE, AI_PLANNING, etc.)
 
     // Invariants
     // - Must be persisted before execution
@@ -2177,8 +2189,8 @@ public async Task<ExecutionSession> SubmitGenerateRequestAsync(string prompt)
 
 #### Phase 4: Build Execution (Build Worker)
 
-- **Command**: `In-process MSBuild via Microsoft.Build API --no-restore`
-- **Isolation**: New Process per build
+- **Command**: In-process MSBuild via `Microsoft.Build` API
+- **Isolation**: Dedicated build context (same process, isolated state)
 - **Timeout**: Hard 5-minute limit
 - **Capture**: Stdout/Stderr parsing
 - **Result**: Success or Structured Error
