@@ -62,6 +62,11 @@ C:\Users\%USER%\.syncai\workspaces\
     │   ├── Models/          # Data Entities
     │   └── Services/        # Data Access & Logic
     ├── assets/              # Images, Icons
+    ├── packaging/           # Manifests & Certificates
+    │   ├── Package.appxmanifest
+    │   └── certificate.pfx
+    ├── dist/                # Final MSIX Bundles
+    │   └── app.msixbundle
     └── [ProjectName].csproj # Project Definition
 ```
 
@@ -163,15 +168,15 @@ SyncAI acts as a wrapper around the standard MSBuild pipeline.
 3.  **Build**: `dotnet build` for the executable.
 4.  **Publish**: Prompts user for "Self-Contained" or "Framework-Dependent".
 
-### Creating an MSIX Installer
+### Automated Packaging Pipeline (Layer 2.5)
 
-To distribute the _Builder_ itself or for a user to distribute their _Generated App_:
+Sync AI abstracts the complexity of MSIX packaging:
 
-1.  **Manifest**: Ensure `Package.appxmanifest` has unique Identity and Publisher.
-2.  **Packaging Project**: Use the `wapproj` (Windows Application Packaging Project) if available, or single-project MSIX in .NET 6+.
-3.  **Command**:
+1.  **Manifest Generation**: The system procedurally generates `Package.appxmanifest`, injecting Identity, Publisher, and Visual Elements.
+2.  **Capability Inference**: It scans the code (Roslyn) to detect API usage (e.g., `Geolocation`) and automatically adds the required `<Capabilities>`.
+3.  **Appx Bundling**:
     ```powershell
-    dotnet publish -f net8.0-windows10.0.19041.0 -c Release /p:GenerateAppxPackageOnBuild=true
+    dotnet publish -f net8.0-windows10.0.19041.0 -c Release /p:GenerateAppxPackageOnBuild=true /p:AppxPackageDir=dist/
     ```
 
 ### Code Signing

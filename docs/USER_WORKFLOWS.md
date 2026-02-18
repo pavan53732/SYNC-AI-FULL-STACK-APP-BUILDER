@@ -50,7 +50,8 @@ It is not just a UI prototyping tool; it is a full-cycle software construction e
 | **Silent Auto-Fix Loop**          | Compiler errors are detected and fixed without user intervention. | MSBuild Log Parsing + Roslyn Code Fix Providers     |
 | **Live Native Preview**           | See changes instantly without manual restarts.                    | Hot Reload / Window Hosting / Shadow Copy           |
 | **Project Time Travel**           | Undo/redo entire generations or specific refinement steps.        | Snapshot System (Git-based under the hood)          |
-| **One-Click Installer**           | Generate `.msix` installers ready for the Microsoft Store.        | Windows App SDK Build Tools                         |
+| **Installer Generation**          | Every successful build produces a signed MSIX bundle.             | Windows App SDK Build Tools + MSIX                  |
+| **Permission Automation**         | APIs like Location/Camera are auto-detected and declared.         | Roslyn AST Scanning → Capability Injection          |
 | **Real Code Ownership**           | You own the C# and XAML. It's not a closed platform.              | Standard .csproj format, no proprietary lock-in     |
 
 ### The "No-Code" Illusion
@@ -82,7 +83,8 @@ It is not just a UI prototyping tool; it is a full-cycle software construction e
 3.  **Architecting**: "Designing database and UI..." (Agent planning)
 4.  **Coding**: "Writing C# and XAML..." (Code generation)
 5.  **Verifying**: "Checking for errors..." (Build & Auto-fix)
-6.  **Ready**: App is live and interactive.
+6.  **Packaging**: "Signing and bundling..." (Manifest generation)
+7.  **Ready**: App is live and interactive.
 
 ---
 
@@ -197,10 +199,12 @@ SyncAI is a **bootstrap engine**, not a walled garden.
     - Launches VS 2022 with the project.
     - _Result_: Full decoupling from SyncAI.
 
-2.  **Create Installer (.msix)**
-    - **One-Click Build**: Uses Windows App SDK build tools to package the app.
-    - **Self-Signing**: Automatically generates and trusts a self-signed certificate for local testing.
-    - **Store Ready**: Option to prepare manifest for Microsoft Store submission.
+2.  **Installer Generation (Mandatory Phase)**
+    - **Policy**: Every successful build automatically produces a signed MSIX bundle.
+    - **Automated Manifests**: Identity and Publisher fields are auto-filled.
+    - **Smart Capabilities**: Permissions (e.g., Internet, Location) are injected based on code usage.
+    - **Signing**: Automatically signs with the project-scoped certificate.
+    - **Store Ready**: Manifest is always compliant with Microsoft Store schemas.
 
 3.  **Zip Archive**
     - Clean export of source code (excluding `obj` and `bin` folders).

@@ -214,12 +214,13 @@ public sealed partial class MainWindow : Window
 
 ### Color Palette — Status Indicators
 
-| State        | Color | Hex       | Behavior        |
-| ------------ | ----- | --------- | --------------- |
-| **Idle**     | Gray  | `#6B6B6B` | Static          |
-| **Building** | Blue  | `#0078D4` | Pulse animation |
-| **Success**  | Green | `#107C10` | Flash 300ms     |
-| **Error**    | Red   | `#D13438` | Soft pulse      |
+| State         | Color  | Hex       | Behavior        |
+| ------------- | ------ | --------- | --------------- |
+| **Idle**      | Gray   | `#6B6B6B` | Static          |
+| **Building**  | Blue   | `#0078D4` | Pulse animation |
+| **Packaging** | Purple | `#881798` | Pulse animation |
+| **Success**   | Green  | `#107C10` | Flash 300ms     |
+| **Error**     | Red    | `#D13438` | Soft pulse      |
 
 **ResourceDictionary**:
 
@@ -227,6 +228,7 @@ public sealed partial class MainWindow : Window
 <ResourceDictionary>
     <SolidColorBrush x:Key="StatusIdleBrush"     Color="#6B6B6B"/>
     <SolidColorBrush x:Key="StatusBuildingBrush" Color="#0078D4"/>
+    <SolidColorBrush x:Key="StatusPackagingBrush" Color="#881798"/>
     <SolidColorBrush x:Key="StatusSuccessBrush"  Color="#107C10"/>
     <SolidColorBrush x:Key="StatusErrorBrush"    Color="#D13438"/>
 </ResourceDictionary>

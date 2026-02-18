@@ -122,6 +122,13 @@ public enum TaskType
     ADD_FILE,
     DELETE_FILE,
     REFACTOR_FILE
+    /// Packaging operations
+    GENERATE_MANIFEST,
+    INFER_CAPABILITIES,
+    CONFIGURE_PACKAGING,
+    GENERATE_CERTIFICATE,
+    SIGN_PACKAGE,
+    BUILD_MSIX
 }
 
 public enum ValidationStrategy
@@ -130,6 +137,8 @@ public enum ValidationStrategy
     XAML_COMPILE,        // Compile XAML only
     NUGET_RESTORE,       // Restore packages
     SYNTAX_CHECK_ONLY,   // Parse syntax without build
+    MANIFEST_VALIDATE,   // Validate Package.appxmanifest
+    MSIX_BUILD,          // Validate MSIX packaging
     NONE                 // No validation
 }
 
@@ -149,7 +158,11 @@ public enum ErrorType
     XAML_ERROR,          // XAML compiler error (XDGxxxx)
     NUGET_ERROR,         // NuGet restore error (NUxxxx)
     PATCH_CONFLICT,      // Roslyn patch failed to apply
-    VALIDATION_TIMEOUT   // Build took too long
+    VALIDATION_TIMEOUT,  // Build took too long
+    MANIFEST_ERROR,      // Invalid Package.appxmanifest
+    CAPABILITY_ERROR,    // Missing/Excessive capabilities
+    SIGNING_ERROR,       // Certificate or signing failure
+    PACKAGING_ERROR      // MSIX bundling failure
 }
 ```
 
@@ -215,7 +228,17 @@ public enum BuilderState
     RETRYING = 10,           // Retry in progress
     EXECUTING_TASK = 11,     // Task execution/retry in progress
     BUILD_SUCCEEDED = 12,    // All tasks completed
-    BUILD_FAILED = 13        // Unrecoverable failure
+    BUILD_FAILED = 13,       // Unrecoverable failure
+    // Packaging Phase
+    PACKAGING = 14,          // MSIX bundling & signing
+    PACKAGING_SUCCEEDED = 15, // Application ready for distribution
+    PACKAGING_FAILED = 16,    // Packaging failed
+    // Mandatory Packaging Steps
+    CAPABILITY_CHECK = 17,
+    MANIFEST_UPDATING = 18,
+    REBUILD_REQUIRED = 19,
+    SIGNING = 20,
+    SIGNATURE_VALIDATION = 21
 }
 ```
 
@@ -243,9 +266,22 @@ BUILDING                  │
 VALIDATING                │ (retry < maxRetries)
   ↓ (validation succeeds) └── RETRYING
 BUILD_SUCCEEDED               ↓ (retry < maxRetries)
-                           EXECUTING_TASK
-                              ↓ (retry >= maxRetries)
-                           BUILD_FAILED
+      ↓                        EXECUTING_TASK
+    CAPABILITY_CHECK             ↓ (retry >= maxRetries)
+      ↓ (changes detected)     BUILD_FAILED
+    MANIFEST_UPDATING
+      ↓
+    REBUILD_REQUIRED
+      ↓
+    BUILDING
+      ↓
+    PACKAGING
+      ↓
+    SIGNING
+      ↓
+    SIGNATURE_VALIDATION
+      ↓
+    PACKAGING_SUCCEEDED
 ```
 
 ---
@@ -747,6 +783,16 @@ public class RetryController
 | **SDK Not Found**   | ❌ No  | 0           | User must install    |
 | **API Key Invalid** | ❌ No  | 0           | User must fix        |
 | **Disk Full**       | ❌ No  | 0           | User must free space |
+
+    ### Packaging Retry Policy (Specific)
+
+    | Error Code | Classification | Retries | Strategy |
+    | :--- | :--- | :--- | :--- |
+    | **PKG001** | Manifest Invalid | 1 | Regenerate `Package.appxmanifest` from scratch |
+    | **PKG002** | Capability Mismatch | 1 | Inject missing capabilities via CIE |
+    | **PKG003** | Asset Missing | 1 | Generate placeholder assets |
+    | **PKG004** | Sign Failed | 0 | **FATAL**: Certificate corruption requires user intervention |
+    | **PKG005** | Identity Mismatch | 1 | Update manifest to match certificate |
 
 ---
 

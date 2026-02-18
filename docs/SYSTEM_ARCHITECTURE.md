@@ -83,98 +83,19 @@ Sync AI abstracts the entire .NET development lifecycle, just as Lovable abstrac
 3.  **Data Layer**: SQLite, Repository Pattern, Schema Migrations.
 4.  **Build System**: Hidden MSBuild, NuGet Restore, XAML Compilation.
 5.  **Runtime**: Live Preview, Hot Reload, Full Compiled Launch.
-6.  **Packaging**: MSIX Generation, Installer-ready output.
+6.  **Packaging & Permissions**:
+    - Automatic AppxManifest generation
+    - Capability inference and injection
+    - MSIX bundle generation
+    - Certificate generation and signing
+    - Version auto-increment
+    - Production-ready installer output
 
-**Mission**: To deliver a production-grade Windows application from a single prompt, with zero exposure to Visual Studio, CLI, or configuration files.
-
-### Core Philosophy
-
-> "Complexity is hidden — not absent."
-
-The user sees a simple prompt → app interface. Behind the scenes, 10+ subsystems orchestrate code generation, compilation, error recovery, and preview — all invisibly.
-
-### Architecture Principles
-
-| Principle              | Implementation                                             |
-| ---------------------- | ---------------------------------------------------------- |
-| **Local-First**        | Build & Run are 100% local; AI reasoning is cloud-assisted |
-| **Embedded Execution** | MSBuild, NuGet, Roslyn — all in-process via APIs           |
-| **Deterministic**      | State machine governs every operation                      |
-| **Reversible**         | Snapshot system enables rollback at any point              |
-| **Isolated**           | Each project runs in a sandboxed directory                 |
-| **Hidden Complexity**  | User never sees logs, retries, or internal state           |
-
-### Core Principle: The Autonomous Construction Environment
-
-> **"Fully internal" does NOT mean "no tools exist"**
->
-> It means: All tools are **embedded services**, not user-facing developer utilities.
-> Users never open an IDE, run CLI commands, or manage build systems.
-
-**The Lovable Model (Reference)**:
-Lovable feels completely "internal" and seamless, but behind the scenes it manages a Node runtime, package manager, and dev server.
-
-**Sync AI's Windows Equivalent**:
-
-- **Bundles Build Tools**: MSBuild, NuGet, and Roslyn **assemblies** are bundled with the app (API wrappers only).
-- **SDK Dependency**: Requires **.NET SDK installed on user's machine** (validated at startup via MSBuildLocator).
-- **Manages MSBuild**: Direct API calls via bundled assemblies, which locate and use the system SDK.
-- **Wraps XAML Compilation**: Hidden behind the Preview System.
-- **Controls NuGet**: In-process restoration and caching.
-
-> **Architecture Clarification**: Sync AI does NOT bundle the full .NET SDK. It bundles the **MSBuild/NuGet/Roslyn API assemblies** that communicate with the user's installed .NET SDK. This is why the Boot Safety check validates ".NET SDK Availability" — the SDK must exist on the user's machine for the bundled build tools to function.
-
-**Users never see these tools.** They are managed entirely by the orchestrator. This "No IDE Required" model ensures that the complexity of the .NET ecosystem is fully abstracted.
-
-### "No IDE Required" Philosophy
-
-The system is built as an **autonomous software construction environment**, not a developer utility.
-
-- **Zero Tooling Exposure**: Users never open Visual Studio, run `In-process MSBuild via Microsoft.Build API`, or manage NuGet manually.
-- **Embedded Services**: The .NET SDK, MSBuild, and Roslyn are **internal bundled services**, not external user tools.
-- **Developer-Free Workflow**: The Orchestrator and Patch Engine handle all file edits and debugging silently.
-- **The Goal**: A self-contained constructor where the only external dependency is the Cloud AI reasoning.
-
-#### Comparison: Sync AI vs. Lovable vs. Visual Studio
-
-| Feature          | Visual Studio    | Lovable (Web)       | Sync AI (Windows)          |
-| :--------------- | :--------------- | :------------------ | :------------------------- |
-| **Execution**    | Developer manual | Cloud Container     | **Local Embedded**         |
-| **Build System** | Explicit MSBuild | Hidden Node.js      | **Hidden MSBuild**         |
-| **State**        | Files on Disk    | Ephemeral Container | **Persistent Sandbox**     |
-| **Role**         | Tool for Humans  | Web App Builder     | **Autonomous Constructor** |
-
----
-
-## 2. The 7-Layer Architecture
-
-### High-Level Two-Layer View
-
-Before diving into the 7 layers, it's critical to understand the separation between the **UI Layer** (User Experience) and the **Kernel Layer** (Execution Logic).
-
-```mermaid
-graph TD
-    subgraph UI_Layer [User Interface Layer]
-        Prompt[Prompt Console]
-        Preview[Live Preview]
-        Timeline[Version Timeline]
-    end
-
-    subgraph Kernel_Layer [Execution Kernel Layer]
-        Orchestrator[Orchestrator Engine]
-        Roslyn[Roslyn Indexer]
-        Build[MSBuild System]
-        Sandbox[Filesystem Sandbox]
-    end
-
-    UI_Layer -->|Intent| Kernel_Layer
-    Kernel_Layer -->|Events/Status| UI_Layer
-    Kernel_Layer -->|App Output| Preview
-```
+...
 
 ### Detailed 7-Layer Stack
 
-```text
+````text
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 7: User Interface (WinUI 3 / XAML)                   │
 │  ─ Prompt input, real-time preview, version timeline         │
@@ -191,12 +112,49 @@ graph TD
 │  Layer 3: Patch Engine                                       │
 │  ─ Transactional code mutations, conflict detection          │
 ├─────────────────────────────────────────────────────────────┤
+│  Layer 2.5: Packaging & Manifest Engine                      │
+│  ─ Manifest generator, Capability inference                  │
+│  ─ MSIX bundler, Certificate manager, Signing pipeline       │
+├─────────────────────────────────────────────────────────────┤
 │  Layer 2: Execution Kernel                                   │
 │  ─ In-process MSBuild, NuGet restore, app execution          │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 1: Filesystem Sandbox + SQLite Graph DB               │
 │  ─ Isolated projects, snapshots, symbol/dependency storage   │
 └─────────────────────────────────────────────────────────────┘
+
+...
+
+## 26. Packaging & Permission Automation
+
+### Manifest Subsystem Responsibilities
+
+*   **Generate `Package.appxmanifest`**: Automatically creates the manifest with correct identity and publisher info.
+*   **Infer `<Capabilities>`**: Analyzes API usage to inject required capabilities (e.g., `internetClient`, `location`).
+*   **Inject `<uap:VisualElements>`**: Configures logos, splash screens, and tile colors from assets.
+*   **Identity Management**: Ensures Publisher ID matches the signing certificate.
+
+### Capability Inference Engine
+
+*   **Map Windows API usage → Required capability**: Uses Roslyn analysis to detect calls to restricted namespaces.
+*   **Prevent over-permissioning**: Only requests capabilities actually used by the code.
+*   **Retry build if missing capability**: If a build fails due to a missing capability, the engine identifies and injects it.
+
+### MSIX Automation
+
+*   **Generate packaging project**: Creates a `.wapproj` or generally compatible packaging layout.
+*   **Create or load signing certificate**: Auto-generates self-signed certs for dev; supports imported certs for prod.
+*   **Sign bundle**: Signs the final `.msixbundle` automatically.
+*   **Validate signature**: Verifies the signature before deployment.
+
+### Version Authority (Mandatory)
+
+```
+Single Source of Truth:
+BuilderContext.ProjectMetadata["AppVersion"]
+
+Manifest version must be derived exclusively from this value.
+Snapshots and installer versions must match.
 ```
 
 ### Layer Details
@@ -212,7 +170,7 @@ graph TD
 **Workspace Structure**:
 
 ```text
-%AppData%/SyncAI/
+%USERPROFILE%\.syncai\
 ├── Workspaces/
 │   └── {ProjectId}/
 │       ├── src/                    ← Generated code
@@ -221,6 +179,11 @@ graph TD
 │       │   ├── diff_001-002.patch
 │       │   └── diff_002-003.patch
 │       ├── .metadata.json          ← Project metadata
+│       ├── packaging/              ← Manifests & Certificates
+│       │   ├── Package.appxmanifest
+│       │   └── certificate.pfx
+│       ├── dist/                   ← Final MSIX Bundles
+│       │   └── app.msixbundle
 │       └── .build-output/          ← Compiled binaries
 ├── Temp/
 │   ├── build_workspace_001/        ← Per-build isolated workspace
@@ -235,7 +198,7 @@ graph TD
 │   └── dependency_graph/           ← Cached dependency graph data
 └── Logs/
     └── execution.log               ← Debug log (hidden from user)
-```
+````
 
 > **Source**: `EXECUTION_ARCHITECTURE.md` — Part 3.1 (Filesystem Sandbox Subsystem Architecture)
 
@@ -1169,7 +1132,8 @@ return results, build_result
   "design_patterns": ["MVVM", "Repository", "Dependency Injection"],
   "naming_conventions": {
     "models": "PascalCase",
-    "private_fields": "_camelCase"
+    "private_fields": "_camelCase",
+    "public_properties": "PascalCase"
   }
 }
 ```
@@ -2415,7 +2379,37 @@ On failure after retry budget exhausted: `SnapshotService.RollbackAsync()` → f
 3. Session marked `COMPLETED`
 4. Workspace lock (`_workspaceLock`) released — **Step 4 of finalization**
 
-### 11.2 6 Boot Sequence Stages
+### 11.8 Phase 7 — Packaging & Signing (Mandatory)
+
+This phase is mandatory for every successful generation, ensuring a deployable artifact.
+
+```text
+PATCH
+↓
+INDEX
+↓
+BUILD
+↓
+VALIDATE
+↓
+CAPABILITY_SCAN (MANDATORY)
+↓
+MANIFEST_UPDATE
+↓
+REBUILD_IF_REQUIRED
+↓
+PACKAGE
+↓
+SIGN
+↓
+VERIFY_SIGNATURE
+↓
+PACKAGING_SUCCEEDED
+```
+
+> Capability inference is mandatory for every build. Packaging is not optional.
+
+### 11.9 6 Boot Sequence Stages
 
 The application follows a strict 6-stage boot sequence to ensure all dependencies are properly initialized:
 
@@ -3786,21 +3780,36 @@ public class SmartContextRetrieval
 
 ---
 
-## 26. Future Evolution
+## 26. Architectural Stability Guarantees
 
-### Phase 2: Advanced
+This section defines the **immutable core constraints** of the system. These are not "limitations" but **intentional design choices** to guarantee privacy, determinism, and performance.
 
-- Template marketplace
-- Custom agents for domain-specific code
-- Team collaboration
-- Performance profiling
+### 26.1 The "Local-Only" Covenant
 
-### Phase 3: Production-Grade
+To ensure the "Air Gap" promise is never violated, the following architectural paths are **permanently strictly forbidden**:
 
-- Cloud compilation
-- Automated testing
-- Security scanning
-- SLA-backed reliability
+1.  **NO Web-Based Compilers**: Compilation MUST happen via the local MSBuild instance. The system will NEVER upload source code to a remote build server.
+2.  **NO Browser-Based Runtime**: The application runtime is strictly **WinUI 3 on Desktop**. We will not migrate to WASM, Blazor Server, or Electron.
+3.  **NO Centralized Database**: User data, projects, and vector indices live exclusively in `%USERPROFILE%\.syncai\`. There is no "sync to cloud" feature for project source code.
+
+### 26.2 Determinism Contract
+
+The system prioritizes **reproducibility** over flexibility:
+
+- **Fixed Toolchain**: The Orchestrator enforces specific versions of the .NET SDK.
+- **Frozen Dependency Graph**: `Directory.Packages.props` is the single source of truth for versions.
+- **Strict Serialization**: As defined in Section 18, concurrent writes are architecturally impossible via the `SemaphoreSlim` locks in `BuilderReducer`.
+
+### 26.3 Evolution Policy
+
+Future updates to SyncAI Explorer will focus strictly on:
+
+- **Intelligence Depth**: Better prompts, smarter agents, and more efficient context retrieval (RAG).
+- **Local Performance**: Faster MSBuild execution, optimized SQLite queries, and lower memory footprint.
+- **Safety Rails**: More robust error classification and auto-rollback capabilities.
+- **Native Integration**: Deeper hooks into Windows OS features (Notifications, Taskbar, File System).
+
+> **Core Principle**: "We bring the AI to the user's data; we never take the user's data to the AI."
 
 ---
 

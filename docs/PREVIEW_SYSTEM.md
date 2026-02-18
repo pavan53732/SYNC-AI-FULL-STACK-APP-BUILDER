@@ -65,43 +65,31 @@ public class PreviewService
     }
 
     // Mode 3: Full Launch (Compiled App)
-    // ⚠️ SECURITY: Requires Windows Sandbox for isolated execution
+    // Strict Policy:
+    // All full launches execute inside Windows Sandbox isolation.
+    // Direct host execution is forbidden.
+    // User consent is required before first launch.
     public async Task<Process> LaunchFullPreviewAsync(string projectPath)
     {
-        // SECURITY STEP 1: Verify Windows Sandbox is available
-        if (!IsWindowsSandboxAvailable())
-        {
-             // Fallback: Show error or require admin override (Not implemented for safety)
-             throw new SecurityException("Windows Sandbox is required for safe execution of AI-generated code.");
-        }
-
-        // SECURITY STEP 2: Show consent dialog
-        var consent = await ShowSecurityConsentDialogAsync();
-        if (!consent)
-        {
-            _logger.LogInformation("User declined to launch generated application");
-            return null;
-        }
+        // ... (Security checks omitted for brevity) ...
 
         // Step 3: Build the project
         var buildResult = await _buildService.BuildAsync(projectPath);
+        if (!buildResult.Success) throw new BuildException("Build failed", buildResult.Errors);
 
-        if (!buildResult.Success)
-        {
-            throw new BuildException("Build failed", buildResult.Errors);
-        }
+        // Step 4: Packaging & Signing (Layer 2.5)
+        // Ensure manifest is up-to-date and identity is signed
+        await _packagingService.PreparePackageAsync(projectPath);
 
-        // Step 4: Get executable path
-        var exePath = Path.Combine(
-            projectPath,
-            "bin/Debug/net8.0-windows/GeneratedApp.exe");
+        // Step 5: Get executable path (or packaged entry point)
+        // DYNAMIC RESOLUTION: Do not hardcode "bin/Debug". Use MSBuild properties or Project Context.
+        var exePath = _buildService.ResolveOutputAssemblyPath(projectPath, buildResult.Configuration);
 
-        // Step 5: Launch process in Windows Sandbox
-        // Implementation triggers .wsb file generation and execution
+        // Step 6: Launch process in Windows Sandbox
         await LaunchInSandboxAsync(exePath);
 
         _logger.LogInformation("Launched generated application in Sandbox: {ExePath}", exePath);
-        return null; // Process management handled by Sandbox
+        return null;
     }
 
     /// <summary>
@@ -127,12 +115,6 @@ public class PreviewService
                     {
                         Text = "Only proceed if you trust the generated application.",
                         TextWrapping = TextWrapping.Wrap
-                    },
-                    new InfoBar
-                    {
-                        Severity = InfoBarSeverity.Warning,
-                        IsOpen = true,
-                        Message = "Future versions will support Windows Sandbox for isolated execution."
                     }
                 }
             },
@@ -399,9 +381,10 @@ public sealed partial class PreviewPanel : UserControl
 ### Phase 3: Full Launch
 
 1. Integrate with `BuildService`
-2. Add build progress tracking
-3. Implement process lifecycle management
-4. Handle build errors and display diagnostics
+2. **Integrate properties from `PackagingService` (Manifests, Signing)**
+3. Add build progress tracking
+4. Implement process lifecycle management
+5. Handle build errors and display diagnostics
 
 ---
 
@@ -593,3 +576,4 @@ public class PreviewServiceTests
 - [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) - Build and execution subsystems
 - [USER_WORKFLOWS.md](USER_WORKFLOWS.md) - Features and user interaction patterns
 - [UI_IMPLEMENTATION.md](UI_IMPLEMENTATION.md) - UX principles
+- [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) - Packaging subsystem details

@@ -64,38 +64,19 @@ File.WriteAllText("MyClass.cs", formatted.ToFullString());
 
 ## 2. Indexing Architecture
 
-### Design Philosophy
+### Strict Indexing Policy (Mandatory)
 
-> **Lovable likely uses**: Shallow + summary + retrieval + retry loop
->
-> **You are building**: Deep semantic + deterministic + local execution
+    The system enforces two distinct indexing modes:
 
-**Enterprise-Level (Sync AI)**: Deep semantic + deterministic + local execution
+    1.  **Full Semantic Mode** (Mandatory for Mutation)
+        *   Full Roslyn AST, symbol graph, and cross-file resolution.
+        *   Required for any write operation (Patch, Refactor, Move).
 
-**Different scale. Different guarantees.**
+    2.  **Lightweight Mode** (Retrieval Only)
+        *   Regex-based, shallow symbol extraction.
+        *   Used *only* for fast intent recognition and chat context.
 
-### Hybrid Architecture (Recommended)
-
-The system uses **Enterprise-Level Core + Lovable-Level Retrieval Optimization**:
-
-1. ✅ **Full Roslyn semantic graph** (Enterprise) — Full AST, cross-file resolution
-2. ✅ **XAML binding graph** (Enterprise) — WinUI 3 binding tracking
-3. ✅ **Snapshot-aware indexing** (Enterprise) — Version-tracked graph state
-4. ✅ **Lightweight project summary** (Lovable) — Compressed context for AI
-5. ✅ **Hybrid structured + semantic retrieval** (Lovable) — Token-efficient context
-6. ✅ **Strict mutation guard** (Enterprise) — 5-layer safety before patch
-
-### Comparison
-
-| Feature           | Lovable-Level    | Enterprise-Level  |
-| ----------------- | ---------------- | ----------------- |
-| AST depth         | Shallow metadata | Full tree storage |
-| Graph depth       | Flat             | Multi-layer       |
-| Binding awareness | Minimal          | Full (XAML ↔ VM)  |
-| Impact analysis   | Basic            | Deterministic     |
-| Refactor safety   | Medium           | Strong            |
-| Token control     | Summary-based    | Graph-based       |
-| Scalability       | < 100K LOC       | 200K+ LOC         |
+    > **CRITICAL RULE**: Lightweight indexing cannot influence capability inference, the patch engine, or mutation safety guards. All architectural decisions must be derived from the Full Semantic Mode.
 
 ### Enterprise Architecture Overview
 
@@ -130,9 +111,9 @@ AI Retrieval Layer
 
 ---
 
-## 2.1 Lightweight Indexing (Lovable Mode)
+## 2.1 Lightweight Indexing
 
-For smaller projects or initial scans, we use a "shallow" index similar to Lovable/Cursor.
+    For smaller projects or initial scans, we use a "shallow" index.
 
 ### File Level Index
 
@@ -221,9 +202,9 @@ The "First Thing AI Sees" to understand the project stack.
 ```sql
 CREATE TABLE project_summary (
     id INTEGER PRIMARY KEY CHECK (id = 1), -- Singleton
-    framework TEXT NOT NULL,      -- 'React', 'WinUI', 'Blazor'
-    auth_type TEXT,               -- 'Supabase', 'Firebase', 'Identity'
-    database_type TEXT,           -- 'PostgreSQL', 'SQLite'
+    framework TEXT NOT NULL,      -- 'WinUI', 'WPF' (Hardcoded to WinUI for now)
+    auth_type TEXT,               -- 'Windows', 'EntraID', 'None'
+    database_type TEXT,           -- 'SQLite' (Mandatory unique option)
     entities TEXT,                -- JSON Array: ['User', 'Product']
     routes TEXT,                  -- JSON Array: ['/login', '/dashboard']
     api_endpoints TEXT,           -- JSON Array: ['GET /api/users']
@@ -236,13 +217,13 @@ CREATE TABLE project_summary (
 
 ```json
 {
-  "framework": "React + Vite",
-  "auth_type": "Supabase (Email/Password)",
-  "database_type": "PostgreSQL",
+  "framework": "WinUI 3 (.NET 8)",
+  "auth_type": "Windows Authentication",
+  "database_type": "SQLite",
   "entities": ["Users", "Projects", "Tasks"],
-  "routes": ["/login", "/dashboard", "/projects/:id"],
-  "api_endpoints": ["GET /api/projects", "POST /api/tasks"],
-  "ui_pages": ["LoginPage", "DashboardLayout", "TaskDetail"]
+  "routes": ["/Login", "/Dashboard", "/Projects/{id}"],
+  "api_endpoints": ["UserService.GetAll", "TaskService.Create"],
+  "ui_pages": ["LoginPage", "DashboardPage", "ProjectDetailPage"]
 }
 ```
 
@@ -647,7 +628,7 @@ CREATE TABLE files (
     hash TEXT NOT NULL,
     last_modified_utc TEXT NOT NULL,
     language TEXT NOT NULL,        -- 'cs', 'xaml', 'xml', 'json'
-    type TEXT DEFAULT 'component', -- 'component', 'api', 'model', 'config' (Lovable Mode)
+    type TEXT DEFAULT 'component', -- 'component', 'api', 'model', 'config'
     snapshot_id INTEGER NOT NULL
 );
 CREATE INDEX idx_files_snapshot ON files(snapshot_id);
@@ -804,7 +785,7 @@ CREATE TABLE graph_deltas (
     FOREIGN KEY(snapshot_id) REFERENCES snapshots(id)
 );
 
--- Lightweight Dependency Graph (Lovable Mode)
+-- Lightweight Dependency Graph
 CREATE TABLE dependencies (
     id INTEGER PRIMARY KEY,
     from_symbol_id INTEGER NOT NULL,
@@ -2373,7 +2354,52 @@ public interface IPatchEngine
 
 ---
 
-## 16. System Maturity Level
+## 16. Windows API Usage & Capability Mapping Index
+
+### Overview
+
+To ensure the generated manifest is accurate, the system maintains a dedicated index of API calls that require specific capabilities.
+
+### New Table Schema
+
+```sql
+CREATE TABLE api_usage (
+    id TEXT PRIMARY KEY,
+    file_path TEXT,
+    api_name TEXT,
+    required_capability TEXT
+);
+```
+
+### Capability Mapping Dictionary
+
+Hardcoded mapping of namespaces/classes to capability strings.
+
+```csharp
+private static readonly Dictionary<string, string> CapabilityMap = new()
+{
+    { "Windows.Storage", "broadFileSystemAccess" },
+    { "Windows.Devices.Geolocation", "location" },
+    { "Windows.Media.Capture", "webcam" },
+    { "Windows.Networking.Sockets", "internetClient" },
+    { "Windows.Devices.Bluetooth", "bluetooth" },
+    { "Windows.System.UserProfile", "userAccountInformation" }
+};
+```
+
+### Inference Algorithm
+
+1.  **Semantic Scanning**: During Roslyn indexing, the `CapabilityAnalyzer` visits all `InvocationExpressionSyntax` nodes.
+2.  **Namespace Resolution**: It resolves the symbol to its full namespace (e.g., `Windows.Media.Capture.MediaCapture`).
+3.  **Map Lookup**: Checks if the namespace prefix exists in `CapabilityMap`.
+4.  **Registration**:
+    - If match found, adds entry to `api_usage` table.
+    - Adds capability to `ProjectMetadata.RequiredCapabilities`.
+5.  **Manifest Injection**: The Manifest Engine consumes this list to generate `<Capabilities>` tags.
+
+---
+
+## 17. System Maturity Level
 
 By implementing these systems, we move beyond "template generators" to a **Deterministic Windows-Native Construction Kernel**.
 
