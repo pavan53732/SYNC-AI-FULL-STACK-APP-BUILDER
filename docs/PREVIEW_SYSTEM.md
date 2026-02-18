@@ -128,12 +128,6 @@ public class PreviewService
                     {
                         Text = "Only proceed if you trust the generated application.",
                         TextWrapping = TextWrapping.Wrap
-                    },
-                    new InfoBar
-                    {
-                        Severity = InfoBarSeverity.Warning,
-                        IsOpen = true,
-                        Message = "Future versions will support Windows Sandbox for isolated execution."
                     }
                 }
             },

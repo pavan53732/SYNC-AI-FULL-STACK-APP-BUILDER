@@ -38,7 +38,7 @@ It generates the XML structure enforcing:
 
 ### 2.2 Invariants
 
-1.  **Version Auto-Increment**: Every successful build increments `Version="x.y.z.0"`.
+1.  **Deterministic Version Increment**: Version increments **only on mutation events** (code patch, capability change, or schema break). Preview-only builds do NOT increment version.
 2.  **Identity Consistency**: Publisher ID must match the signing certificate.
 3.  **Visual Alignment**: Assets (Logos) defined in manifest must exist on disk.
 
@@ -50,7 +50,7 @@ The CIE analyzes code to determine required OS permissions, preventing runtime c
 
 ### 3.1 Inference Logic
 
-    **Critical Ordering**: Capability inference is executed **BEFORE** the first packaging attempt to prevent build failures.
+    **Critical Ordering**: Capability inference is executed **immediately after a successful build and before packaging begins**.
 
     It triggers after Roslyn indexing:
 
@@ -86,7 +86,7 @@ The CIE analyzes code to determine required OS permissions, preventing runtime c
 
 ### 4.2 Certificate Policy (Mandatory)
 
-    1.  **Strict Enforcement**: A project cannot build without a valid signing certificate.
+    1.  **Strict Enforcement**: A project cannot complete the packaging phase without a valid signing certificate.
     2.  **Auto-Generation**: If no certificate exists, the system auto-generates one.
     3.  **Identity Match**: If a certificate exists, it must match the Publisher in the manifest.
     4.  **Validation**: The certificate is validated before packaging begins.
@@ -107,7 +107,7 @@ The CIE analyzes code to determine required OS permissions, preventing runtime c
     | **Capability Change** | Increment Minor | `x.Y+1.0` | `1.0.1` → `1.1.0` |
     | **Schema Breaking** | Increment Major | `X+1.0.0` | `1.1.0` → `2.0.0` |
 
-    > **Rule**: If a build involves both a Code Patch and a Capability Change, the **highest order** increment wins (Minor). exist.
+    > **Rule**: If a build involves both a Code Patch and a Capability Change, the **highest order** increment wins (Minor).
 
 ---
 
