@@ -18,10 +18,15 @@
 6. [Error Classification & Intelligence](#6-error-classification--intelligence)
 7. [Retry Controller](#7-retry-controller)
 8. [Concurrency Rules](#8-concurrency-rules)
-9. [Validation Layer](#9-validation-layer)
-10. [Build System](#10-build-system)
-11. [Error Handling](#11-error-handling)
-12. [API Contracts](#12-api-contracts)
+9. [Build System](#9-build-system)
+10. [Error Handling](#10-error-handling)
+11. [API Contracts](#11-api-contracts)
+12. [Appendix A: Supporting Types](#appendix-a-supporting-types)
+13. [Appendix B: Implementation Sequence](#appendix-b-implementation-sequence)
+14. [Appendix C: Testing Strategy](#appendix-c-testing-strategy)
+15. [Appendix D: Why This Matters](#appendix-d-why-this-matters)
+16. [Appendix E: Design Philosophy Connection](#appendix-e-design-philosophy-connection)
+17. [Appendix F: Next Deliverables](#appendix-f-next-deliverables-in-order)
 
 ---
 
@@ -208,8 +213,9 @@ public enum BuilderState
     // Validation & Result
     VALIDATING = 9,          // Final integrity check
     RETRYING = 10,           // Retry in progress
-    BUILD_SUCCEEDED = 11,    // All tasks completed
-    BUILD_FAILED = 12        // Unrecoverable failure
+    EXECUTING_TASK = 11,     // Task execution/retry in progress
+    BUILD_SUCCEEDED = 12,    // All tasks completed
+    BUILD_FAILED = 13        // Unrecoverable failure
 }
 ```
 
@@ -473,10 +479,7 @@ public class BuilderReducer
         {
             task.Status = newState switch
             {
-                BuilderState.MUTATION_GUARD => TaskStatus.RUNNING,
-                BuilderState.PATCHING => TaskStatus.RUNNING,
-                BuilderState.INDEXING => TaskStatus.RUNNING,
-                BuilderState.BUILDING => TaskStatus.RUNNING,
+            BuilderState.EXECUTING_TASK => TaskStatus.RUNNING,
                 BuilderState.VALIDATING => TaskStatus.VALIDATING,
                 BuilderState.TASK_GRAPH_BUILT => TaskStatus.COMPLETED,
                 _ => task.Status
@@ -503,6 +506,7 @@ public class BuilderReducer
 public enum CompilerErrorCode
 {
     // C# Errors
+    CS0001, CS0002, CS0003, // Standard C# compiler errors
     CS1001, // Identifier expected
     CS0103, // Name does not exist in context
     CS1061, // Contains no definition for
@@ -510,6 +514,7 @@ public enum CompilerErrorCode
     CS1503, // Argument cannot be converted
 
     // XAML Errors
+    XDG0001, XDG0002,       // XAML design-time errors
     XDG0062, // The name already exists in the field
     XDG0049, // The property does not exist in the XML namespace
 
@@ -518,7 +523,8 @@ public enum CompilerErrorCode
     NU1102, // Unable to find package with version
 
     // MSBuild Errors
-    MSB3073 // Command exited with code
+    MSB3073, // Command exited with code
+    MSB4181  // MSBuild structural errors
 }
 ```
 
@@ -551,20 +557,118 @@ Error classification must happen **BEFORE** any retry decision is made. This ens
 ```csharp
 public class ErrorAnalyticsService
 {
+    private readonly IErrorRepository _errorRepository;
+    private readonly ILogger<ErrorAnalyticsService> _logger;
+    
+    public ErrorAnalyticsService(IErrorRepository errorRepository, ILogger<ErrorAnalyticsService> logger)
+    {
+        _errorRepository = errorRepository;
+        _logger = logger;
+    }
+    
     public void TrackError(ErrorClassification error)
     {
-        // Aggregate error statistics
-        // Identify recurring patterns
+        _errorRepository.AddAsync(new ErrorLog
+        {
+            Timestamp = DateTime.UtcNow,
+            ErrorType = error.Type.ToString(),
+            ErrorCode = error.Code?.ToString(),
+            Message = error.Message,
+            FilePath = error.FilePath,
+            LineNumber = error.LineNumber,
+            AutoFixStrategy = error.AutoFixStrategy,
+            IsRetryable = error.IsRetryable
+        });
+        
+        _logger.LogInformation("Tracked error {ErrorCode} in {FilePath}", error.Code, error.FilePath);
+    }
+    
+    public async Task<ErrorStatistics> GetErrorStatisticsAsync(TimeSpan period)
+    {
+        var since = DateTime.UtcNow - period;
+        
+        var errors = await _errorRepository.GetErrorsSinceAsync(since);
+        
+        return new ErrorStatistics
+        {
+            TotalErrors = errors.Count,
+            ErrorsByType = errors.GroupBy(e => e.ErrorType)
+                .ToDictionary(g => g.Key, g => g.Count()),
+            MostCommonError = errors.GroupBy(e => e.ErrorCode)
+                .OrderByDescending(g => g.Count())
+                .FirstOrDefault()?.Key,
+            AverageRecoveryTime = errors
+                .Where(e => e.RecoveredAt.HasValue)
+                .Average(e => (e.RecoveredAt.Value - e.OccurredAt).TotalSeconds)
+        };
     }
 }
 
 public class ErrorPatternDetector
 {
-    public string DetectPattern(List<ErrorClassification> errors)
+    private readonly IErrorPatternRepository _errorPatternRepository;
+    private readonly IErrorRepository _errorRepository;
+    
+    public ErrorPatternDetector(IErrorPatternRepository errorPatternRepository, IErrorRepository errorRepository)
     {
-        // Logic to identify systemic issues (e.g., missing dependency across multiple files)
-        return null;
+        _errorPatternRepository = errorPatternRepository;
+        _errorRepository = errorRepository;
     }
+    
+    public async Task DetectPatternsAsync()
+    {
+        var recentErrors = await _errorRepository.GetRecentErrorsAsync(100);
+        
+        // Group by error code
+        var patterns = recentErrors
+            .GroupBy(e => e.ErrorCode)
+            .Where(g => g.Count() >= 3)  // Pattern = 3+ occurrences
+            .Select(g => new ErrorPattern
+            {
+                ErrorCode = g.Key,
+                OccurrenceCount = g.Count(),
+                AffectedProjects = g.Select(e => e.ProjectId).Distinct().Count(),
+                FirstSeen = g.Min(e => e.Timestamp),
+                LastSeen = g.Max(e => e.Timestamp),
+                CommonContext = FindCommonContext(g.ToList())
+            });
+        
+        // Store patterns for AI learning
+        foreach (var pattern in patterns)
+        {
+            await _errorPatternRepository.UpsertAsync(pattern);
+        }
+    }
+    
+    private string FindCommonContext(List<ErrorLog> errors)
+    {
+        // Find common file paths or namespaces
+        var commonPaths = errors
+            .Select(e => Path.GetDirectoryName(e.FilePath))
+            .GroupBy(p => p)
+            .OrderByDescending(g => g.Count())
+            .FirstOrDefault()?.Key;
+        
+        return commonPaths ?? "Unknown";
+    }
+}
+
+public class ErrorStatistics
+{
+    public int TotalErrors { get; set; }
+    public Dictionary<string, int> ErrorsByType { get; set; }
+    public string MostCommonError { get; set; }
+    public double? AverageRecoveryTime { get; set; }
+}
+
+public class ErrorPattern
+{
+    public string ErrorCode { get; set; }
+    public int OccurrenceCount { get; set; }
+    public int AffectedProjects { get; set; }
+    public DateTime FirstSeen { get; set; }
+    public DateTime LastSeen { get; set; }
+    public string CommonContext { get; set; }
 }
 ```
 
@@ -639,7 +743,6 @@ public class RetryController
 |------------|--------|-------------|----------|
 | **Network Errors** | ✅ Yes | 3 | Exponential backoff |
 | **API Rate Limit** | ✅ Yes | 5 | Fixed delay (60s) |
-| **Syntax Errors** | ✅ Yes | 3 | AI re-generation |
 | **Build Timeout** | ✅ Yes | 1 | Increase timeout |
 | **SDK Not Found** | ❌ No | 0 | User must install |
 | **API Key Invalid** | ❌ No | 0 | User must fix |
@@ -692,7 +795,7 @@ public class ConcurrencyPolicy
         // Mutation Tasks require strict serialization if another task is executing
         // In this strict state machine, tasks execute one by one anyway.
         // This check is a safeguard against parallel execution attempts.
-        if (context.CurrentTaskId != null && IsMutationTask(incomingTask.Type))
+        if (context.State == BuilderState.EXECUTING_TASK && IsMutationTask(incomingTask.Type))
         {
             throw new InvalidOperationException(
                 "Cannot start mutation task while another task is executing. " +
@@ -706,47 +809,7 @@ public class ConcurrencyPolicy
 
 ---
 
-## 9. Validation Layer
-
-### Precondition Checkers
-
-Before existing the build or patching phase, strict preconditions must be verified.
-
-```csharp
-public class PreconditionChecker
-{
-    public void CheckPreconditions()
-    {
-        CheckSdkInstalled();
-        CheckDiskSpace();
-        CheckWorkspaceAccess();
-    }
-
-    private void CheckSdkInstalled() { /* .NET SDK check */ }
-    private void CheckDiskSpace() { /* Free space validation */ }
-    private void CheckWorkspaceAccess() { /* Write permission check */ }
-}
-```
-
-### AI Output Validation Rules
-
-Explicit validation contract block for all AI-generated content.
-
-1.  **Schema Check**: JSON output must validate against `ProjectSpec` or `TaskGraph` schema.
-2.  **Path Resolution**: All file paths must be resolved to absolute paths within the sandbox; no escaping outside.
-3.  **Dependency Integrity**: `TaskGraph` must be a valid DAG (no cycles).
-4.  **Symbol Existence**: Targeted symbols for patching must exist in the Semantic Model.
-
-### Dependency Validation (DAG)
-
-The Task Graph must be a Directed Acyclic Graph (DAG).
-
-- **Cycle Detection**: Using Kahn's algorithm or DFS.
-- **Orphan Detection**: All tasks must be reachable or have clear entry points.
-
----
-
-## 10. Build System
+## 9. Build System
 
 ### 10.1 Responsibilities
 
@@ -894,7 +957,7 @@ public class BuildError
     public string File { get; set; }
     public int LineNumber { get; set; }
     public int ColumnNumber { get; set; }
-    public BuildErrorType ErrorType { get; set; }  // e.g. CSharpCompiler
+    public ErrorType ErrorType { get; set; }  // e.g. CSharpCompiler
 }
 
 public class BuildWarning
@@ -916,71 +979,88 @@ public class RestoreResult
 
 ### 10.4 Error Classification (Build Layer)
 
-#### BuildErrorType Enum (Full Taxonomy)
+#### ErrorType Enum (Simple Taxonomy)
 
 ```csharp
-public enum BuildErrorType
+public enum ErrorType
 {
-    // C# Compiler Errors
-    CSharpCompiler,             // General CS error
-    CSharpSyntaxError,          // CS1000-1999
-    CSharpSemanticError,        // CS0000-0999
-    CSharpNullabilityWarning,   // CS8600+
-
-    // XAML Errors
-    XamlCompiler,               // General XAML error
-    XamlParseError,             // Syntax/Structure
-    XamlBindingError,           // Data binding
-    XamlResourceError,          // StaticResource missing
-
-    // NuGet Errors
-    NuGetRestore,               // General NU error
-    NuGetPackageNotFound,       // NU1101
-    NuGetVersionConflict,       // NU1107
-    NuGetRestoreFailed,         // NU1000
-
-    // MSBuild Errors
-    MSBuildInfrastructure,      // MSBxxxx
-    MSBuildProjectFileError,    // .csproj invalid
-    MSBuildTargetError,         // Target execution failed
-
-    // SDK/Env Errors
-    SdkNotFound,                // dotnet SDK missing
-    SdkVersionMismatch,         // global.json mismatch
-
-    // File System
-    ProjectFileMissing,
-    DiskFull,
-
-    // Runtime
-    Timeout,
-    Unknown
+    CSharpCompiler,         // CSxxxx
+    XamlCompiler,           // XDGxxxx, XLSxxxx
+    NuGetRestore,           // NUxxxx
+    MSBuildInfrastructure,  // MSBxxxx
+    ProjectFile,            // Missing .csproj, invalid XML
+    Timeout,                // Build exceeded time limit
+    Unknown                 // Unclassified
 }
 ```
 
-#### BuildErrorClassifier
+#### ErrorClassifier
 
 ```csharp
-public class BuildErrorClassifier
+public class ErrorClassifier
 {
-    public BuildErrorType Classify(BuildErrorEventArgs error)
+    public static ErrorClassification ClassifyBuildError(string buildOutput)
+    {
+        // Parse dotnet build output
+        
+        if (buildOutput.Contains("error CS"))
+            return new ErrorClassification
+            {
+                Type = ErrorType.BUILD_ERROR,
+                Code = ExtractErrorCode(buildOutput),
+                AutoFixStrategy = "roslyn-patch-and-retry",
+                IsRetryable = true
+            };
+        
+        if (buildOutput.Contains("XDG"))
+            return new ErrorClassification
+            {
+                Type = ErrorType.XAML_ERROR,
+                AutoFixStrategy = "xaml-syntax-fix",
+                IsRetryable = true
+            };
+        
+        if (buildOutput.Contains("NU") || buildOutput.Contains("NuGet"))
+            return new ErrorClassification
+            {
+                Type = ErrorType.NUGET_ERROR,
+                AutoFixStrategy = "nuget-restore",
+                IsRetryable = true
+            };
+        
+        return new ErrorClassification
+        {
+            Type = ErrorType.BUILD_ERROR,
+            AutoFixStrategy = "unknown-strategy",
+            IsRetryable = false
+        };
+    }
+}
+```
+
+#### ErrorClassifier
+
+```csharp
+public class ErrorClassifier
+{
+    public ErrorType Classify(BuildErrorEventArgs error)
     {
         // 1. Check Error Code first (most reliable)
         if (!string.IsNullOrEmpty(error.Code))
         {
-            if (error.Code.StartsWith("CS")) return BuildErrorType.CSharpCompiler;
-            if (error.Code.StartsWith("XDG") || error.Code.StartsWith("XLS")) return BuildErrorType.XamlCompiler;
-            if (error.Code.StartsWith("NU")) return BuildErrorType.NuGetRestore;
-            if (error.Code.StartsWith("MSB")) return BuildErrorType.MSBuildInfrastructure;
+            if (error.Code.StartsWith("CS")) return ErrorType.CSharpCompiler;
+            if (error.Code.StartsWith("XDG") || error.Code.StartsWith("XLS")) return ErrorType.XamlCompiler;
+            if (error.Code.StartsWith("NU")) return ErrorType.NuGetRestore;
+            if (error.Code.StartsWith("MSB")) return ErrorType.MSBuildInfrastructure;
         }
 
         // 2. Fallback to Project File analysis
         if (error.File != null && error.File.EndsWith(".csproj"))
         {
-            return BuildErrorType.MSBuildProjectFileError;
+            return ErrorType.ProjectFile;
         }
 
-        return BuildErrorType.Unknown;
+        return ErrorType.Unknown;
     }
 }
 ```
@@ -1063,7 +1143,7 @@ public class BuildService : IBuildService
                 return new BuildResult
                 {
                     Success = false,
-                    ErrorType = BuildErrorType.MSBuildInfrastructure,
+                    ErrorType = ErrorType.MSBuildInfrastructure,
                     ErrorMessage = ex.Message,
                     Duration = stopwatch.Elapsed
                 };
@@ -1143,6 +1223,7 @@ public class StructuredLogger : ILogger
     public List<BuildErrorEventArgs> Errors { get; } = new();
     public List<BuildWarningEventArgs> Warnings { get; } = new();
     public string FullLog { get; private set; } = string.Empty;
+    public string FullLog { get; private set; } = string.Empty;
 
     public void Initialize(IEventSource eventSource)
     {
@@ -1189,63 +1270,13 @@ public class SnapshotManager
         _logger.LogInformation("Restored snapshot: {SnapshotPath}", snapshotPath);
     }
 }
-
-### 10.7 Performance Optimization
-
-#### IncrementalBuildTracker
-
-```csharp
-public class IncrementalBuildTracker
-{
-    private readonly Dictionary<string, string> _fileHashes = new();
-    
-    public bool HasFileChanged(string filePath)
-    {
-        var currentHash = ComputeFileHash(filePath);
-        
-        if (_fileHashes.TryGetValue(filePath, out var previousHash))
-        {
-            return currentHash != previousHash;
-        }
-        
-        _fileHashes[filePath] = currentHash;
-        return true;
-    }
-    
-    private string ComputeFileHash(string filePath)
-    {
-        using var sha256 = SHA256.Create();
-        using var stream = File.OpenRead(filePath);
-        var hash = sha256.ComputeHash(stream);
-        return Convert.ToBase64String(hash);
-    }
-}
 ```
-
-#### Build Caching
-
-* Cache NuGet packages globally
-* Reuse previous build artifacts when possible
-* Track file changes to avoid unnecessary rebuilds
-* Cache Roslyn compilation results
-
-### 10.8 Isolation Model
-
-#### Workspace Isolation Rules
-
-* **Workspace-specific build directory** - Each project builds in its own directory
-* **Clear bin/obj before build** - Prevent stale artifacts
-* **No global folder writes** - All operations scoped to workspace
-* **Process must be killable** - Support cancellation
-* **No elevated permissions** - Run as standard user
-* **Memory limit enforcement** - Monitor process memory usage
-* **Timeout enforcement** - Kill process after timeout
 
 ---
 
-## 11. Error Handling
+## 10. Error Handling
 
-### 11.1 Error Handling Philosophy
+### 10.1 Error Handling Philosophy
 
 #### Core Principles
 
@@ -1264,7 +1295,7 @@ public class IncrementalBuildTracker
 | **Error** | Blocking, recoverable | Red error icon | User must resolve |
 | **Critical** | System-level failure | Red with alert | Immediate attention |
 
-### 11.2 Error Classification Taxonomy
+### 10.2 Error Classification Taxonomy
 
 All errors across the system are classified into strict enums.
 
@@ -1280,9 +1311,9 @@ public enum ErrorSeverity
 }
 ```
 
-#### BuildErrorType
+#### ErrorType
 
-(Defined in Section 10.4)
+(Defined in Section 6)
 
 #### AIErrorType
 
@@ -1297,7 +1328,7 @@ public enum AIErrorType
     ContentPolicyViolation, TokenLimitExceeded,
     // Model Errors
     ModelNotAvailable, ModelDeprecated,
-    UnknownAIError
+    Unknown
 }
 ```
 
@@ -1307,7 +1338,7 @@ public enum AIErrorType
 public enum FileSystemErrorType
 {
     PathNotFound, PathTooLong, AccessDenied, DiskFull, FileInUse, InvalidFileName,
-    SnapshotCreationFailed, SnapshotRestoreFailed, UnknownFileSystemError
+    SnapshotCreationFailed, SnapshotRestoreFailed, Unknown
 }
 ```
 
@@ -1316,8 +1347,14 @@ public enum FileSystemErrorType
 ```csharp
 public enum PatchErrorType
 {
-    TargetNotFound, SignatureMismatch, FileHashMismatch, SyntaxError, DuplicateMember,
-    ConflictDetected, ValidationFailed, UnknownPatchError
+    TargetNotFound,                 // Class/method not found
+    SignatureMismatch,              // Method signature changed
+    FileHashMismatch,               // File modified since patch created
+    SyntaxError,                    // Generated code has syntax errors
+    DuplicateMember,                // Member already exists
+    ConflictDetected,               // Merge conflict
+    ValidationFailed,               // Patch validation failed
+    UnknownPatchError
 }
 ```
 
@@ -1327,11 +1364,11 @@ public enum PatchErrorType
 public enum OrchestratorErrorType
 {
     InvalidStateTransition, TaskExecutionFailed, RetryBudgetExceeded, DependencyFailed,
-    TimeoutExceeded, CancellationRequested, UnknownOrchestratorError
+    TimeoutExceeded, CancellationRequested, Unknown
 }
 ```
 
-### 11.3 Error Recovery Services
+### 10.3 Error Recovery Services
 
 #### Build Error Recovery
 
@@ -1342,14 +1379,84 @@ public class BuildErrorRecoveryService
     {
         return error.ErrorType switch
         {
-            BuildErrorType.CSharpSyntaxError => await RecoverFromSyntaxErrorAsync(error),
-            BuildErrorType.XamlParseError => await RecoverFromXamlErrorAsync(error),
-            BuildErrorType.NuGetPackageNotFound => await RecoverFromNuGetErrorAsync(error),
-            BuildErrorType.Timeout => await RecoverFromTimeoutAsync(error),
+            ErrorType.CSharpCompiler => await RecoverFromSyntaxErrorAsync(error),
+            ErrorType.XamlCompiler => await RecoverFromXamlErrorAsync(error),
+            ErrorType.NuGetRestore => await RecoverFromNuGetErrorAsync(error),
+            ErrorType.Timeout => await RecoverFromTimeoutAsync(error),
             _ => RecoveryResult.Failed("No recovery strategy available")
         };
     }
-    // Implementation details omitted for brevity
+    
+    private async Task<RecoveryResult> RecoverFromSyntaxErrorAsync(BuildError error)
+    {
+        // 1. Extract error context
+        var context = await ExtractErrorContextAsync(error);
+        
+        // 2. Ask AI to fix
+        var fixPrompt = $@"
+            The following code has a syntax error:
+            
+            File: {error.FilePath}
+            Line: {error.LineNumber}
+            Error: {error.Message}
+            
+            Code context:
+            {context}
+            
+            Please provide a patch to fix this error.
+        ";
+        
+        var patch = await _aiEngine.GeneratePatchAsync(fixPrompt);
+        
+        // 3. Apply patch
+        var result = await _patchEngine.ApplyPatchAsync(patch);
+        
+        if (result.Success)
+        {
+            return RecoveryResult.Success("Syntax error fixed automatically");
+        }
+        
+        return RecoveryResult.Failed("Unable to fix syntax error automatically");
+    }
+    
+    private async Task<RecoveryResult> RecoverFromNuGetErrorAsync(BuildError error)
+    {
+        // Extract package name from error message
+        var packageName = ExtractPackageName(error.Message);
+        
+        // Try to find alternative package version
+        var availableVersions = await _nugetService.GetAvailableVersionsAsync(packageName);
+        
+        if (availableVersions.Any())
+        {
+            var latestStable = availableVersions
+                .Where(v => !v.IsPrerelease)
+                .OrderByDescending(v => v.Version)
+                .FirstOrDefault();
+            
+            if (latestStable != null)
+            {
+                // Update package reference
+                await _projectService.UpdatePackageVersionAsync(packageName, latestStable.Version);
+                return RecoveryResult.Success($"Updated {packageName} to version {latestStable.Version}");
+            }
+        }
+        
+        return RecoveryResult.Failed($"Package {packageName} not found in NuGet");
+    }
+}
+
+public class RecoveryResult
+{
+    public bool Success { get; set; }
+    public string Message { get; set; }
+    public object Data { get; set; }
+    
+    public static RecoveryResult Success(string message, object data = null) =>
+        new RecoveryResult { Success = true, Message = message, Data = data };
+    
+    public static RecoveryResult Failed(string message) =>
+        new RecoveryResult { Success = false, Message = message };
 }
 ```
 
@@ -1386,14 +1493,14 @@ public class SnapshotRollbackService
 }
 ```
 
-### 11.4 User-Facing Error Messages
+### 10.4 User-Facing Error Messages
 
 ```csharp
 public class ErrorMessageProvider
 {
-    private readonly Dictionary<BuildErrorType, ErrorMessageTemplate> _buildErrorMessages = new()
+    private readonly Dictionary<ErrorType, ErrorMessageTemplate> _buildErrorMessages = new()
     {
-        [BuildErrorType.CSharpSyntaxError] = new ErrorMessageTemplate
+        [ErrorType.CSharpCompiler] = new ErrorMessageTemplate
         {
             Title = "Code Syntax Error",
             Message = "There's a syntax error in the generated code.",
@@ -1401,26 +1508,140 @@ public class ErrorMessageProvider
             Icon = "Error",
             Severity = ErrorSeverity.Error
         },
-        // Additional templates...
+        
+        [ErrorType.ProjectFile] = new ErrorMessageTemplate
+        {
+            Title = ".NET SDK Required",
+            Message = "The .NET 8.0 SDK is not installed on your system.",
+            UserAction = "Please download and install the .NET 8.0 SDK from the link below.",
+            ActionButton = new ActionButton
+            {
+                Text = "Download .NET SDK",
+                Url = "https://dotnet.microsoft.com/download/dotnet/8.0"
+            },
+            Icon = "Warning",
+            Severity = ErrorSeverity.Critical
+        },
+        
+        [ErrorType.Timeout] = new ErrorMessageTemplate
+        {
+            Title = "Build Timeout",
+            Message = "The build is taking longer than expected.",
+            UserAction = "The system will retry with a longer timeout. For complex projects, this may take a few minutes.",
+            Icon = "Clock",
+            Severity = ErrorSeverity.Warning
+        }
     };
 
-    public ErrorMessageTemplate GetMessageTemplate(BuildErrorType errorType)
+    public ErrorMessageTemplate GetMessageTemplate(ErrorType errorType)
     {
         return _buildErrorMessages.TryGetValue(errorType, out var template)
             ? template
             : GetDefaultTemplate();
     }
+    
+    private ErrorMessageTemplate GetDefaultTemplate() => new()
+    {
+        Title = "Unexpected Error",
+        Message = "An unexpected error occurred.",
+        UserAction = "Please try again. If the problem persists, check the logs for more details.",
+        Icon = "Error",
+        Severity = ErrorSeverity.Error
+    };
+}
+
+public class ErrorMessageTemplate
+{
+    public string Title { get; set; }
+    public string Message { get; set; }
+    public string UserAction { get; set; }
+    public ActionButton ActionButton { get; set; }
+    public string Icon { get; set; }
+    public ErrorSeverity Severity { get; set; }
+}
+
+public class ActionButton
+{
+    public string Text { get; set; }
+    public string Url { get; set; }
+    public Action OnClick { get; set; }
 }
 ```
 
-### 11.5 Logging & Wiring Strategy
+#### Error Dialog UI
+
+```xaml
+<ContentDialog x:Name="ErrorDialog"
+               Title="{x:Bind ViewModel.ErrorTitle}"
+               PrimaryButtonText="{x:Bind ViewModel.PrimaryButtonText}"
+               CloseButtonText="Close">
+    <StackPanel Spacing="16">
+        <!-- Error Icon -->
+        <FontIcon Glyph="{x:Bind ViewModel.ErrorIcon}"
+                  FontSize="48"
+                  Foreground="{x:Bind ViewModel.ErrorColor}"/>
+        
+        <!-- Error Message -->
+        <TextBlock Text="{x:Bind ViewModel.ErrorMessage}"
+                   TextWrapping="Wrap"
+                   Style="{StaticResource BodyTextBlockStyle}"/>
+        
+        <!-- User Action -->
+        <InfoBar Severity="{x:Bind ViewModel.Severity}"
+                 IsOpen="True"
+                 Title="What to do next"
+                 Message="{x:Bind ViewModel.UserAction}"/>
+        
+        <!-- Action Button (if applicable) -->
+        <HyperlinkButton Content="{x:Bind ViewModel.ActionButtonText}"
+                         NavigateUri="{x:Bind ViewModel.ActionButtonUrl}"
+                         Visibility="{x:Bind ViewModel.HasActionButton}"/>
+        
+        <!-- Technical Details (Expandable) -->
+        <Expander Header="Technical Details"
+                  IsExpanded="False">
+            <ScrollViewer MaxHeight="200">
+                <TextBlock Text="{x:Bind ViewModel.TechnicalDetails}"
+                           FontFamily="Consolas"
+                           FontSize="12"
+                           IsTextSelectionEnabled="True"/>
+            </ScrollViewer>
+        </Expander>
+    </StackPanel>
+</ContentDialog>
+```
+
+### 10.5 Logging & Wiring Strategy
 
 ```csharp
 public class ErrorLogger
 {
-    public void LogError(Exception ex, ErrorSeverity severity, Dictionary<string,object> context)
+    private readonly ILogger _logger;
+    
+    public void LogError(Exception ex, string message, params object[] args)
     {
-        // Integration with Structured Logging
+        // Log to file
+        _logger.LogError(ex, message, args);
+        
+        // Log to database for analytics
+        _errorRepository.AddAsync(new ErrorLog
+        {
+            Timestamp = DateTime.UtcNow,
+            Level = "Error",
+            Message = string.Format(message, args),
+            Exception = ex.ToString(),
+            StackTrace = ex.StackTrace
+        });
+    }
+    
+    public void LogWarning(string message, params object[] args)
+    {
+        _logger.LogWarning(message, args);
+    }
+    
+    public void LogInfo(string message, params object[] args)
+    {
+        _logger.LogInformation(message, args);
     }
 }
 
@@ -1431,7 +1652,6 @@ public class GlobalExceptionHandler
         // Catch unhandled exceptions
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
-        Application.Current.UnhandledException += OnApplicationUnhandledException;
     }
     
     private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
@@ -1473,7 +1693,7 @@ public class GlobalExceptionHandler
 }
 ```
 
-### 11.6 Circuit Breaker
+### 10.6 Circuit Breaker
 
 ```csharp
 public class CircuitBreaker
@@ -1481,27 +1701,59 @@ public class CircuitBreaker
     private int _failureCount;
     private DateTime _lastFailureTime;
     private CircuitState _state = CircuitState.Closed;
-
+    
+    private readonly int _failureThreshold = 5;
+    private readonly TimeSpan _timeout = TimeSpan.FromMinutes(1);
+    
     public async Task<T> ExecuteAsync<T>(Func<Task<T>> operation)
     {
-        if (_state == CircuitState.Open) throw new CircuitBreakerOpenException("Circuit breaker is open");
+        if (_state == CircuitState.Open)
+        {
+            if (DateTime.UtcNow - _lastFailureTime > _timeout)
+            {
+                _state = CircuitState.HalfOpen;
+            }
+            else
+            {
+                throw new CircuitBreakerOpenException("Circuit breaker is open");
+            }
+        }
+        
         try
         {
             var result = await operation();
-            if (_state == CircuitState.HalfOpen) { _state = CircuitState.Closed; _failureCount = 0; }
+            
+            if (_state == CircuitState.HalfOpen)
+            {
+                _state = CircuitState.Closed;
+                _failureCount = 0;
+            }
+            
             return result;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             _failureCount++;
-            if (_failureCount >= 5) _state = CircuitState.Open;
+            _lastFailureTime = DateTime.UtcNow;
+            
+            if (_failureCount >= _failureThreshold)
+            {
+                _state = CircuitState.Open;
+            }
+            
             throw;
-        }
         }
     }
 }
 
-### 11.7 Error Prevention
+public enum CircuitState
+{
+    Closed,     // Normal operation
+    Open,       // Failing, reject all requests
+    HalfOpen    // Testing if service recovered
+}
+
+### 10.7 Error Prevention
 
 #### Input Validation
 
@@ -1521,18 +1773,17 @@ public class InputValidator
         
         return ValidationResult.Success();
     }
+}
+
+public class ValidationResult
+{
+    public bool IsValid { get; set; }
+    public string Message { get; set; }
+    public bool IsWarning { get; set; }
     
-    public ValidationResult ValidateProjectName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            return ValidationResult.Error("Project name cannot be empty");
-        
-        var invalidChars = Path.GetInvalidFileNameChars();
-        if (name.Any(c => invalidChars.Contains(c)))
-            return ValidationResult.Error("Project name contains invalid characters");
-        
-        return ValidationResult.Success();
-    }
+    public static ValidationResult Success() => new ValidationResult { IsValid = true };
+    public static ValidationResult Error(string message) => new ValidationResult { IsValid = false, Message = message };
+    public static ValidationResult Warning(string message) => new ValidationResult { IsValid = true, IsWarning = true, Message = message };
 }
 ```
 
@@ -1564,12 +1815,43 @@ public class PreconditionChecker
             ? PreconditionResult.Failed(issues)
             : PreconditionResult.Success();
     }
+    
+    private async Task<List<string>> FindLockedFilesAsync(string projectPath)
+    {
+        var lockedFiles = new List<string>();
+        var files = Directory.GetFiles(projectPath, "*.cs", SearchOption.AllDirectories)
+            .Concat(Directory.GetFiles(projectPath, "*.csproj", SearchOption.AllDirectories));
+        
+        foreach (var file in files)
+        {
+            try
+            {
+                using var stream = File.Open(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException)
+            {
+                lockedFiles.Add(file);
+            }
+        }
+        
+        return lockedFiles;
+    }
+}
+
+public class PreconditionResult
+{
+    public bool Success { get; set; }
+    public List<string> Issues { get; set; } = new List<string>();
+    
+    public static PreconditionResult Success() => new PreconditionResult { Success = true };
+    public static PreconditionResult Failed(List<string> issues) => new PreconditionResult { Success = false, Issues = issues };
+    public static PreconditionResult Failed(string issue) => new PreconditionResult { Success = false, Issues = new List<string> { issue } };
 }
 ```
 
 ---
 
-## 12. API Contracts
+## 11. API Contracts
 
 ### Part 1: Internal Service Interfaces
 
@@ -1687,7 +1969,6 @@ public interface IExecutionKernel
         "database": { "enum": ["SQLite", "None"] }
       }
     },
-    "template": { "enum": ["winui-mvvm", "console", "classlib"] },
     "features": {
       "type": "array",
       "items": { "enum": ["sqlite", "navigation", "dependency-injection", "settings"] }
@@ -1710,23 +1991,181 @@ public interface IExecutionKernel
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "type", "description"],
+        "required": ["id", "type", "description", "targetFiles", "dependsOn"],
         "properties": {
           "id": { "type": "string" },
           "type": { "enum": ["INFRASTRUCTURE", "MODEL", "SERVICE", "UI", "INTEGRATION", "FIX"] },
           "description": { "type": "string" },
-          "validationStrategy": { "enum": ["COMPILE", "UNIT_TEST", "XAML_PARSE"] },
-          "dependsOn": {
-            "type": "array",
-            "items": { "type": "string" }
-          },
-          "targetFiles": {
-            "type": "array",
-            "items": { "type": "string" }
-          }
+          "targetFiles": { "type": "array", "items": { "type": "string" } },
+          "dependsOn": { "type": "array", "items": { "type": "string" } },
+          "validationStrategy": { "enum": ["COMPILE", "UNIT_TEST", "XAML_PARSE"] }
         }
       }
     }
   }
 }
 ```
+
+---
+
+## Appendix A: Supporting Types
+
+### TaskResult Class
+
+```csharp
+public class TaskResult
+{
+    public bool Success { get; set; }
+    public string TaskId { get; set; }
+    public TimeSpan Duration { get; set; }
+    public string ErrorMessage { get; set; }
+    public List<string> ModifiedFiles { get; set; } = new();
+    
+    public static TaskResult Success(string taskId, List<string> modifiedFiles = null) =>
+        new TaskResult { Success = true, TaskId = taskId, ModifiedFiles = modifiedFiles ?? new List<string>() };
+    
+    public static TaskResult Failed(string taskId, string errorMessage) =>
+        new TaskResult { Success = false, TaskId = taskId, ErrorMessage = errorMessage };
+}
+```
+
+---
+
+## Appendix B: Implementation Sequence
+
+This orchestrator must be implemented in this order:
+
+### Phase 1A: Foundation (Mandatory before any other work)
+1. Define `TaskType`, `ValidationStrategy`, `TaskStatus`, `ErrorType` enums
+2. Define `Task` class (immutable where possible)
+3. Define `BuilderState` enum
+4. Define `BuilderContext` class
+5. Define event record types
+6. Implement `BuilderReducer.Reduce()` (pure function)
+
+### Phase 1B: Orchestrator Control
+7. Implement `RetryController` (budget tracking)
+8. Implement `ConcurrencyPolicy` (no parallel mutations)
+9. Implement `ErrorClassifier` (error categorization)
+
+### Phase 2: Integration Points (after orchestrator complete)
+- Planning Service → emits `TaskCompletedEvent` to orchestrator
+- Roslyn Patch Engine → asks orchestrator before patching
+- Build Validator → reports errors to orchestrator
+- Fix Engine → respects orchestrator state machine
+
+### Phase 3: Testing
+- Unit tests for reducer (determinism)
+- Integration tests for state transitions
+- Replay tests (event log → identical state)
+
+---
+
+## Appendix C: Testing Strategy
+
+### Integration Tests (Kernel Level)
+Since `BuildManager` is a static singleton, we test `BuildService` via integration tests with a real project on disk.
+
+```csharp
+[TestClass]
+public class BuildServiceIntegrationTests
+{
+    private BuildService _buildService;
+    private string _testWorkspace;
+
+    [TestInitialize]
+    public void Setup()
+    {
+        _testWorkspace = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_testWorkspace);
+        _buildService = new BuildService(new NullLogger<BuildService>());
+    }
+
+    [TestMethod]
+    public async Task BuildAsync_ValidProject_ReturnsSuccess()
+    {
+        // Arrange
+        var projectPath = CreateValidProject(_testWorkspace);
+
+        // Act
+        var result = await _buildService.BuildAsync(projectPath);
+
+        // Assert
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual(0, result.Errors.Count);
+    }
+}
+```
+
+### Unit Tests (Consumer Level)
+Consumers of `IBuildService` (like Orchestrator) should mock the interface.
+
+```csharp
+[TestMethod]
+public async Task Orchestrator_HandlesBuildFailure_Correctly()
+{
+    // Arrange
+    var mockBuild = new Mock<IBuildService>();
+    mockBuild.Setup(b => b.BuildAsync(It.IsAny<string>(), null, default))
+             .ReturnsAsync(new BuildResult 
+             { 
+                 Success = false, 
+                 ErrorType = ErrorType.CSharpCompiler 
+             });
+
+    var orchestrator = new Orchestrator(mockBuild.Object);
+
+    // Act
+    await orchestrator.RunTaskAsync(new BuildTask());
+
+    // Assert
+    // Verify remediation logic triggered
+}
+```
+
+---
+
+## Appendix D: Why This Matters
+
+**Without deterministic orchestrator:**
+- Roslyn patches accumulate silently (different result each run)
+- Retry loops can infinite cycle  
+- Memory layer can't trust which state generated which output
+- Users see non-reproducible failures ("works sometimes")
+
+**With deterministic orchestrator:**
+- Every state transition is logged
+- Every retry is budgeted and tracked
+- Every error is classified before retry decision
+- System is replayable for debugging
+- Users get consistent, reproducible results
+
+---
+
+## Appendix E: Design Philosophy Connection
+
+This orchestrator implements the **"hide complexity, show results"** principle at the system level:
+
+- **Hidden Complexity**: Full task graph, retry loops, error classification all internal
+- **Shown Results**: User sees progress indicator + final working app
+- **Error Handling**: All failures self-corrected before user sees them
+- **Determinism**: Invisibly perfect replay makes system feel magical
+
+---
+
+## Appendix F: Next Deliverables (In Order)
+
+Once orchestrator is confirmed:
+
+1. **SQLite Schema** - Table design for project graph, memory layer, audit log
+2. **Roslyn Indexing Architecture** - AST-based code intelligence indexing
+3. **Patch Engine Contract** - API contract for Roslyn-based mutation
+4. **Agent Contract** - How agents interact with orchestrator
+5. **Intent Parser** - User → structured specification
+
+---
+
+**Status**: 🔴 CRITICAL PATH FIRST IMPLEMENTATION  
+**Complexity**: Medium (state machine fundamentals)  
+**Risk**: HIGH if skipped (foundation for everything else)  
+**Estimated LOC**: ~400-500 lines C# (core reducer + supporting classes)
