@@ -206,9 +206,9 @@ CREATE TABLE project_summary (
     auth_type TEXT,               -- 'Windows', 'EntraID', 'None'
     database_type TEXT,           -- 'SQLite' (Mandatory unique option)
     entities TEXT,                -- JSON Array: ['User', 'Product']
-    routes TEXT,                  -- JSON Array: ['/login', '/dashboard']
-    api_endpoints TEXT,           -- JSON Array: ['GET /api/users']
-    ui_pages TEXT,                -- JSON Array: ['LoginPage', 'Dashboard']
+    navigation_paths TEXT,        -- JSON Array: ['/Login', '/Dashboard'] (View Routing)
+    api_endpoints TEXT,           -- JSON Array: ['UserService.GetAll']
+    user_controls TEXT,           -- JSON Array: ['LoginPage', 'DashboardPage']
     last_updated DATETIME
 );
 ```
@@ -221,9 +221,9 @@ CREATE TABLE project_summary (
   "auth_type": "Windows Authentication",
   "database_type": "SQLite",
   "entities": ["Users", "Projects", "Tasks"],
-  "routes": ["/Login", "/Dashboard", "/Projects/{id}"],
+  "navigation_paths": ["/Login", "/Dashboard", "/Projects/{id}"],
   "api_endpoints": ["UserService.GetAll", "TaskService.Create"],
-  "ui_pages": ["LoginPage", "DashboardPage", "ProjectDetailPage"]
+  "user_controls": ["LoginPage", "DashboardPage", "ProjectDetailPage"]
 }
 ```
 
@@ -466,7 +466,7 @@ Triggered by `FileSystemWatcher` or IDE event.
 2.  **Clear old records** for this file in _current_ snapshot context.
 3.  **Parse with Roslyn** to generate new `SyntaxTree`.
 4.  **Extract & Insert Syntax Nodes** (`syntax_nodes`).
-5.  **Resolve Semantic Model** (Update Compilation).
+5.  **Runtime**: Live Preview, Fast Incremental Rebuild (Hot Reload equivalent), Full Compiled Launch.
 6.  **Insert Symbols** (`symbol_nodes`).
 7.  **Resolve & Insert Edges** (`symbol_edges`).
 8.  **Handle XAML** (if `.xaml` or `.cs` paired file).

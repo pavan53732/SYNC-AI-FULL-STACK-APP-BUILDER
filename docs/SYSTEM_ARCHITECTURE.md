@@ -88,7 +88,8 @@ Sync AI abstracts the entire .NET development lifecycle, just as Lovable abstrac
     - Capability inference and injection
     - MSIX bundle generation
     - Certificate generation and signing
-    - Version auto-increment
+    - Certificate generation and signing
+    - Deterministic mutation-based version increment
     - Production-ready installer output
 
 ...
@@ -163,7 +164,7 @@ Snapshots and installer versions must match.
 
 **Purpose**: Isolated workspace management and persistent storage.
 
-- Each project lives in `%AppData%/SyncAI/Workspaces/{ProjectId}/`
+- Each project lives in `%USERPROFILE%\.syncai\Workspaces\{ProjectId}\`
 - Snapshots stored as compressed diffs before every mutation
 - SQLite stores: files, symbols, dependencies, errors, architectural decisions, execution logs
 
@@ -186,7 +187,7 @@ Snapshots and installer versions must match.
 │       │   └── app.msixbundle
 │       └── .build-output/          ← Compiled binaries
 ├── Temp/
-│   ├── build_workspace_001/        ← Per-build isolated workspace
+│   ├── build_workspace_001/        ← Isolated copy for build stability
 │   ├── build_workspace_002/
 │   └── (cleaned after each build)
 ├── Database/
@@ -239,12 +240,15 @@ public class ExecutionKernel
     }
 
     /// <summary>
-    /// Builds project using Microsoft.Build APIs (No CLI)
+    /// Builds project in an ISOLATED workspace copy to prevent mutation race conditions
     /// </summary>
     public async Task<BuildResult> BuildAsync(
         string projectPath,
         string configuration = "Debug")
     {
+        // ISOLATION STEP: Copy source to %USERPROFILE%\.syncai\Temp\{BuildId} before build
+        var isolatedPath = await _sandbox.CreateIsolatedCopyAsync(projectPath);
+
         return await Task.Run(() =>
         {
             var projectCollection = new ProjectCollection();
@@ -367,7 +371,7 @@ public class BuildPhase
 
 - `In-process NuGet restore via NuGet.Commands` → In-process NuGet restore via `NuGet.Commands`
 - `In-process MSBuild via Microsoft.Build API` → In-process MSBuild via `Microsoft.Build`
-- App execution via compiled assembly launch (ProcessSandbox with exe path)
+- App execution via `ProcessSandbox` (Wrapper for Windows Sandbox execution)
 - Structured error output (not raw CLI text)
 
 #### Layer 3: Patch Engine
@@ -4035,7 +4039,7 @@ Immutable record. Submitted to `_sessionQueue` to initiate a generation session.
 ### Database Architecture
 The system uses **SQLite** for all local data persistence. Each component has its own database file to ensure separation of concerns and enable independent backups.
 
-**File Location**: `C:\Users\{User}\AppData\Local\SyncAIAppBuilder\Workspaces\{ProjectId}\.builder\`
+**File Location**: `%USERPROFILE%\.syncai\Workspaces\{ProjectId}\.builder\`
 - `application.db`: Application-level data (settings, projects list)
 - `project_graph.db`: Symbol index, dependencies, Roslyn data
 - `orchestrator.db`: State machine, event log, task history

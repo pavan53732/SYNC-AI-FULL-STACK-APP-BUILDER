@@ -16,6 +16,67 @@ The Preview System provides **three modes** for users to visualize generated Win
 
 ### Preview Service Layer
 
+````csharp
+public class PreviewService
+{
+    private readonly BuildService _buildService;
+    private readonly XamlRenderService _xamlRenderer;
+    private readonly CodeHighlightService _codeHighlighter;
+
+    // Mode 1: Quick XAML Preview (Embedded)
+    // ⚠️ LIMITATION: Only works for simple XAML without code-behind/ViewModels
+    public async Task<UIElement> RenderXamlPreviewAsync(string xamlContent)
+    {
+        UIElement element = null;
+        Exception parseException = null;
+
+        // CRITICAL: XamlReader.Load MUST run on UI thread (WinUI 3 thread affinity)
+        await _dispatcherQueue.EnqueueAsync(() =>
+        {
+            try
+            {
+                // Parse XAML string to UIElement
+                element = XamlReader.Load(xamlContent) as UIElement;
+            }
+            catch (XamlParseException ex)
+            {
+                parseException = ex;
+                _logger.LogError(ex, "XAML parse failed at line {Line}", ex.LineNumber);
+            }
+        });
+
+        if (parseException != null)
+        {
+            throw new PreviewException($"XAML parsing failed: {parseException.Message}", parseException);
+        }
+
+        return element;
+    }
+
+    // Mode 2: Code View (Syntax Highlighted)
+    public async Task<FormattedCode> GetFormattedCodeAsync(
+        string projectPath,
+        CodeFileType fileType)
+    {
+        var files = await GetProjectFilesAsync(projectPath, fileType);
+# Preview System Specification - Hybrid Approach
+
+## Overview
+
+The Preview System provides **three modes** for users to visualize generated WinUI 3 applications:
+
+1.  **Embedded XAML Preview** - Real-time rendering inside the builder
+2.  **Code View** - Syntax-highlighted source code inspection
+3.  **Full Launch** - Compiled application execution in separate window
+
+> **Crucial Distinction**: Unlike web-based prototyping tools, the "Full Launch" renders a **real, compiled .NET 8 binary** running natively on Windows. It is not a simulation; it is the actual production application.
+
+---
+
+## Architecture
+
+### Preview Service Layer
+
 ```csharp
 public class PreviewService
 {
@@ -67,6 +128,9 @@ public class PreviewService
     // Mode 3: Full Launch (Compiled App)
     // Strict Policy:
     // All full launches execute inside Windows Sandbox isolation.
+    **Critical Ordering**: Capability inference is executed **immediately after a successful build and before packaging begins**.
+
+    > **Proactive Model**: Missing capabilities are detected *during* the build phase via Roslyn analysis, not just at runtime. This allows "Self-Haling" fixes to inject capabilities before the app crashes.
     // Direct host execution is forbidden.
     // User consent is required before first launch.
     public async Task<Process> LaunchFullPreviewAsync(string projectPath)
@@ -107,6 +171,8 @@ public class PreviewService
 
     /// <summary>
     /// Shows security consent dialog before launching AI-generated code.
+    /// NOTE: This is a Runtime Boundary Safeguard, not an error state.
+    /// It ensures the user explicitly authorizes code execution outside the builder.
     /// </summary>
     private async Task<bool> ShowSecurityConsentDialogAsync()
     {
@@ -140,7 +206,7 @@ public class PreviewService
         return result == ContentDialogResult.Primary;
     }
 }
-```
+````
 
 ---
 
