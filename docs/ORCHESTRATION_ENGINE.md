@@ -1929,6 +1929,176 @@ public class CircuitBreakerOpenException : Exception
 }
 ```
 
+### Circuit Breaker Integration with Retry System
+
+The CircuitBreaker wraps the UnifiedRetryCoordinator to provide system-wide protection against cascading failures.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│           CIRCUIT BREAKER + RETRY INTEGRATION                    │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │                    CircuitBreaker                            ││
+│  │  State: Closed → Open (5 failures) → HalfOpen (1 min)       ││
+│  └─────────────────────────┬───────────────────────────────────┘│
+│                            │                                     │
+│                            ▼                                     │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │              UnifiedRetryCoordinator                         ││
+│  │  1. RetryController.ShouldRetry() → Check budget            ││
+│  │  2. RetryPolicy.ExecuteAsync() → Add delay                  ││
+│  │  3. RetryController.ExecuteRetry() → Emit event             ││
+│  └─────────────────────────┬───────────────────────────────────┘│
+│                            │                                     │
+│                            ▼                                     │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │                    Operation                                 ││
+│  │  (Build, Patch, AI Generation, etc.)                        ││
+│  └─────────────────────────────────────────────────────────────┘│
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```csharp
+/// <summary>
+/// Wraps UnifiedRetryCoordinator with CircuitBreaker protection.
+/// Provides system-wide resilience against cascading failures.
+/// </summary>
+public class ResilientExecutionService
+{
+    private readonly CircuitBreaker _circuitBreaker;
+    private readonly UnifiedRetryCoordinator _retryCoordinator;
+    private readonly ILogger<ResilientExecutionService> _logger;
+
+    // Per-operation-type circuit breakers
+    private readonly Dictionary<string, CircuitBreaker> _operationCircuits = new();
+
+    public async Task<BuilderContext> ExecuteWithResilienceAsync(
+        BuilderContext context,
+        Task task,
+        ErrorClassification error,
+        string operationType,
+        Func<Task<BuilderContext>> operation)
+    {
+        // Get or create circuit breaker for this operation type
+        var circuit = GetOrCreateCircuit(operationType);
+
+        try
+        {
+            // Wrap retry coordinator with circuit breaker
+            return await circuit.ExecuteAsync(async () =>
+            {
+                return await _retryCoordinator.ExecuteWithRetryAsync(
+                    context, task, error, operation);
+            });
+        }
+        catch (CircuitBreakerOpenException ex)
+        {
+            _logger.LogWarning("Circuit breaker open for {OperationType}, failing fast", operationType);
+
+            // Return immediately without retry - circuit is protecting system
+            return BuilderReducer.Reduce(context, new TaskFailedEvent
+            {
+                TaskId = task.Id,
+                ErrorType = ErrorType.AI_GENERATION_FAILED,
+                ErrorMessage = $"Service temporarily unavailable: {operationType}",
+                CurrentRetry = task.RetryCount,
+                MaxRetries = task.MaxRetries
+            });
+        }
+    }
+
+    private CircuitBreaker GetOrCreateCircuit(string operationType)
+    {
+        if (!_operationCircuits.TryGetValue(operationType, out var circuit))
+        {
+            // Configure circuit breaker based on operation type
+            var (threshold, timeout) = operationType switch
+            {
+                "AI_GENERATION" => (3, TimeSpan.FromMinutes(2)),   // AI is sensitive
+                "BUILD" => (5, TimeSpan.FromMinutes(1)),           // Build can retry more
+                "PATCH" => (3, TimeSpan.FromMinutes(1)),           // Patches need quick recovery
+                _ => (5, TimeSpan.FromMinutes(1))
+            };
+
+            circuit = new CircuitBreaker(threshold, timeout);
+            _operationCircuits[operationType] = circuit;
+        }
+
+        return circuit;
+    }
+}
+
+/// <summary>
+/// Enhanced CircuitBreaker with configurable thresholds.
+/// </summary>
+public class CircuitBreaker
+{
+    private int _failureCount;
+    private DateTime _lastFailureTime;
+    private CircuitState _state = CircuitState.Closed;
+
+    private readonly int _failureThreshold;
+    private readonly TimeSpan _timeout;
+
+    public CircuitBreaker(int failureThreshold = 5, TimeSpan? timeout = null)
+    {
+        _failureThreshold = failureThreshold;
+        _timeout = timeout ?? TimeSpan.FromMinutes(1);
+    }
+
+    public CircuitState State => _state;
+    public int FailureCount => _failureCount;
+
+    public async Task<T> ExecuteAsync<T>(Func<Task<T>> operation)
+    {
+        if (_state == CircuitState.Open)
+        {
+            if (DateTime.UtcNow - _lastFailureTime > _timeout)
+            {
+                _state = CircuitState.HalfOpen;
+            }
+            else
+            {
+                throw new CircuitBreakerOpenException("Circuit breaker is open");
+            }
+        }
+
+        try
+        {
+            var result = await operation();
+
+            if (_state == CircuitState.HalfOpen)
+            {
+                _state = CircuitState.Closed;
+                _failureCount = 0;
+            }
+
+            return result;
+        }
+        catch (Exception)
+        {
+            _failureCount++;
+            _lastFailureTime = DateTime.UtcNow;
+
+            if (_failureCount >= _failureThreshold)
+            {
+                _state = CircuitState.Open;
+            }
+
+            throw;
+        }
+    }
+
+    public void Reset()
+    {
+        _state = CircuitState.Closed;
+        _failureCount = 0;
+    }
+}
+```
+
 ### Error Analytics & Pattern Detection
 
 ```csharp
@@ -2399,6 +2569,718 @@ public class PreconditionResult
 }
 ```
 
+### PreconditionChecker Integration with Build Flow
+
+The PreconditionChecker must be invoked BEFORE any build operation to fail fast on preventable errors.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│              BUILD FLOW WITH PRECONDITION CHECK                  │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  MUTATION_GUARD State                                            │
+│       │                                                          │
+│       ▼                                                          │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │              PreconditionChecker                             ││
+│  │                                                              ││
+│  │  1. Check SDK availability                                   ││
+│  │  2. Check disk space (≥1GB)                                 ││
+│  │  3. Check file locks                                         ││
+│  │  4. Check project integrity                                  ││
+│  └─────────────────────────┬───────────────────────────────────┘│
+│                            │                                     │
+│            ┌───────────────┴───────────────┐                    │
+│            │                               │                     │
+│            ▼                               ▼                     │
+│     ┌──────────────┐              ┌──────────────────┐          │
+│     │   SUCCESS    │              │    FAILURE       │          │
+│     │              │              │                  │          │
+│     │ Continue to  │              │ Emit TaskFailed  │          │
+│     │ PATCHING     │              │ with SDK_NOT_FOUND│          │
+│     └──────────────┘              └──────────────────┘          │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```csharp
+/// <summary>
+/// Integrates PreconditionChecker into the orchestrator build flow.
+/// This ensures preconditions are checked BEFORE any mutation occurs.
+/// </summary>
+public class BuildPreconditionGuard
+{
+    private readonly PreconditionChecker _preconditionChecker;
+    private readonly IEventDispatcher _eventDispatcher;
+    private readonly ILogger<BuildPreconditionGuard> _logger;
+
+    public async Task<GuardResult> CheckAndProceedAsync(
+        BuilderContext context,
+        Task task,
+        Func<Task<BuilderContext>> proceedWithBuild)
+    {
+        // Only check preconditions for build-affecting tasks
+        if (!RequiresPreconditionCheck(task.Type))
+        {
+            return GuardResult.Proceed(await proceedWithBuild());
+        }
+
+        _logger.LogInformation("Checking build preconditions for task {TaskId}", task.Id);
+
+        // Run precondition checks
+        var preconditionResult = await _preconditionChecker.CheckBuildPreconditionsAsync(
+            context.ProjectPath);
+
+        if (!preconditionResult.Success)
+        {
+            // Precondition failed - emit event and fail fast
+            _logger.LogWarning("Precondition check failed: {Issues}",
+                string.Join(", ", preconditionResult.Issues));
+
+            // Emit failure event
+            await _eventDispatcher.DispatchAsync(new TaskFailedEvent
+            {
+                TaskId = task.Id,
+                ErrorType = DetermineErrorType(preconditionResult.Issues),
+                ErrorMessage = string.Join("; ", preconditionResult.Issues),
+                CurrentRetry = task.RetryCount,
+                MaxRetries = 0 // No retry for precondition failures
+            });
+
+            return GuardResult.Failed(preconditionResult.Issues);
+        }
+
+        // Preconditions passed - proceed with build
+        _logger.LogInformation("Precondition check passed, proceeding with build");
+        return GuardResult.Proceed(await proceedWithBuild());
+    }
+
+    private bool RequiresPreconditionCheck(TaskType taskType) => taskType switch
+    {
+        TaskType.INITIALIZE_WORKSPACE => true,
+        TaskType.BUILD_PROJECT => true,
+        TaskType.RESTORE_NUGET => true,
+        TaskType.PATCH_FILE => true,
+        TaskType.MODIFY_FILE => true,
+        TaskType.ADD_FILE => true,
+        TaskType.DELETE_FILE => true,
+        _ => false
+    };
+
+    private ErrorType DetermineErrorType(List<string> issues)
+    {
+        var issuesText = string.Join(" ", issues).ToLowerInvariant();
+
+        if (issuesText.Contains("sdk") || issuesText.Contains(".net"))
+            return ErrorType.SDK_NOT_FOUND;
+
+        if (issuesText.Contains("disk") || issuesText.Contains("space"))
+            return ErrorType.FILE_SYSTEM_ERROR;
+
+        if (issuesText.Contains("locked") || issuesText.Contains("in use"))
+            return ErrorType.FILE_SYSTEM_ERROR;
+
+        return ErrorType.UNKNOWN_ERROR;
+    }
+}
+
+public class GuardResult
+{
+    public bool CanProceed { get; set; }
+    public BuilderContext Context { get; set; }
+    public List<string> Issues { get; set; } = new();
+
+    public static GuardResult Proceed(BuilderContext context) =>
+        new GuardResult { CanProceed = true, Context = context };
+
+    public static GuardResult Failed(List<string> issues) =>
+        new GuardResult { CanProceed = false, Issues = issues };
+}
+```
+
+### Precondition-Aware BuildService
+
+The BuildService should also validate preconditions before executing:
+
+```csharp
+public class PreconditionAwareBuildService : IBuildService
+{
+    private readonly IBuildService _innerBuildService;
+    private readonly PreconditionChecker _preconditionChecker;
+    private readonly ILogger<PreconditionAwareBuildService> _logger;
+
+    public async Task<BuildResult> BuildAsync(
+        string projectPath,
+        BuildOptions options = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Check preconditions first
+        var preconditions = await _preconditionChecker.CheckBuildPreconditionsAsync(projectPath);
+
+        if (!preconditions.Success)
+        {
+            _logger.LogWarning("Build preconditions failed: {Issues}",
+                string.Join(", ", preconditions.Issues));
+
+            // Return immediately without attempting build
+            return new BuildResult
+            {
+                Success = false,
+                ErrorType = ClassifyPreconditionError(preconditions.Issues),
+                ErrorMessage = string.Join("; ", preconditions.Issues),
+                Duration = TimeSpan.Zero
+            };
+        }
+
+        // Preconditions passed - delegate to actual build
+        return await _innerBuildService.BuildAsync(projectPath, options, cancellationToken);
+    }
+
+    private ErrorType? ClassifyPreconditionError(List<string> issues)
+    {
+        var issuesText = string.Join(" ", issues).ToLowerInvariant();
+
+        if (issuesText.Contains("sdk"))
+            return ErrorType.SDK_NOT_FOUND;
+
+        if (issuesText.Contains("disk") || issuesText.Contains("space"))
+            return ErrorType.FILE_SYSTEM_ERROR;
+
+        return ErrorType.UNKNOWN_ERROR;
+    }
+
+    public async Task<RestoreResult> RestoreAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default)
+    {
+        var preconditions = await _preconditionChecker.CheckBuildPreconditionsAsync(projectPath);
+
+        if (!preconditions.Success)
+        {
+            return new RestoreResult
+            {
+                Success = false,
+                ErrorMessage = string.Join("; ", preconditions.Issues)
+            };
+        }
+
+        return await _innerBuildService.RestoreAsync(projectPath, cancellationToken);
+    }
+
+    public async Task CleanAsync(string projectPath)
+    {
+        await _innerBuildService.CleanAsync(projectPath);
+    }
+}
+```
+
+### Error Type Unification
+
+The orchestrator uses multiple error classification systems that need to be unified for consistent handling.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                  ERROR TYPE UNIFICATION                          │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
+│  │ BuildErrorType  │  │   AIErrorType   │  │PatchErrorType   │  │
+│  │                 │  │                 │  │                 │  │
+│  │ • CSharpSyntax  │  │ • ApiKeyMissing │  │ • TargetNotFound│  │
+│  │ • XamlParse     │  │ • RateLimit     │  │ • Conflict      │  │
+│  │ • NuGetFailed   │  │ • Timeout       │  │ • ValidationFail│  │
+│  │ • SdkNotFound   │  │ • NetworkError  │  │ • SyntaxError   │  │
+│  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘  │
+│           │                    │                    │            │
+│           └────────────────────┼────────────────────┘            │
+│                                │                                  │
+│                                ▼                                  │
+│               ┌────────────────────────────────┐                 │
+│               │       UnifiedErrorType         │                 │
+│               │                                │                 │
+│               │  Common error representation   │                 │
+│               │  for orchestrator decisions    │                 │
+│               └────────────────────────────────┘                 │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```csharp
+/// <summary>
+/// Unified error type that aggregates all error classification systems.
+/// This is the canonical error type used by the orchestrator for decisions.
+/// </summary>
+public record UnifiedError
+{
+    // Core identification
+    public ErrorType PrimaryType { get; init; }
+    public string ErrorCode { get; init; }
+    public string Message { get; init; }
+    public ErrorSeverity Severity { get; init; }
+
+    // Source information
+    public ErrorSource Source { get; init; }
+    public string SourceDetails { get; init; }
+
+    // Retry information
+    public bool IsRetryable { get; init; }
+    public TimeSpan? SuggestedDelay { get; init; }
+    public int? MaxRetries { get; init; }
+
+    // Recovery information
+    public string AutoFixStrategy { get; init; }
+    public bool RequiresUserIntervention { get; init; }
+    public string UserGuidance { get; init; }
+
+    // Context
+    public string FilePath { get; init; }
+    public int? LineNumber { get; init; }
+    public int? ColumnNumber { get; init; }
+    public Dictionary<string, object> Metadata { get; init; } = new();
+}
+
+public enum ErrorSource
+{
+    Build,
+    AIEngine,
+    PatchEngine,
+    FileSystem,
+    Orchestrator,
+    Validation,
+    Network,
+    SDK
+}
+
+/// <summary>
+/// Converts from specific error types to unified error type.
+/// </summary>
+public static class ErrorTypeUnifier
+{
+    public static UnifiedError Unify(BuildErrorType buildError, BuildError details) => new UnifiedError
+    {
+        PrimaryType = MapBuildErrorToPrimary(buildError),
+        ErrorCode = details.Code,
+        Message = details.Message,
+        Severity = DetermineSeverity(buildError),
+        Source = ErrorSource.Build,
+        SourceDetails = buildError.ToString(),
+        IsRetryable = IsBuildErrorRetryable(buildError),
+        SuggestedDelay = GetSuggestedDelay(buildError),
+        AutoFixStrategy = GetAutoFixStrategy(buildError),
+        RequiresUserIntervention = RequiresUserIntervention(buildError),
+        FilePath = details.File,
+        LineNumber = details.LineNumber,
+        ColumnNumber = details.ColumnNumber
+    };
+
+    public static UnifiedError Unify(AIErrorType aiError, string message) => new UnifiedError
+    {
+        PrimaryType = MapAIErrorToPrimary(aiError),
+        ErrorCode = aiError.ToString(),
+        Message = message,
+        Severity = DetermineAIErrorSeverity(aiError),
+        Source = ErrorSource.AIEngine,
+        SourceDetails = aiError.ToString(),
+        IsRetryable = IsAIErrorRetryable(aiError),
+        SuggestedDelay = GetAISuggestedDelay(aiError),
+        MaxRetries = GetAIMaxRetries(aiError),
+        AutoFixStrategy = GetAIAutoFixStrategy(aiError),
+        RequiresUserIntervention = RequiresAIUserIntervention(aiError)
+    };
+
+    public static UnifiedError Unify(PatchErrorType patchError, string message) => new UnifiedError
+    {
+        PrimaryType = MapPatchErrorToPrimary(patchError),
+        ErrorCode = patchError.ToString(),
+        Message = message,
+        Severity = ErrorSeverity.Error,
+        Source = ErrorSource.PatchEngine,
+        SourceDetails = patchError.ToString(),
+        IsRetryable = IsPatchErrorRetryable(patchError),
+        AutoFixStrategy = GetPatchAutoFixStrategy(patchError),
+        RequiresUserIntervention = RequiresPatchUserIntervention(patchError)
+    };
+
+    // Mapping functions
+    private static ErrorType MapBuildErrorToPrimary(BuildErrorType error) => error switch
+    {
+        BuildErrorType.CSharpSyntaxError => ErrorType.CSHARP_COMPILER_ERROR,
+        BuildErrorType.CSharpSemanticError => ErrorType.CSHARP_COMPILER_ERROR,
+        BuildErrorType.CSharpNullabilityWarning => ErrorType.CSHARP_COMPILER_ERROR,
+        BuildErrorType.XamlParseError => ErrorType.XAML_COMPILER_ERROR,
+        BuildErrorType.XamlBindingError => ErrorType.XAML_COMPILER_ERROR,
+        BuildErrorType.XamlResourceError => ErrorType.XAML_COMPILER_ERROR,
+        BuildErrorType.NuGetPackageNotFound => ErrorType.NUGET_RESTORE_ERROR,
+        BuildErrorType.NuGetVersionConflict => ErrorType.NUGET_RESTORE_ERROR,
+        BuildErrorType.NuGetRestoreFailed => ErrorType.NUGET_RESTORE_ERROR,
+        BuildErrorType.MSBuildProjectFileError => ErrorType.MSBUILD_ERROR,
+        BuildErrorType.MSBuildTargetError => ErrorType.MSBUILD_ERROR,
+        BuildErrorType.SdkNotFound => ErrorType.SDK_NOT_FOUND,
+        BuildErrorType.SdkVersionMismatch => ErrorType.SDK_NOT_FOUND,
+        BuildErrorType.BuildTimeout => ErrorType.VALIDATION_TIMEOUT,
+        _ => ErrorType.UNKNOWN_ERROR
+    };
+
+    private static ErrorType MapAIErrorToPrimary(AIErrorType error) => error switch
+    {
+        AIErrorType.ApiKeyMissing => ErrorType.AI_GENERATION_FAILED,
+        AIErrorType.ApiKeyInvalid => ErrorType.AI_GENERATION_FAILED,
+        AIErrorType.ApiRateLimitExceeded => ErrorType.AI_GENERATION_FAILED,
+        AIErrorType.ApiQuotaExceeded => ErrorType.AI_GENERATION_FAILED,
+        AIErrorType.ApiNetworkError => ErrorType.AI_GENERATION_FAILED,
+        AIErrorType.ApiTimeout => ErrorType.AI_GENERATION_FAILED,
+        AIErrorType.InvalidJsonResponse => ErrorType.SCHEMA_VALIDATION_FAILED,
+        AIErrorType.SchemaValidationFailed => ErrorType.SCHEMA_VALIDATION_FAILED,
+        _ => ErrorType.AI_GENERATION_FAILED
+    };
+
+    private static ErrorType MapPatchErrorToPrimary(PatchErrorType error) => error switch
+    {
+        PatchErrorType.TargetNotFound => ErrorType.SYMBOL_MISSING,
+        PatchErrorType.SignatureMismatch => ErrorType.PATCH_CONFLICT,
+        PatchErrorType.FileHashMismatch => ErrorType.PATCH_CONFLICT,
+        PatchErrorType.SyntaxError => ErrorType.CSHARP_COMPILER_ERROR,
+        PatchErrorType.DuplicateMember => ErrorType.PATCH_CONFLICT,
+        PatchErrorType.ConflictDetected => ErrorType.PATCH_CONFLICT,
+        PatchErrorType.ValidationFailed => ErrorType.SCHEMA_VALIDATION_FAILED,
+        _ => ErrorType.UNKNOWN_ERROR
+    };
+
+    // Severity determination
+    private static ErrorSeverity DetermineSeverity(BuildErrorType error) => error switch
+    {
+        BuildErrorType.SdkNotFound => ErrorSeverity.Critical,
+        BuildErrorType.SdkVersionMismatch => ErrorSeverity.Critical,
+        BuildErrorType.CSharpNullabilityWarning => ErrorSeverity.Warning,
+        _ => ErrorSeverity.Error
+    };
+
+    private static ErrorSeverity DetermineAIErrorSeverity(AIErrorType error) => error switch
+    {
+        AIErrorType.ApiKeyMissing => ErrorSeverity.Critical,
+        AIErrorType.ApiKeyInvalid => ErrorSeverity.Critical,
+        AIErrorType.ApiQuotaExceeded => ErrorSeverity.Critical,
+        AIErrorType.ContentPolicyViolation => ErrorSeverity.Error,
+        _ => ErrorSeverity.Warning
+    };
+
+    // Retryability
+    private static bool IsBuildErrorRetryable(BuildErrorType error) => error switch
+    {
+        BuildErrorType.SdkNotFound => false,
+        BuildErrorType.SdkVersionMismatch => false,
+        BuildErrorType.CSharpSyntaxError => true,
+        BuildErrorType.NuGetPackageNotFound => true,
+        BuildErrorType.BuildTimeout => true,
+        _ => true
+    };
+
+    private static bool IsAIErrorRetryable(AIErrorType error) => error switch
+    {
+        AIErrorType.ApiKeyMissing => false,
+        AIErrorType.ApiKeyInvalid => false,
+        AIErrorType.ApiQuotaExceeded => false,
+        AIErrorType.ContentPolicyViolation => false,
+        AIErrorType.ApiRateLimitExceeded => true,
+        AIErrorType.ApiNetworkError => true,
+        AIErrorType.ApiTimeout => true,
+        _ => false
+    };
+
+    private static bool IsPatchErrorRetryable(PatchErrorType error) => error switch
+    {
+        PatchErrorType.TargetNotFound => true,  // Can retry with different target
+        PatchErrorType.SyntaxError => true,     // AI can regenerate
+        PatchErrorType.ConflictDetected => true, // Can attempt resolution
+        _ => false
+    };
+
+    // User intervention
+    private static bool RequiresUserIntervention(BuildErrorType error) => error switch
+    {
+        BuildErrorType.SdkNotFound => true,
+        BuildErrorType.SdkVersionMismatch => true,
+        BuildErrorType.NuGetPackageNotFound => true,  // May need user to choose alternative
+        _ => false
+    };
+
+    private static bool RequiresAIUserIntervention(AIErrorType error) => error switch
+    {
+        AIErrorType.ApiKeyMissing => true,
+        AIErrorType.ApiKeyInvalid => true,
+        AIErrorType.ApiQuotaExceeded => true,
+        AIErrorType.ContentPolicyViolation => true,
+        AIErrorType.TokenLimitExceeded => true,  // User needs to shorten prompt
+        _ => false
+    };
+
+    private static bool RequiresPatchUserIntervention(PatchErrorType error) => error switch
+    {
+        PatchErrorType.ConflictDetected => true,  // May need manual resolution
+        _ => false
+    };
+
+    // Suggested delays
+    private static TimeSpan? GetSuggestedDelay(BuildErrorType error) => error switch
+    {
+        BuildErrorType.BuildTimeout => TimeSpan.FromSeconds(30),
+        BuildErrorType.NuGetRestoreFailed => TimeSpan.FromSeconds(10),
+        _ => null
+    };
+
+    private static TimeSpan? GetAISuggestedDelay(AIErrorType error) => error switch
+    {
+        AIErrorType.ApiRateLimitExceeded => TimeSpan.FromSeconds(60),
+        AIErrorType.ApiNetworkError => TimeSpan.FromSeconds(5),
+        AIErrorType.ApiTimeout => TimeSpan.FromSeconds(30),
+        _ => null
+    };
+
+    private static int? GetAIMaxRetries(AIErrorType error) => error switch
+    {
+        AIErrorType.ApiRateLimitExceeded => 5,
+        AIErrorType.ApiNetworkError => 3,
+        AIErrorType.ApiTimeout => 2,
+        _ => null
+    };
+
+    // Auto-fix strategies
+    private static string GetAutoFixStrategy(BuildErrorType error) => error switch
+    {
+        BuildErrorType.CSharpSyntaxError => "ai-regenerate-code",
+        BuildErrorType.XamlParseError => "ai-regenerate-xaml",
+        BuildErrorType.NuGetPackageNotFound => "find-alternative-package",
+        BuildErrorType.NuGetVersionConflict => "resolve-version-conflict",
+        BuildErrorType.BuildTimeout => "increase-timeout",
+        _ => "unknown"
+    };
+
+    private static string GetAIAutoFixStrategy(AIErrorType error) => error switch
+    {
+        AIErrorType.ApiRateLimitExceeded => "wait-and-retry",
+        AIErrorType.ApiNetworkError => "retry-with-backoff",
+        AIErrorType.ApiTimeout => "increase-timeout",
+        AIErrorType.InvalidJsonResponse => "regenerate-response",
+        _ => "none"
+    };
+
+    private static string GetPatchAutoFixStrategy(PatchErrorType error) => error switch
+    {
+        PatchErrorType.TargetNotFound => "find-alternative-target",
+        PatchErrorType.SyntaxError => "ai-regenerate",
+        PatchErrorType.ConflictDetected => "ai-resolve-conflict",
+        _ => "none"
+    };
+}
+```
+
+### Severity-Based Retry Logic
+
+Retry behavior is adjusted based on error severity. Critical errors never retry, warnings may retry with different strategies.
+
+```csharp
+/// <summary>
+/// Determines retry behavior based on error severity.
+/// Critical errors never retry, warnings have extended retry, errors have standard retry.
+/// </summary>
+public class SeverityBasedRetryPolicy
+{
+    private readonly ILogger<SeverityBasedRetryPolicy> _logger;
+
+    public RetryDecision DetermineRetryStrategy(UnifiedError error, int currentRetry, int maxRetries)
+    {
+        // Critical errors never retry
+        if (error.Severity == ErrorSeverity.Critical)
+        {
+            _logger.LogWarning("Critical error encountered, no retry: {Error}", error.Message);
+            return RetryDecision.NoRetry("Critical error requires user intervention");
+        }
+
+        // Check if max retries exceeded
+        if (currentRetry >= maxRetries)
+        {
+            return RetryDecision.Exhausted(currentRetry, maxRetries);
+        }
+
+        // Severity-based strategy
+        return error.Severity switch
+        {
+            ErrorSeverity.Warning => HandleWarning(error, currentRetry),
+            ErrorSeverity.Error => HandleError(error, currentRetry),
+            ErrorSeverity.Info => RetryDecision.Immediate(),
+            _ => RetryDecision.Standard()
+        };
+    }
+
+    private RetryDecision HandleWarning(UnifiedError error, int currentRetry)
+    {
+        // Warnings get extended retry with longer delays
+        // They're usually transient issues
+        var delay = CalculateWarningDelay(currentRetry);
+
+        return new RetryDecision
+        {
+            ShouldRetry = true,
+            Delay = delay,
+            Strategy = RetryStrategy.ExtendedBackoff,
+            Reason = "Warning-level error, extended retry",
+            MaxAdditionalRetries = 5
+        };
+    }
+
+    private RetryDecision HandleError(UnifiedError error, int currentRetry)
+    {
+        if (!error.IsRetryable)
+        {
+            return RetryDecision.NoRetry("Error is not retryable");
+        }
+
+        // Standard errors use exponential backoff
+        var delay = error.SuggestedDelay ?? CalculateStandardDelay(currentRetry);
+
+        return new RetryDecision
+        {
+            ShouldRetry = true,
+            Delay = delay,
+            Strategy = RetryStrategy.ExponentialBackoff,
+            Reason = "Retryable error, standard backoff",
+            MaxAdditionalRetries = error.MaxRetries ?? 3
+        };
+    }
+
+    private TimeSpan CalculateWarningDelay(int retryCount)
+    {
+        // Warnings: Shorter delays, more aggressive retry
+        var baseDelay = TimeSpan.FromSeconds(0.5);
+        var multiplier = 1.5;
+        var maxDelay = TimeSpan.FromSeconds(10);
+
+        return TimeSpan.FromMilliseconds(
+            Math.Min(
+                baseDelay.TotalMilliseconds * Math.Pow(multiplier, retryCount),
+                maxDelay.TotalMilliseconds));
+    }
+
+    private TimeSpan CalculateStandardDelay(int retryCount)
+    {
+        // Standard: Full exponential backoff
+        var baseDelay = TimeSpan.FromSeconds(1);
+        var multiplier = 2.0;
+        var maxDelay = TimeSpan.FromSeconds(60);
+
+        return TimeSpan.FromMilliseconds(
+            Math.Min(
+                baseDelay.TotalMilliseconds * Math.Pow(multiplier, retryCount),
+                maxDelay.TotalMilliseconds));
+    }
+}
+
+public class RetryDecision
+{
+    public bool ShouldRetry { get; set; }
+    public TimeSpan? Delay { get; set; }
+    public RetryStrategy Strategy { get; set; }
+    public string Reason { get; set; }
+    public int MaxAdditionalRetries { get; set; }
+
+    public static RetryDecision NoRetry(string reason) => new()
+    {
+        ShouldRetry = false,
+        Reason = reason
+    };
+
+    public static RetryDecision Exhausted(int current, int max) => new()
+    {
+        ShouldRetry = false,
+        Reason = $"Retry budget exhausted: {current}/{max}"
+    };
+
+    public static RetryDecision Immediate() => new()
+    {
+        ShouldRetry = true,
+        Delay = TimeSpan.Zero,
+        Strategy = RetryStrategy.Immediate
+    };
+
+    public static RetryDecision Standard() => new()
+    {
+        ShouldRetry = true,
+        Delay = TimeSpan.FromSeconds(1),
+        Strategy = RetryStrategy.ExponentialBackoff
+    };
+}
+
+public enum RetryStrategy
+{
+    Immediate,           // No delay
+    FixedDelay,          // Constant delay between retries
+    ExponentialBackoff,  // Exponentially increasing delay
+    ExtendedBackoff,     // Slower backoff for warnings
+    JitteredBackoff      // Backoff with random jitter
+}
+```
+
+### Integration with RetryController
+
+The severity-based retry logic integrates with the existing RetryController:
+
+```csharp
+/// <summary>
+/// Enhanced RetryController with severity-based decisions.
+/// </summary>
+public class SeverityAwareRetryController
+{
+    private readonly SeverityBasedRetryPolicy _retryPolicy;
+    private readonly IEventDispatcher _eventDispatcher;
+
+    public async Task<BuilderContext> ExecuteWithSeverityAwareRetryAsync(
+        BuilderContext context,
+        Task task,
+        UnifiedError error,
+        Func<Task<BuilderContext>> operation)
+    {
+        var decision = _retryPolicy.DetermineRetryStrategy(
+            error,
+            task.RetryCount,
+            task.MaxRetries);
+
+        if (!decision.ShouldRetry)
+        {
+            // No retry - emit final failure
+            return BuilderReducer.Reduce(context, new TaskFailedEvent
+            {
+                TaskId = task.Id,
+                ErrorType = error.PrimaryType,
+                ErrorMessage = $"{error.Message} ({decision.Reason})",
+                CurrentRetry = task.RetryCount,
+                MaxRetries = task.MaxRetries
+            });
+        }
+
+        // Apply delay if specified
+        if (decision.Delay.HasValue && decision.Delay.Value > TimeSpan.Zero)
+        {
+            await Task.Delay(decision.Delay.Value);
+        }
+
+        // Update retry count
+        task.RetryCount++;
+        context.UsedRetry++;
+
+        // Emit retry event
+        await _eventDispatcher.DispatchAsync(new RetryStartedEvent
+        {
+            TaskId = task.Id,
+            CurrentRetry = task.RetryCount,
+            PreviousError = error.PrimaryType
+        });
+
+        // Execute operation
+        return await operation();
+    }
+}
+```
+
 ---
 
 ## 11. API Contracts
@@ -2437,6 +3319,122 @@ public interface IOrchestrator
 }
 ```
 
+#### BuilderCommand
+
+```csharp
+/// <summary>
+/// Represents a high-level command sent to the orchestrator.
+/// </summary>
+public abstract record BuilderCommand
+{
+    public string CommandId { get; init; } = Guid.NewGuid().ToString();
+    public DateTime Timestamp { get; init; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Command to start a new build from a specification.
+/// </summary>
+public record StartBuildCommand : BuilderCommand
+{
+    public string SpecJson { get; init; }
+    public string ProjectName { get; init; }
+}
+
+/// <summary>
+/// Command to cancel the current build.
+/// </summary>
+public record CancelBuildCommand : BuilderCommand
+{
+    public string Reason { get; init; }
+}
+
+/// <summary>
+/// Command to rollback to a previous snapshot.
+/// </summary>
+public record RollbackCommand : BuilderCommand
+{
+    public string SnapshotId { get; init; }
+}
+
+/// <summary>
+/// Command to apply a manual fix.
+/// </summary>
+public record ApplyFixCommand : BuilderCommand
+{
+    public string TaskId { get; init; }
+    public string FixDescription { get; init; }
+}
+```
+
+#### Observable Event Stream Implementation
+
+```csharp
+/// <summary>
+/// Implementation of IObservable<BuilderEvent> for the orchestrator.
+/// Allows subscribers to receive real-time state change notifications.
+/// </summary>
+public class OrchestratorEventStream : IObservable<BuilderEvent>
+{
+    private readonly List<IObserver<BuilderEvent>> _observers = new();
+    private readonly object _lock = new();
+
+    public IDisposable Subscribe(IObserver<BuilderEvent> observer)
+    {
+        lock (_lock)
+        {
+            _observers.Add(observer);
+        }
+        return new Unsubscriber(() => 
+        {
+            lock (_lock)
+            {
+                _observers.Remove(observer);
+            }
+        });
+    }
+
+    public void OnNext(BuilderEvent @event)
+    {
+        lock (_lock)
+        {
+            foreach (var observer in _observers)
+            {
+                observer.OnNext(@event);
+            }
+        }
+    }
+
+    public void OnError(Exception error)
+    {
+        lock (_lock)
+        {
+            foreach (var observer in _observers)
+            {
+                observer.OnError(error);
+            }
+        }
+    }
+
+    public void OnCompleted()
+    {
+        lock (_lock)
+        {
+            foreach (var observer in _observers)
+            {
+                observer.OnCompleted();
+            }
+        }
+    }
+
+    private class Unsubscriber : IDisposable
+    {
+        private readonly Action _unsubscribe;
+        public Unsubscriber(Action unsubscribe) => _unsubscribe = unsubscribe;
+        public void Dispose() => _unsubscribe();
+    }
+}
+```
+
 #### Execution Kernel (`IExecutionKernel`)
 
 ```csharp
@@ -2459,6 +3457,172 @@ public interface IExecutionKernel
     /// Launches the application in a controlled environment.
     /// </summary>
     Task<ProcessResult> RunAppAsync(string projectPath, RunOptions options);
+}
+```
+
+#### TestOptions and RunOptions
+
+```csharp
+/// <summary>
+/// Configuration options for test execution.
+/// </summary>
+public class TestOptions
+{
+    /// <summary>
+    /// Test framework to use (e.g., xunit, nunit, mstest).
+    /// </summary>
+    public string Framework { get; set; } = "xunit";
+
+    /// <summary>
+    /// Maximum time to wait for test completion.
+    /// </summary>
+    public TimeSpan Timeout { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Run tests in parallel.
+    /// </summary>
+    public bool Parallel { get; set; } = false;
+
+    /// <summary>
+    /// Maximum degree of parallelism.
+    /// </summary>
+    public int MaxDegreeOfParallelism { get; set; } = 1;
+
+    /// <summary>
+    /// Filter expression for test selection.
+    /// </summary>
+    public string Filter { get; set; }
+
+    /// <summary>
+    /// Enable code coverage collection.
+    /// </summary>
+    public bool CollectCoverage { get; set; } = false;
+
+    /// <summary>
+    /// Additional command-line arguments.
+    /// </summary>
+    public string AdditionalArguments { get; set; }
+
+    /// <summary>
+    /// Working directory for test execution.
+    /// </summary>
+    public string WorkingDirectory { get; set; }
+
+    /// <summary>
+    /// Environment variables to set for test process.
+    /// </summary>
+    public Dictionary<string, string> EnvironmentVariables { get; set; } = new();
+}
+
+/// <summary>
+/// Configuration options for application execution.
+/// </summary>
+public class RunOptions
+{
+    /// <summary>
+    /// Maximum time to wait for application startup.
+    /// </summary>
+    public TimeSpan StartupTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Maximum time to keep the application running.
+    /// </summary>
+    public TimeSpan? ExecutionTimeout { get; set; }
+
+    /// <summary>
+    /// Working directory for the application.
+    /// </summary>
+    public string WorkingDirectory { get; set; }
+
+    /// <summary>
+    /// Command-line arguments to pass to the application.
+    /// </summary>
+    public string[] Arguments { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Environment variables to set for the application.
+    /// </summary>
+    public Dictionary<string, string> EnvironmentVariables { get; set; } = new();
+
+    /// <summary>
+    /// Run in headless mode (no UI).
+    /// </summary>
+    public bool Headless { get; set; } = false;
+
+    /// <summary>
+    /// Capture standard output and error.
+    /// </summary>
+    public bool CaptureOutput { get; set; } = true;
+
+    /// <summary>
+    /// Port for debugging/inspection.
+    /// </summary>
+    public int? DebugPort { get; set; }
+}
+```
+
+#### ProcessResult
+
+```csharp
+/// <summary>
+/// Result of running an application process.
+/// </summary>
+public class ProcessResult
+{
+    /// <summary>
+    /// Whether the process started successfully.
+    /// </summary>
+    public bool Started { get; set; }
+
+    /// <summary>
+    /// Process exit code (null if still running).
+    /// </summary>
+    public int? ExitCode { get; set; }
+
+    /// <summary>
+    /// Whether the process completed successfully (exit code 0).
+    /// </summary>
+    public bool Success => Started && ExitCode == 0;
+
+    /// <summary>
+    /// Process ID.
+    /// </summary>
+    public int ProcessId { get; set; }
+
+    /// <summary>
+    /// Standard output content.
+    /// </summary>
+    public string StandardOutput { get; set; }
+
+    /// <summary>
+    /// Standard error content.
+    /// </summary>
+    public string StandardError { get; set; }
+
+    /// <summary>
+    /// Time from start to completion.
+    /// </summary>
+    public TimeSpan Duration { get; set; }
+
+    /// <summary>
+    /// Whether the process was killed due to timeout.
+    /// </summary>
+    public bool TimedOut { get; set; }
+
+    /// <summary>
+    /// Whether the process was cancelled by user.
+    /// </summary>
+    public bool Cancelled { get; set; }
+
+    /// <summary>
+    /// Any exception that occurred during process management.
+    /// </summary>
+    public Exception Exception { get; set; }
+
+    /// <summary>
+    /// Additional metadata about the execution.
+    /// </summary>
+    public Dictionary<string, object> Metadata { get; set; } = new();
 }
 ```
 
@@ -2734,6 +3898,192 @@ public class SourceFile
 2. **Path Resolution**: Files referenced in tasks must exist or be marked for creation
 3. **Dependency Integrity**: Task graph must be acyclic (DAG)
 4. **Symbol Existence**: Patches targeting existing symbols must verify via Code Intelligence Layer
+
+### JSON Schema to C# Type Mappings
+
+The AI Engine produces JSON with its own type vocabulary. These must be mapped to internal C# types.
+
+#### TaskGraph JSON Type → TaskType Enum Mapping
+
+```csharp
+/// <summary>
+/// Maps AI Engine JSON task types to internal TaskType enum.
+/// AI uses: INFRASTRUCTURE, MODEL, SERVICE, UI, INTEGRATION, FIX
+/// Internal uses: INITIALIZE_WORKSPACE, CREATE_MODEL, ADD_VIEW, etc.
+/// </summary>
+public static class TaskTypeMapper
+{
+    private static readonly Dictionary<string, TaskType> _jsonToInternalMap = new()
+    {
+        // Infrastructure tasks
+        ["INFRASTRUCTURE:INIT_WORKSPACE"] = TaskType.INITIALIZE_WORKSPACE,
+        ["INFRASTRUCTURE:RESTORE"] = TaskType.RESTORE_NUGET,
+        ["INFRASTRUCTURE:BUILD"] = TaskType.BUILD_PROJECT,
+        ["INFRASTRUCTURE:TEST"] = TaskType.RUN_TESTS,
+
+        // Model tasks
+        ["MODEL:CREATE"] = TaskType.CREATE_MODEL,
+        ["MODEL:UPDATE"] = TaskType.UPDATE_SERVICE,
+
+        // Service tasks
+        ["SERVICE:CREATE"] = TaskType.UPDATE_SERVICE,
+        ["SERVICE:UPDATE"] = TaskType.UPDATE_SERVICE,
+
+        // UI tasks
+        ["UI:ADD_VIEW"] = TaskType.ADD_VIEW,
+        ["UI:MODIFY_LAYOUT"] = TaskType.MODIFY_LAYOUT,
+
+        // Integration tasks
+        ["INTEGRATION:TEST"] = TaskType.INTEGRATION_TEST,
+
+        // Fix tasks
+        ["FIX:APPLY"] = TaskType.APPLY_FIX
+    };
+
+    /// <summary>
+    /// Maps a JSON task type combination to internal TaskType.
+    /// </summary>
+    /// <param name="jsonCategory">The JSON 'type' field (INFRASTRUCTURE, MODEL, etc.)</param>
+    /// <param name="jsonSubtype">Optional subtype from description or metadata</param>
+    /// <returns>Mapped TaskType enum value</returns>
+    public static TaskType MapToInternal(string jsonCategory, string jsonSubtype = null)
+    {
+        // Try exact match with subtype first
+        if (!string.IsNullOrEmpty(jsonSubtype))
+        {
+            var compositeKey = $"{jsonCategory}:{jsonSubtype}".ToUpperInvariant();
+            if (_jsonToInternalMap.TryGetValue(compositeKey, out var exactMatch))
+                return exactMatch;
+        }
+
+        // Fall back to category-only mapping
+        return jsonCategory?.ToUpperInvariant() switch
+        {
+            "INFRASTRUCTURE" => TaskType.INITIALIZE_WORKSPACE,
+            "MODEL" => TaskType.CREATE_MODEL,
+            "SERVICE" => TaskType.UPDATE_SERVICE,
+            "UI" => TaskType.ADD_VIEW,
+            "INTEGRATION" => TaskType.INTEGRATION_TEST,
+            "FIX" => TaskType.APPLY_FIX,
+            _ => TaskType.MUTATION_TASK // Default fallback
+        };
+    }
+
+    /// <summary>
+    /// Converts a JSON TaskGraph to internal Task objects.
+    /// </summary>
+    public static List<Task> ConvertTaskGraph(JsonTaskGraph graph)
+    {
+        return graph.Tasks.Select(jsonTask => new Task
+        {
+            Id = jsonTask.Id,
+            Type = MapToInternal(jsonTask.Type, ExtractSubtype(jsonTask)),
+            Description = jsonTask.Description,
+            TargetFiles = jsonTask.TargetFiles,
+            DependsOnTaskIds = jsonTask.Dependencies,
+            Validation = MapValidationStrategy(jsonTask.ValidationStrategy),
+            CreatedAt = DateTime.UtcNow
+        }).ToList();
+    }
+
+    private static string ExtractSubtype(JsonTaskDefinition task)
+    {
+        // Try to extract subtype from description or target files
+        if (task.Description.Contains("workspace", StringComparison.OrdinalIgnoreCase))
+            return "INIT_WORKSPACE";
+        if (task.Description.Contains("restore", StringComparison.OrdinalIgnoreCase))
+            return "RESTORE";
+        if (task.Description.Contains("build", StringComparison.OrdinalIgnoreCase))
+            return "BUILD";
+        if (task.Description.Contains("test", StringComparison.OrdinalIgnoreCase))
+            return "TEST";
+        return null;
+    }
+
+    private static ValidationStrategy MapValidationStrategy(string jsonStrategy) =>
+        jsonStrategy?.ToUpperInvariant() switch
+        {
+            "COMPILE" => ValidationStrategy.DOTNET_BUILD,
+            "UNIT_TEST" => ValidationStrategy.DOTNET_BUILD,
+            "XAML_PARSE" => ValidationStrategy.XAML_COMPILE,
+            _ => ValidationStrategy.DOTNET_BUILD
+        };
+}
+
+/// <summary>
+/// JSON schema model for AI Engine TaskGraph.
+/// </summary>
+public class JsonTaskGraph
+{
+    public List<JsonTaskDefinition> Tasks { get; set; }
+}
+
+public class JsonTaskDefinition
+{
+    public string Id { get; set; }
+    public string Type { get; set; }  // INFRASTRUCTURE, MODEL, SERVICE, UI, INTEGRATION, FIX
+    public string Description { get; set; }
+    public List<string> TargetFiles { get; set; }
+    public List<string> Dependencies { get; set; }
+    public string ValidationStrategy { get; set; }
+}
+```
+
+#### CodePatch JSON → PatchDefinition Mapping
+
+```csharp
+/// <summary>
+/// Maps AI Engine JSON patch schema to internal PatchDefinition.
+/// </summary>
+public static class PatchDefinitionMapper
+{
+    public static PatchDefinition MapFromJson(JsonCodePatch jsonPatch, JsonPatchChange change)
+    {
+        return new PatchDefinition
+        {
+            FilePath = jsonPatch.Path,
+            Action = MapPatchAction(change.Action),
+            TargetSymbol = change.TargetSymbol,
+            Content = change.Content,
+            Metadata = new Dictionary<string, object>
+            {
+                ["source"] = "ai-engine",
+                ["timestamp"] = DateTime.UtcNow
+            }
+        };
+    }
+
+    private static PatchAction MapPatchAction(string jsonAction) =>
+        jsonAction?.ToUpperInvariant() switch
+        {
+            "ADD_CLASS" => PatchAction.ADD_CLASS,
+            "ADD_METHOD" => PatchAction.ADD_METHOD,
+            "ADD_PROPERTY" => PatchAction.ADD_PROPERTY,
+            "ADD_FIELD" => PatchAction.ADD_FIELD,
+            "MODIFY_METHOD_BODY" => PatchAction.MODIFY_METHOD_BODY,
+            "MODIFY_PROPERTY" => PatchAction.MODIFY_PROPERTY,
+            "INSERT_USING" => PatchAction.INSERT_USING,
+            "REMOVE_MEMBER" => PatchAction.REMOVE_MEMBER,
+            "UPDATE_XAML_NODE" => PatchAction.UPDATE_XAML_NODE,
+            "ADD_XAML_ELEMENT" => PatchAction.ADD_XAML_ELEMENT,
+            "MODIFY_XAML_ATTRIBUTE" => PatchAction.MODIFY_XAML_ATTRIBUTE,
+            _ => PatchAction.ADD_CLASS // Default fallback
+        };
+}
+
+public class JsonCodePatch
+{
+    public string Path { get; set; }
+    public List<JsonPatchChange> Changes { get; set; }
+}
+
+public class JsonPatchChange
+{
+    public string Action { get; set; }
+    public string TargetSymbol { get; set; }
+    public string Content { get; set; }
+}
+```
 
 ### Detailed Build Flow Diagram
 
