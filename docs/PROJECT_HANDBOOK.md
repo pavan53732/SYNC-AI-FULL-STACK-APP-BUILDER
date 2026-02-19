@@ -823,7 +823,7 @@ The user should only see:
 │                                     ▼                          │
 │                               ┌───────────┐                    │
 │                               │ Retry Loop│ (hidden)           │
-│                               │ Up to 5x  │                    │
+│                               │ Infinite  │                    │
 │                               └───────────┘                    │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -835,7 +835,7 @@ The user should only see:
 | **1. Parse & Understand** | AI analyzes user prompt, extracts intent | "Building..."              |
 | **2. Generate**           | Code is generated, files created         | "Building..."              |
 | **3. Validate**           | Build attempted, errors caught           | "Building..."              |
-| **4. Correct**            | Silent retry with fixes (up to 5x)       | "Building..."              |
+| **4. Correct**            | Silent retry with fixes (infinite)       | "Building..."              |
 | **5. Finalize**           | Success or graceful failure              | Result or friendly message |
 
 ### Design Principles for Lovable-Style Builders
@@ -857,7 +857,7 @@ A single progress indicator represents multiple internal stages:
 Internally:
   ✓ Parsed intent
   ✓ Generated XAML
-  ⟳ Building... (retry 2/5)
+  ⟳ Building... (retry attempt)
   ○ Validation pending
   ○ Finalizing
 ```
@@ -910,7 +910,7 @@ Instead, they see:
 | ------------------------ | -------------------------------- | ----------------------------------------------------- |
 | **Parse Errors**         | Reprompt AI with context         | "Building..."                                         |
 | **Generation Errors**    | Regenerate with constraints      | "Building..."                                         |
-| **Validation Errors**    | Auto-fix loop (up to 5 retries)  | "Building..."                                         |
+| **Validation Errors**    | Auto-fix loop (continuous)       | "Building..."                                         |
 | **Deployment Errors**    | Retry with clean build           | "Almost done..."                                      |
 | **Unrecoverable Errors** | Graceful degradation, save state | "Something went wrong. Your progress has been saved." |
 
@@ -946,7 +946,7 @@ Instead, they see:
 
 #### Internal Layers
 
-- [ ] Silent retry loops (max 5)
+- [ ] Silent retry loops (infinite until user cancels)
 - [ ] Error categorization and auto-fix
 - [ ] State persistence between retries
 - [ ] Rollback capability

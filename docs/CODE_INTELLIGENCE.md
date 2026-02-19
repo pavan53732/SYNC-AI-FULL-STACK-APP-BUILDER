@@ -66,17 +66,13 @@ File.WriteAllText("MyClass.cs", formatted.ToFullString());
 
 ### Strict Indexing Policy (Mandatory)
 
-    The system enforces two distinct indexing modes:
+    The system uses **Full Semantic Mode** for all operations:
 
-    1.  **Full Semantic Mode** (Mandatory for Mutation)
-        *   Full Roslyn AST, symbol graph, and cross-file resolution.
-        *   Required for any write operation (Patch, Refactor, Move).
+    *   Full Roslyn AST, symbol graph, and cross-file resolution.
+    *   Required for all operations including retrieval, mutation, and capability inference.
+    *   Ensures consistent, deterministic behavior across all system components.
 
-    2.  **Lightweight Mode** (Retrieval Only)
-        *   Regex-based, shallow symbol extraction.
-        *   Used *only* for fast intent recognition and chat context.
-
-    > **CRITICAL RULE**: Lightweight indexing cannot influence capability inference, the patch engine, or mutation safety guards. All architectural decisions must be derived from the Full Semantic Mode.
+    > **PRINCIPLE**: The system always uses the deepest available analysis mode. No artificial throttling or shallow indexing modes are used, ensuring maximum accuracy and capability inference at all times.
 
 ### Enterprise Architecture Overview
 
@@ -1774,14 +1770,12 @@ Optimized for **token efficiency** and **relevance**.
 
 1. **System Rules** — WinUI constraints
 2. **Project Summary** — High-level architecture
-3. **Throttling Enforcement**:
-   ```csharp
-   if (contextLength > 8000) throw new ContextLimitExceededException();
-   ```
-4. **Target Symbol Definition** — Full code of target
-5. **Direct Dependencies** — Interfaces, services used
-6. **XAML Bindings** — Corresponding XAML file
-7. **Error Context** — If in fix mode
+3. **Target Symbol Definition** — Full code of target
+4. **Direct Dependencies** — Interfaces, services used
+5. **XAML Bindings** — Corresponding XAML file
+6. **Error Context** — If in fix mode
+
+> **PRINCIPLE**: Context is assembled based on relevance, not arbitrary token limits. The AI model manages its own context window constraints. All relevant symbols and files are included to ensure complete understanding.
 
 ### Deterministic Context Builder
 
@@ -1806,8 +1800,8 @@ public async Task<string> PrepareEnterpriseAIContextAsync(string prompt, string 
         context.AppendLine($"Symbol: {JsonSerializer.Serialize(semanticInfo)}");
     }
 
-    // 4. Strict token budgeting
-    return await _tokenManager.TrimContextAsync(context.ToString(), maxTokens: 8000);
+    // 4. Return complete context (no artificial token limits)
+    return context.ToString();
 }
 
 ### Hybrid Retrieval Model (Lovable vs Enterprise)
@@ -1891,13 +1885,6 @@ public class ProjectSummaryBuilder
 
 ---
 
-### 11.3 Retrieval Throttling Rules
-
-- Hard Cap: Max 200 symbols per context
-- Hard Cap: Max 8KB of source code per prompt
-- Force AI to request "More Context" if needed
-
----
 
 ### 11.2 Vector Index (Embeddings)
 

@@ -1000,7 +1000,7 @@ graph TD
 **🔴 CRITICAL FOUNDATION: Must Implement First**
 Without deterministic orchestration, Roslyn indexing and patching will create nondeterministic mutation loops that silently corrupt code.
 
-- **State Transitions**: `IDLE` → `SPEC_PARSED` → `TASK_GRAPH_READY` → `TASK_EXECUTING` → `VALIDATING` → `RETRYING` → `COMPLETED` / `FAILED`.
+- **State Transitions**: `IDLE` → `SPEC_PARSED` → `TASK_GRAPH_READY` → `TASK_EXECUTING` → `VALIDATING` → `RETRYING` → `COMPLETED`. (No FAILED state - system retries until user cancels or identical patch detected)
 - **Constraint**: Only 1 mutation task at time (no parallel patching)
 
 See [ORCHESTRATION_ENGINE.md](ORCHESTRATION_ENGINE.md) for complete details.
@@ -1560,9 +1560,8 @@ stateDiagram-v2
     VALIDATING --> RETRYING: Error Detected
     RETRYING --> TASK_EXECUTING: Fix Applied
     VALIDATING --> COMPLETED: Build Success
-    RETRYING --> FAILED: Max Retries Exceeded
+    RETRYING --> TASK_EXECUTING: Fix Applied (continuous retry)
     COMPLETED --> IDLE: Ready
-    FAILED --> IDLE: Reset
 ```
 
 #### 6.1.1 State Definitions (Formal)
@@ -1575,16 +1574,15 @@ stateDiagram-v2
 | **TASK_GRAPH_READY** | DAG created, ready to execute.                                                                                                 | `TASK_EXECUTING`           |
 | **TASK_EXECUTING**   | Agent/Compiler working.                                                                                                        | `VALIDATING`               |
 | **VALIDATING**       | Checks (Tests, Build) running.                                                                                                 | `RETRYING`, `COMPLETED`    |
-| **RETRYING**         | Error found, attempting fix.                                                                                                   | `TASK_EXECUTING`, `FAILED` |
+| **RETRYING**         | Error found, attempting fix (continuous - no max retry limit).                                                                 | `TASK_EXECUTING`           |
 | **COMPLETED**        | Success.                                                                                                                       | `IDLE`                     |
-| **FAILED**           | Max retries exhausted.                                                                                                         | `IDLE`                     |
 
 > **Source**: `EXECUTION_LIFECYCLE_SPECIFICATION.md` — Phase 0, Pre-Execution Guard: `_currentState = OrchestratorState.AI_PLANNING` set immediately upon session submission.
 
 **Key Responsibilities**:
 
 - **Concurrency Control**: Enforces "One Mutation at a Time" rule.
-- **Retry Budget**: Tracks attempts (Max 3 per task, Max 10 total).
+- **Continuous Retry**: Retries until success or user cancellation (no limits).
 - **Error Classification**: Maps huge MSBuild logs to actionable error codes.
 - **Timeout Management**: Kills hung processes after 5 minutes (configurable).
 
@@ -1885,50 +1883,56 @@ public enum AIErrorType
 ```csharp
 public class RetryPolicy
 {
-    public int MaxRetries { get; set; } = 3;
     public TimeSpan InitialDelay { get; set; } = TimeSpan.FromSeconds(1);
     public double BackoffMultiplier { get; set; } = 2.0;
-    public TimeSpan MaxDelay { get; set; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Executes operation with continuous retry until success or user cancellation.
+    /// No maximum retry limit - the system keeps trying until it succeeds.
+    /// </summary>
     public async Task<T> ExecuteAsync<T>(
         Func<Task<T>> operation,
-        Func<Exception, bool> shouldRetry)
+        Func<Exception, bool> shouldRetry,
+        CancellationToken cancellationToken = default)
     {
         var attempt = 0;
         var delay = InitialDelay;
 
-        while (true)
+        while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
                 return await operation();
             }
-            catch (Exception ex) when (shouldRetry(ex) && attempt < MaxRetries)
+            catch (Exception ex) when (shouldRetry(ex) && !cancellationToken.IsCancellationRequested)
             {
                 attempt++;
                 _logger.LogWarning(ex, "Attempt {Attempt} failed, retrying in {Delay}ms",
                     attempt, delay.TotalMilliseconds);
 
-                await Task.Delay(delay);
-                delay = TimeSpan.FromMilliseconds(
-                    Math.Min(delay.TotalMilliseconds * BackoffMultiplier, MaxDelay.TotalMilliseconds));
+                await Task.Delay(delay, cancellationToken);
+                delay = TimeSpan.FromMilliseconds(delay.TotalMilliseconds * BackoffMultiplier);
             }
         }
+
+        throw new OperationCanceledException(cancellationToken);
     }
 }
 ```
 
 ### 8.5 Retry Decision Matrix
 
-| Error Type          | Retry? | Max Retries | Strategy             |
-| ------------------- | ------ | ----------- | -------------------- |
-| **Network Errors**  | ✅ Yes | 3           | Exponential backoff  |
-| **API Rate Limit**  | ✅ Yes | 5           | Fixed delay (60s)    |
-| **Syntax Errors**   | ✅ Yes | 3           | AI re-generation     |
-| **Build Timeout**   | ✅ Yes | 1           | Increase timeout     |
-| **SDK Not Found**   | ❌ No  | 0           | User must install    |
-| **API Key Invalid** | ❌ No  | 0           | User must fix        |
-| **Disk Full**       | ❌ No  | 0           | User must free space |
+| Error Type          | Retry?    | Strategy                    |
+| ------------------- | --------- | --------------------------- |
+| **Network Errors**  | ✅ Yes    | Exponential backoff         |
+| **API Rate Limit**  | ✅ Yes    | Fixed delay (60s)           |
+| **Syntax Errors**   | ✅ Yes    | AI re-generation            |
+| **Build Timeout**   | ✅ Yes    | Increase timeout            |
+| **SDK Not Found**   | ❌ No     | User must install           |
+| **API Key Invalid** | ❌ No     | User must fix               |
+| **Disk Full**       | ❌ No     | User must free space        |
+
+> **Note**: For retryable errors, the system retries continuously until success or user cancellation. There is no maximum retry limit.
 
 ### 8.6 Auto-Fix Strategies
 
@@ -1981,66 +1985,51 @@ public class BuildErrorRecoveryService
 }
 ```
 
-### 8.7 Circuit Breaker Pattern
+### 8.7 Continuous Retry Pattern
+
+The system uses continuous retry with exponential backoff, never stopping until success or user cancellation:
 
 ```csharp
-public class CircuitBreaker
+public class ContinuousRetryPolicy
 {
-    private int _failureCount;
-    private DateTime _lastFailureTime;
-    private CircuitState _state = CircuitState.Closed;
+    public TimeSpan InitialDelay { get; set; } = TimeSpan.FromSeconds(1);
+    public double BackoffMultiplier { get; set; } = 2.0;
 
-    private readonly int _failureThreshold = 5;
-    private readonly TimeSpan _timeout = TimeSpan.FromMinutes(1);
-
-    public async Task<T> ExecuteAsync<T>(Func<Task<T>> operation)
+    /// <summary>
+    /// Executes operation with continuous retry until success or user cancellation.
+    /// No circuit breaker - the system always attempts recovery.
+    /// </summary>
+    public async Task<T> ExecuteAsync<T>(
+        Func<Task<T>> operation,
+        Func<Exception, bool> shouldRetry,
+        CancellationToken cancellationToken = default)
     {
-        if (_state == CircuitState.Open)
+        var attempt = 0;
+        var delay = InitialDelay;
+
+        while (!cancellationToken.IsCancellationRequested)
         {
-            if (DateTime.UtcNow - _lastFailureTime > _timeout)
+            try
             {
-                _state = CircuitState.HalfOpen;
+                return await operation();
             }
-            else
+            catch (Exception ex) when (shouldRetry(ex) && !cancellationToken.IsCancellationRequested)
             {
-                throw new CircuitBreakerOpenException("Circuit breaker is open");
+                attempt++;
+                _logger.LogWarning(ex, "Attempt {Attempt} failed, retrying in {Delay}ms",
+                    attempt, delay.TotalMilliseconds);
+
+                await Task.Delay(delay, cancellationToken);
+                delay = TimeSpan.FromMilliseconds(delay.TotalMilliseconds * BackoffMultiplier);
             }
         }
 
-        try
-        {
-            var result = await operation();
-
-            if (_state == CircuitState.HalfOpen)
-            {
-                _state = CircuitState.Closed;
-                _failureCount = 0;
-            }
-
-            return result;
-        }
-        catch (Exception ex)
-        {
-            _failureCount++;
-            _lastFailureTime = DateTime.UtcNow;
-
-            if (_failureCount >= _failureThreshold)
-            {
-                _state = CircuitState.Open;
-            }
-
-            throw;
-        }
+        throw new OperationCanceledException(cancellationToken);
     }
 }
-
-public enum CircuitState
-{
-    Closed,     // Normal operation
-    Open,       // Failing, reject all requests
-    HalfOpen    // Testing if service recovered
-}
 ```
+
+> **Key Difference**: No circuit breaker "open" state that blocks requests. The system continuously attempts recovery, only stopping on user cancellation.
 
 ### 8.8 Global Exception Handler
 
@@ -3158,22 +3147,26 @@ public async Task<PatchResult> ValidateAndApplyAsync(Patch patch)
 - **Fail Closed**: Reject if any check fails
 - **Audit Everything**: Log all validation attempts
 
-### 14.8 Retry Budget Controller
+### 14.8 Continuous Retry Controller
 
-**Prevents**: Infinite AI retry loops, endless build cycles, resource exhaustion
+**Philosophy**: The system never gives up - it retries continuously until success or user cancellation.
 
 **Implementation**:
 
 ```csharp
-public class RetryController
+public class ContinuousRetryController
 {
-    private const int SilentRetryLimit = 3;
-    private const int TotalRetryLimit = 10;
+    private const int SilentRetryThreshold = 3;
+    private readonly CancellationToken _userCancellationToken;
 
-    public async Task<BuildResult> BuildWithRetryAsync(string projectPath)
+    public async Task<BuildResult> BuildWithContinuousRetryAsync(string projectPath)
     {
-        for (int attempt = 1; attempt <= TotalRetryLimit; attempt++)
+        var attempt = 0;
+        var delay = TimeSpan.FromSeconds(1);
+
+        while (!_userCancellationToken.IsCancellationRequested)
         {
+            attempt++;
             var result = await _buildKernel.BuildProjectAsync(projectPath);
 
             if (result.Success)
@@ -3187,7 +3180,7 @@ public class RetryController
             _logger.LogWarning("Build failed on attempt {Attempt}: {Error}", attempt, result.Error);
 
             // Update UI state based on attempt count
-            if (attempt > SilentRetryLimit)
+            if (attempt > SilentRetryThreshold)
             {
                 // Show "Optimizing build…" to user
                 _uiStateManager.TransitionTo(UIState.SOFT_RECOVERY);
@@ -3199,15 +3192,18 @@ public class RetryController
             // Apply patch
             await _patchEngine.ApplyPatchAsync(fix.Patch);
 
-            // Exponential backoff
-            await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt - 1)));
+            // Exponential backoff with cap
+            await Task.Delay(delay, _userCancellationToken);
+            delay = TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds * 1.5, 60000)); // Cap at 60s
         }
 
-        // Retry budget exhausted
-        return BuildResult.Failed("Retry limit exceeded");
+        // User cancelled
+        return BuildResult.Cancelled("Build cancelled by user");
     }
 }
 ```
+
+> **Key Difference**: No maximum retry limit. The system keeps trying until it succeeds or the user explicitly cancels.
 
 ### Compliance & Data Privacy
 

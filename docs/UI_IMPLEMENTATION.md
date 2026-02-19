@@ -3,7 +3,6 @@
 > **The Presentation Layer: Design Philosophy, WinUI 3 Components, Visual State Machine & Error Feedback**
 >
 
-
 ## Table of Contents
 
 1. [Design Philosophy](#1-design-philosophy)
@@ -507,12 +506,6 @@ var acrylicBrush = new AcrylicBrush
                           ItemsSource="{x:Bind ViewModel.GenerationModes}"
                           SelectedItem="{x:Bind ViewModel.SelectedMode, Mode=TwoWay}"
                           Width="200"/>
-
-                <NumberBox Header="Max Retries"
-                           Value="{x:Bind ViewModel.MaxRetries, Mode=TwoWay}"
-                           Minimum="0"
-                           Maximum="10"
-                           Width="120"/>
             </StackPanel>
 
             <!-- Action Buttons -->
@@ -750,15 +743,9 @@ var acrylicBrush = new AcrylicBrush
             <!-- Build Configuration -->
             <Expander Header="Build Configuration">
                 <StackPanel Spacing="12" Padding="12">
-                    <NumberBox Header="Retry Budget"
-                               Value="{x:Bind ViewModel.RetryBudget, Mode=TwoWay}"
-                               Minimum="1"
-                               Maximum="20"/>
-
-                    <NumberBox Header="Build Timeout (seconds)"
-                               Value="{x:Bind ViewModel.BuildTimeout, Mode=TwoWay}"
-                               Minimum="30"
-                               Maximum="300"/>
+                    <InfoBar Severity="Informational"
+                             IsOpen="True"
+                             Message="Build settings are managed automatically. The system retries continuously until success."/>
                 </StackPanel>
             </Expander>
 
@@ -1073,7 +1060,7 @@ private async Task RollbackToSnapshot(string snapshotId)
 **Backend Reality**: 15+ orchestrator states
 **User Experience**: 8 simple states
 
-### The 8 User-Visible States
+### The 6 User-Visible States
 
 #### 🔷 FIRST_LAUNCH
 
@@ -1110,16 +1097,11 @@ private async Task RollbackToSnapshot(string snapshotId)
 
 #### 🔷 SOFT_RECOVERY
 
-- **Trigger**: Retries ongoing (attempts 4+)
+- **Trigger**: Retries ongoing (extended duration)
 - **UI**: Banner "Optimizing build…" (blue, not red), Cancel button
 - **Hidden**: Error details, retry count, technical diagnostics
-- **→** `PREVIEW_READY` (retry succeeded) or `HARD_FAILURE` (exhausted) or `EMPTY_IDLE` (cancelled)
-
-#### 🔷 HARD_FAILURE
-
-- **Trigger**: Retry budget exhausted, Orchestrator `FAILED`
-- **UI**: Neutral gray card with small warning icon, gentle language ("We couldn't complete this build"), Retry + Modify Prompt buttons, technical details collapsed
-- **→** `BUILDING` (Retry) or `TYPING` (Modify Prompt)
+- **Critical**: System continues retrying until success or user cancellation
+- **→** `PREVIEW_READY` (retry succeeded) or `EMPTY_IDLE` (user cancelled)
 
 #### 🔷 INTERVENTION_REQUIRED
 
@@ -1127,39 +1109,26 @@ private async Task RollbackToSnapshot(string snapshotId)
 - **UI**: Warning InfoBar explaining dependency impact, Force Apply / Discard buttons
 - **→** `BUILDING` (Force Apply) or `EMPTY_IDLE` (Discard)
 
-#### 🔷 FATAL_ENVIRONMENT_ERROR
-
-- **Trigger**: Environment validation fails (SDK missing, corrupted installation, disk critical, certificate expired)
-- **UI**: Full-screen error card (cannot be dismissed), error icon, clear title ("System Configuration Required"), actionable guidance with links, "Open Logs" button for developers
-- **Distinguishing Features**:
-  - NOT recoverable via retry
-  - Requires user action outside the app
-  - Blocks all generation until resolved
-- **Resolution Paths**:
-  - SDK missing → "Download .NET SDK" button (opens browser)
-  - Disk critical → "Free Disk Space" guidance
-  - Certificate expired → "Renew Certificate" workflow
-  - Corrupted installation → "Repair Installation" button
-- **→** `EMPTY_IDLE` (after user fixes issue and clicks "Retry Validation")
+> **Note**: There is no HARD_FAILURE or FATAL_ENVIRONMENT_ERROR state. The system retries continuously until success or user cancellation. Environment issues are handled through user guidance dialogs that don't block the state machine.
 
 ### Orchestrator → UI State Mapping Table
 
-| UI State                  | Orchestrator States (Backend)                                                                                                          |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `FIRST_LAUNCH`            | N/A (no orchestrator instance)                                                                                                         |
-| `EMPTY_IDLE`              | `IDLE`                                                                                                                                 |
-| `TYPING`                  | `IDLE` (no backend change)                                                                                                             |
-| `BUILDING`                | `SPEC_PARSED`, `TASK_GRAPH_READY`, `MUTATION_GUARD`, `PATCHING`, `INDEXING`, `TASK_EXECUTING`, `VALIDATING`, `RETRYING` (attempts 1–3) |
-| `PREVIEW_READY`           | `COMPLETED`                                                                                                                            |
-| `SOFT_RECOVERY`           | `RETRYING` (attempts 4+)                                                                                                               |
-| `HARD_FAILURE`            | `FAILED`                                                                                                                               |
-| `INTERVENTION_REQUIRED`   | `GUARD_REJECTED`                                                                                                                       |
-| `FATAL_ENVIRONMENT_ERROR` | `ENVIRONMENT_INVALID` (SDK missing, disk critical, corrupted installation, certificate expired)                                        |
+| UI State                | Orchestrator States (Backend)                                                                                                          |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `FIRST_LAUNCH`          | N/A (no orchestrator instance)                                                                                                         |
+| `EMPTY_IDLE`            | `IDLE`                                                                                                                                 |
+| `TYPING`                | `IDLE` (no backend change)                                                                                                             |
+| `BUILDING`              | `SPEC_PARSED`, `TASK_GRAPH_READY`, `MUTATION_GUARD`, `PATCHING`, `INDEXING`, `TASK_EXECUTING`, `VALIDATING`, `RETRYING` (initial)     |
+| `PREVIEW_READY`         | `COMPLETED`                                                                                                                            |
+| `SOFT_RECOVERY`         | `RETRYING` (extended duration, user informed)                                                                                          |
+| `INTERVENTION_REQUIRED` | `GUARD_REJECTED`                                                                                                                       |
+
+> **Note**: There is no `FAILED` or `ENVIRONMENT_INVALID` orchestrator state. The system retries continuously until success or user cancellation.
 
 ### State Mapping
 
 ```csharp
-private UIState MapToUIState(OrchestratorState orchestratorState, int retryCount)
+private UIState MapToUIState(OrchestratorState orchestratorState, bool extendedRetry)
 {
     return orchestratorState switch
     {
@@ -1171,15 +1140,16 @@ private UIState MapToUIState(OrchestratorState orchestratorState, int retryCount
         OrchestratorState.INDEXING           => UIState.BUILDING,
         OrchestratorState.TASK_EXECUTING     => UIState.BUILDING,
         OrchestratorState.VALIDATING         => UIState.BUILDING,
-        OrchestratorState.RETRYING when retryCount <= 3 => UIState.BUILDING,
-        OrchestratorState.RETRYING when retryCount > 3  => UIState.SOFT_RECOVERY,
+        OrchestratorState.RETRYING when !extendedRetry => UIState.BUILDING,
+        OrchestratorState.RETRYING when extendedRetry  => UIState.SOFT_RECOVERY,
         OrchestratorState.COMPLETED          => UIState.PREVIEW_READY,
-        OrchestratorState.FAILED             => UIState.HARD_FAILURE,
         OrchestratorState.GUARD_REJECTED     => UIState.INTERVENTION_REQUIRED,
-        OrchestratorState.ENVIRONMENT_INVALID => UIState.FATAL_ENVIRONMENT_ERROR,
         _                                    => UIState.EMPTY_IDLE
     };
 }
+```
+
+> **Note**: The system never enters a terminal failure state. All errors trigger continuous retry until success or user cancellation.
 ```
 
 ### ViewModel Implementation
@@ -1324,47 +1294,52 @@ public class MainViewModel : ObservableObject
        │ Click Generate
        ↓
 ┌─────────────┐
-│  BUILDING   │ (Orchestrator executing)
+│  BUILDING   │ (Orchestrator executing, silent retries)
 └──────┬──────┘
        │
        ├─────────────┬──────────────┐
-       │ Success     │ Retry 4+     │ Retry exhausted
+       │ Success     │ Extended     │ User cancels
+       │             │ retry        │
        ↓             ↓              ↓
 ┌──────────────┐ ┌────────────┐ ┌──────────────┐
-│PREVIEW_READY │ │SOFT_RECOVERY│ │HARD_FAILURE  │
+│PREVIEW_READY │ │SOFT_RECOVERY│ │ EMPTY_IDLE   │
 └──────────────┘ └────────────┘ └──────────────┘
        │             │              │
-       └─────────────┴──> Back to BUILDING (new prompt)
+       │             │ (continues   │
+       │             │  retrying)   │
+       │             ↓              │
+       │      ┌──────────────┐      │
+       └─────→│PREVIEW_READY │←─────┘
+              └──────────────┘
+                   (success)
 ```
+
+> **Key Insight**: The system never stops retrying. SOFT_RECOVERY indicates extended retry duration with user awareness, not failure. The only exit paths are success (PREVIEW_READY) or user cancellation (EMPTY_IDLE).
 
 ---
 
 ## 8. Error Feedback UX
 
-### Three-Tier Failure System
+### Two-Tier Recovery System
 
-#### Tier 1: Silent Auto-Recovery (Retries 1-3)
+#### Tier 1: Silent Auto-Recovery (Initial Retries)
 
 - ✅ No error message shown
 - ✅ Spinner continues smoothly
 - ✅ No UI change whatsoever
-- Exponential backoff: 1s, 2s, 4s
+- Exponential backoff applied
+- System continues retrying automatically
 
-#### Tier 2: Recoverable Failure (Retries 4+)
+#### Tier 2: Extended Recovery (User Informed)
 
-- Blue warning InfoBar: "Build Issue Detected"
-- Message: "We encountered an issue while building your app. Retrying with adjustments…"
-- Retry button available
+- Blue warning InfoBar: "Optimizing Build…"
+- Message: "We're refining the build. This may take a moment…"
+- Cancel button available (user can stop at any time)
 - Logs tab becomes visible (collapsed by default)
 - Alternative build strategies attempted (clean build, restore, fallback config)
+- System continues retrying until success or user cancellation
 
-#### Tier 3: Hard Failure (Budget Exhausted)
-
-- ContentDialog with warning icon
-- Title: "Build Could Not Complete"
-- User-friendly error message (translated from technical error)
-- Buttons: Retry, Modify Prompt, Cancel
-- Technical details in collapsed Expander
+> **Note**: There is no "Tier 3: Hard Failure". The system never stops retrying on its own. The only terminal states are success or user-initiated cancellation.
 
 ### Error Message Translation
 
@@ -1375,16 +1350,22 @@ public class MainViewModel : ObservableObject
 | `CS0103`: name doesn't exist   | "A variable name wasn't recognized. Retrying with corrections."                                              |
 | `MSB3073`: command exited      | "The build process encountered an issue. Retrying with different settings."                                  |
 
-### Failure Implementation
+### Recovery Implementation
 
 **Tier 1 — `BuildWithSilentRetryAsync()`**:
 
 ```csharp
-private async Task<BuildResult> BuildWithSilentRetryAsync(string projectPath)
+private async Task<BuildResult> BuildWithSilentRetryAsync(
+    string projectPath,
+    CancellationToken cancellationToken)
 {
-    for (int attempt = 1; attempt <= 3; attempt++)
+    var attempt = 0;
+    var delay = TimeSpan.FromSeconds(1);
+
+    while (!cancellationToken.IsCancellationRequested)
     {
-        var result = await _buildService.BuildAsync(projectPath);
+        attempt++;
+        var result = await _buildService.BuildAsync(projectPath, cancellationToken);
 
         if (result.Success)
         {
@@ -1395,147 +1376,88 @@ private async Task<BuildResult> BuildWithSilentRetryAsync(string projectPath)
         // Log internally, don't show to user
         _logger.LogWarning("Build attempt {Attempt} failed: {Error}", attempt, result.Error);
 
+        // Check if we should transition to Tier 2 (extended recovery UI)
+        if (attempt >= 3 && !_extendedRecoveryShown)
+        {
+            _extendedRecoveryShown = true;
+            ShowExtendedRecoveryUI();
+        }
+
         // Exponential backoff
-        await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt - 1)));
+        await Task.Delay(delay, cancellationToken);
+        delay = TimeSpan.FromMilliseconds(delay.TotalMilliseconds * 1.5);
     }
 
-    // Escalate to Tier 2
-    return await HandleRecoverableFailureAsync(projectPath);
+    // User cancelled
+    return BuildResult.Cancelled();
 }
 ```
 
-**Tier 2 — `RecoverableFailureBar` XAML + `HandleRecoverableFailureAsync()`**:
+**Tier 2 — `ExtendedRecoveryBar` XAML + `ShowExtendedRecoveryUI()`**:
 
 ```xaml
-<InfoBar x:Name="RecoverableFailureBar"
-         Severity="Warning"
+<InfoBar x:Name="ExtendedRecoveryBar"
+         Severity="Informational"
          IsOpen="False"
-         Title="Build Issue Detected"
-         Message="We encountered an issue while building your app. Retrying with adjustments…">
+         Title="Optimizing Build…"
+         Message="We're refining the build. This may take a moment…">
     <InfoBar.ActionButton>
-        <Button Content="Retry Now"
-                Click="{x:Bind ViewModel.RetryBuild}"/>
+        <Button Content="Cancel"
+                Click="{x:Bind ViewModel.CancelBuild}"/>
     </InfoBar.ActionButton>
 </InfoBar>
 ```
 
 ```csharp
-private async Task<BuildResult> HandleRecoverableFailureAsync(string projectPath)
+private void ShowExtendedRecoveryUI()
 {
-    // Show non-technical warning
-    RecoverableFailureBar.IsOpen = true;
+    // Show informational (not warning) banner
+    ExtendedRecoveryBar.IsOpen = true;
 
-    // Make Logs tab available (but don't auto-open)
-    LogsTab.Visibility = Visibility.Visible;
-
-    // Try alternative build strategies
-    var strategies = new Func<Task<BuildResult>>[]
+    // Make Logs tab available in Developer Mode (but don't auto-open)
+    if (DeveloperModeEnabled)
     {
-        () => _buildService.BuildWithCleanAsync(projectPath),
-        () => _buildService.BuildWithRestoreAsync(projectPath),
-        () => _buildService.BuildWithFallbackConfigAsync(projectPath)
-    };
-
-    foreach (var strategy in strategies)
-    {
-        var result = await strategy();
-        if (result.Success)
-        {
-            RecoverableFailureBar.IsOpen = false;
-            return result;
-        }
+        LogsTab.Visibility = Visibility.Visible;
     }
-
-    // Escalate to Tier 3
-    return await HandleHardFailureAsync(projectPath);
 }
 ```
 
-**Tier 3 — `HardFailureDialog` XAML + `HandleHardFailureAsync()`**:
-
-```xaml
-<ContentDialog x:Name="HardFailureDialog"
-               Title="Build Could Not Complete"
-               PrimaryButtonText="Retry"
-               SecondaryButtonText="Modify Prompt"
-               CloseButtonText="Cancel"
-               DefaultButton="ContentDialogButton.Close">
-    <StackPanel Spacing="16" Padding="24">
-        <!-- Warning Icon -->
-        <FontIcon Glyph="&#xE7BA;"
-                  FontSize="48"
-                  Foreground="{ThemeResource SystemFillColorCritical}"
-                  HorizontalAlignment="Center"/>
-
-        <!-- Main Message -->
-        <TextBlock Text="We couldn't complete this build."
-                   Style="{StaticResource SubtitleTextBlockStyle}"
-                   HorizontalAlignment="Center"/>
-
-        <!-- User-Friendly Reason -->
-        <TextBlock Text="{x:Bind ViewModel.FriendlyErrorMessage}"
-                   TextWrapping="Wrap"
-                   HorizontalAlignment="Center"/>
-
-        <!-- Technical Details (Collapsed) -->
-        <Expander Header="View Technical Details"
-                  HorizontalAlignment="Stretch">
-            <StackPanel Spacing="8" Padding="12">
-                <TextBlock Text="{x:Bind ViewModel.ErrorType}"    FontWeight="SemiBold"/>
-                <TextBlock Text="{x:Bind ViewModel.AffectedFile}"/>
-                <TextBlock Text="{x:Bind ViewModel.BuildCode}"    FontFamily="Consolas"/>
-                <TextBlock Text="{x:Bind ViewModel.RetryAttempts}"/>
-                <TextBlock Text="{x:Bind ViewModel.SnapshotId}"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-            </StackPanel>
-        </Expander>
-    </StackPanel>
-</ContentDialog>
-```
+**Cancellation Handling**:
 
 ```csharp
-private async Task<BuildResult> HandleHardFailureAsync(string projectPath)
+private async void OnCancelBuild()
 {
-    // Populate error details
-    ViewModel.FriendlyErrorMessage = TranslateErrorMessage(lastError);
-    ViewModel.ErrorType            = lastError.Type.ToString();
-    ViewModel.AffectedFile         = Path.GetFileName(lastError.FilePath);
-    ViewModel.BuildCode            = lastError.Code;
-    ViewModel.RetryAttempts        = $"Attempted {totalRetries} times";
-    ViewModel.SnapshotId           = await _snapshotService.GetLatestSnapshotIdAsync();
+    // User chose to stop the build
+    _cancellationTokenSource.Cancel();
 
-    // Show dialog
-    var result = await HardFailureDialog.ShowAsync();
+    // Hide the extended recovery UI
+    ExtendedRecoveryBar.IsOpen = false;
 
-    if (result == ContentDialogResult.Primary)
-    {
-        // User clicked Retry
-        return await BuildWithSilentRetryAsync(projectPath);
-    }
-    else if (result == ContentDialogResult.Secondary)
-    {
-        // User clicked Modify Prompt
-        NavigateToEditor();
-    }
+    // Return to idle state
+    CurrentState = UIState.EMPTY_IDLE;
 
-    return BuildResult.Failed(lastError);
+    // Optional: Show brief confirmation
+    ShowToast("Build cancelled. Your project is ready for your next prompt.");
 }
 ```
 
-**`TranslateErrorMessage()` implementation**:
+> **Key Difference**: The system never shows a "failure" dialog. It continues retrying until it succeeds or the user explicitly cancels.
+
+**Error Context for Logging** (Developer Mode only):
 
 ```csharp
-public string TranslateErrorMessage(BuildError error)
+public string GetErrorContext(BuildError error)
 {
+    // Only shown in Developer Mode logs
     return error.Code switch
     {
-        "CS0246" => "We couldn't find a required component. The system will attempt to add the missing reference automatically.",
-        "CS1061" => "There's a mismatch in the code structure. Attempting to fix automatically.",
-        "CS0103" => "A variable name wasn't recognized. Retrying with corrections.",
-        "CS0029" => "There's a type mismatch in the generated code. Adjusting automatically.",
-        "MSB3073" => "The build process encountered an issue. Retrying with different settings.",
-        "MSB4018" => "A build task failed. Attempting alternative build strategy.",
-        _        => "We encountered a build issue. Retrying with adjustments…"
+        "CS0246" => $"[{error.Code}] Namespace not found: {error.Message}",
+        "CS1061" => $"[{error.Code}] Member not found: {error.Message}",
+        "CS0103" => $"[{error.Code}] Name not found: {error.Message}",
+        "CS0029" => $"[{error.Code}] Type mismatch: {error.Message}",
+        "MSB3073" => $"[{error.Code}] Build task failed: {error.Message}",
+        "MSB4018" => $"[{error.Code}] Build task error: {error.Message}",
+        _        => $"[{error.Code}] {error.Message}"
     };
 }
 ```
@@ -1839,8 +1761,7 @@ public class EditorViewModel : ObservableObject
         {
             Prompt = this.Prompt,
             ProjectPath = this.CurrentProjectPath,
-            GenerationMode = this.SelectedMode,
-            MaxRetries = this.MaxRetries
+            GenerationMode = this.SelectedMode
         };
 
         await _orchestrator.SubmitCommandAsync(command);

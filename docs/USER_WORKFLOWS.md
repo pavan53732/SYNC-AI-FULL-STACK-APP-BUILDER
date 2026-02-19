@@ -258,15 +258,19 @@ When "Improve this app" is clicked:
 
 ### Refinement Failure UX
 
-**Soft Failure** (retries ongoing):
+**Extended Recovery** (retries ongoing):
 
 - Message: "Working on that change…"
-- Silent retry continues
+- Silent retry continues automatically
+- User can cancel at any time
 
-**Hard Failure** (retry budget exhausted):
+**User Cancellation**:
 
-- Message: "I couldn't safely apply that change. You can refine your request."
-- Action buttons: "Retry", "Edit Prompt"
+- Message: "Change cancelled. Your project is ready for your next prompt."
+- No error state entered
+- System returns to idle, ready for new input
+
+> **Note**: There is no "Hard Failure" state. The system retries continuously until success or user cancellation.
 
 **Never show**: Compiler output, stack traces, file paths, technical errors
 
@@ -691,11 +695,14 @@ The system handles 5 categories of errors internally:
 - **Assistance**: Suggest manual fixes if necessary
 - **Support**: Offer help options
 
-#### 5. Unrecoverable Errors
+#### 5. Extended Recovery (User Informed)
 
-- **User message**: "Something went wrong"
-- **Suggestions**: "Try simpler prompt" or "Contact support"
+- **User message**: "This is taking longer than expected. Optimizing…"
+- **Action**: User can cancel and modify prompt
 - **Safety**: Preserve work (auto-save)
+- **Continuous retry**: System keeps trying until success or cancellation
+
+> **Note**: There are no "Unrecoverable Errors" from the system's perspective. All errors trigger continuous retry. Only user cancellation stops the process.
 
 ### Automatic Error Detection & Fixing
 
@@ -716,9 +723,11 @@ The system handles 5 categories of errors internally:
 - Fix method signatures
 - Add missing properties
 
-**Retry Logic**: Up to 5 auto-fix attempts before showing to user
+**Retry Logic**: Continuous retry with exponential backoff until success or user cancellation
 
 **Fix Success Tracking**: Remember solutions for future errors
+
+> **Note**: The system never stops retrying on its own. The only terminal states are success or user-initiated cancellation.
 
 ---
 

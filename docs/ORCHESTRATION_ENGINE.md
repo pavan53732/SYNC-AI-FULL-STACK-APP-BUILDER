@@ -90,7 +90,7 @@ Without a deterministic orchestrator:
 ✓ No implicit transitions
 ✓ No uncontrolled parallel mutation
 ✓ One active task at a time (strict serialization)
-✓ Strict retry budget (no infinite loops)
+✓ Autonomous infinite refinement (retry until success or user cancellation)
 ✓ Immutable state transitions (functional programming)
 ✓ Full event log for replay/debug (deterministic replay)
 ```
@@ -146,8 +146,7 @@ public enum TaskStatus
     RUNNING,             // Currently executing
     VALIDATING,          // Build/validation phase
     RETRYING,            // Failed, attempting retry
-    COMPLETED,           // Success
-    FAILED               // Exhausted retries
+    COMPLETED            // Success (system retries indefinitely until success or user cancellation)
 }
 
 public enum ErrorType
@@ -185,16 +184,14 @@ public class Task
     public ValidationStrategy Validation { get; }      // How to validate success
     public TimeSpan ValidationTimeout { get; }        // Max time for validation
 
-    // Retry configuration
-    public int RetryCount { get; set; }               // Current attempt number
-    public int MaxRetries { get; set; } = 5;          // Absolute max attempts
+    // Retry tracking
+    public int RetryCount { get; set; }               // Current attempt number (informational only)
+    public string? LastPatchHash { get; set; }        // SHA256 of last applied patch (for deduplication)
 
     // State
     public TaskStatus Status { get; set; }            // Current status
     public ErrorType? LastError { get; set; }         // Last error encountered
     public string? ErrorMessage { get; set; }         // Error details
-    public int RetryBudget { get; set; } = 5;         // Remaining retries
-    public string? LastPatchHash { get; set; }        // SHA256 of last applied patch (for deduplication)
 
     // Admin/Elevation awareness
     public bool RequiresAdmin { get; set; }           // Task requires elevation (signing, cert install)
@@ -233,7 +230,6 @@ public enum BuilderState
     RETRYING = 10,           // Retry in progress
     EXECUTING_TASK = 11,     // Task execution/retry in progress
     BUILD_SUCCEEDED = 12,    // All tasks completed
-    BUILD_FAILED = 13,       // Unrecoverable failure
     // Packaging Phase
     PACKAGING = 14,          // MSIX bundling & signing
     PACKAGING_SUCCEEDED = 15, // Application ready for distribution
@@ -380,8 +376,7 @@ public record TaskFailedEvent : BuilderEvent
     public string TaskId { get; init; }
     public ErrorType ErrorType { get; init; }
     public string ErrorMessage { get; init; }
-    public int CurrentRetry { get; init; }
-    public int MaxRetries { get; init; }
+    public int CurrentRetry { get; init; }  // Informational only - for logging/debugging
 }
 
 // System-level events
@@ -390,12 +385,6 @@ public record BuildCompletedEvent : BuilderEvent
     public int TasksCompleted { get; init; }
     public TimeSpan TotalDuration { get; init; }
     public List<string> GeneratedFiles { get; init; }
-}
-
-public record BuildFailedEvent : BuilderEvent
-{
-    public string FailureReason { get; init; }
-    public string TaskIdThatFailed { get; init; }
 }
 
 public record RetryStartedEvent : BuilderEvent
@@ -470,8 +459,10 @@ public class BuilderReducer
             (BuilderState.VALIDATING, TaskCompletedEvent e) =>
                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.TASK_GRAPH_BUILT, @event),
 
-            // === FAILURE & RETRY PATH ===
-            (BuilderState.VALIDATING, TaskFailedEvent e) when e.CurrentRetry < e.MaxRetries =>
+            // === FAILURE & AUTOMATIC RETRY PATH ===
+            // System always retries - no max retry limit
+            // Only stops if user cancels or identical patch detected (no progress)
+            (BuilderState.VALIDATING, TaskFailedEvent e) =>
                 context with
                 {
                     State = BuilderState.RETRYING,
@@ -482,13 +473,6 @@ public class BuilderReducer
                 context with
                 {
                     State = BuilderState.EXECUTING_TASK,
-                    EventLog = [..context.EventLog, @event]
-                },
-
-            (BuilderState.VALIDATING, TaskFailedEvent e) when e.CurrentRetry >= e.MaxRetries =>
-                context with
-                {
-                    State = BuilderState.BUILD_FAILED,
                     EventLog = [..context.EventLog, @event]
                 },
 
@@ -718,29 +702,26 @@ public class RetryPolicy
 {
     public TimeSpan InitialDelay { get; set; } = TimeSpan.FromSeconds(1);
     public double BackoffMultiplier { get; set; } = 2.0;
-    public TimeSpan MaxDelay { get; set; } = TimeSpan.FromSeconds(30);
 
     public TimeSpan GetDelay(int retryCount)
     {
         var delay = InitialDelay.TotalMilliseconds * Math.Pow(BackoffMultiplier, retryCount);
-        return TimeSpan.FromMilliseconds(Math.Min(delay, MaxDelay.TotalMilliseconds));
+        return TimeSpan.FromMilliseconds(delay);
     }
 }
 
 public class RetryController
 {
     /// <summary>
-    /// Per-Task Retry Model: Each task has its own isolated retry budget.
-    /// No global session-level retry limits. Orchestrator never aborts
-    /// entire session due to retry count.
+    /// Autonomous Infinite Refinement: System retries until success or user cancellation.
+    /// The only stopping condition is identical patch detection (no progress made).
     /// </summary>
     public static bool ShouldRetry(Task task, string? newPatchHash) =>
-        task.RetryCount < task.MaxRetries &&
         !IsIdenticalPatch(task, newPatchHash);
 
     /// <summary>
-    /// Patch Hash Deduplication: Prevents infinite retry loops by detecting
-    /// when the same patch is applied repeatedly without improvement.
+    /// Patch Hash Deduplication: Detects when the same patch is applied 
+    /// repeatedly without improvement, indicating a stuck state.
     /// </summary>
     private static bool IsIdenticalPatch(Task task, string? newPatchHash)
     {
@@ -756,23 +737,7 @@ public class RetryController
         ErrorClassification errorClassification,
         string? newPatchHash = null)
     {
-        if (!ShouldRetry(failedTask, newPatchHash))
-        {
-            return new BuilderReducer().Reduce(
-                context,
-                new TaskFailedEvent
-                {
-                    TaskId = failedTask.Id,
-                    ErrorType = errorClassification.Type,
-                    ErrorMessage = IsIdenticalPatch(failedTask, newPatchHash)
-                        ? $"Identical patch detected - no progress made"
-                        : $"Exhausted retries ({failedTask.RetryCount}/{failedTask.MaxRetries})",
-                    CurrentRetry = failedTask.RetryCount,
-                    MaxRetries = failedTask.MaxRetries
-                });
-        }
-
-        // Increment retry counter
+        // Increment retry counter (informational only)
         failedTask.RetryCount++;
         
         // Store patch hash for deduplication
@@ -789,7 +754,7 @@ public class RetryController
             PreviousError = errorClassification.Type
         };
 
-        // Return to EXECUTING_TASK state
+        // Always return to RETRYING state - system retries indefinitely
         return context with
         {
             State = BuilderState.RETRYING,
@@ -801,53 +766,34 @@ public class RetryController
 
 ### Retry Decision Matrix
 
-| Error Type          | Retry? | Max Retries | Strategy             |
-| ------------------- | ------ | ----------- | -------------------- |
-| **Network Errors**  | ✅ Yes | 3           | Exponential backoff  |
-| **API Rate Limit**  | ✅ Yes | 5           | Fixed delay (60s)    |
-| **Build Timeout**   | ✅ Yes | 1           | Increase timeout     |
-| **SDK Not Found**   | ❌ No  | 0           | User must install    |
-| **API Key Invalid** | ❌ No  | 0           | User must fix        |
-| **Disk Full**       | ❌ No  | 0           | User must free space |
+| Error Type          | Retry? | Strategy                          |
+| ------------------- | ------ | --------------------------------- |
+| **Build Errors**    | ✅ Always | AI analysis + auto-patch        |
+| **XAML Errors**     | ✅ Always | XAML syntax fix + retry         |
+| **NuGet Errors**    | ✅ Always | Package resolution + retry      |
+| **Network Errors**  | ✅ Always | Exponential backoff + retry     |
+| **API Rate Limit**  | ✅ Always | Fixed delay (60s) + retry       |
+| **Build Timeout**   | ✅ Always | Increase timeout + retry        |
+| **SDK Not Found**   | ✅ Always | Prompt user + wait + retry      |
+| **API Key Invalid** | ✅ Always | Prompt user + wait + retry      |
+| **Disk Full**       | ✅ Always | Prompt user + wait + retry      |
 
-    ### Packaging Retry Policy (Specific)
+**Key Principle**: The system NEVER gives up. It continues retrying until:
+1. **Success** - The task completes successfully
+2. **User Cancellation** - User explicitly cancels the operation
+3. **Identical Patch Detection** - Same patch applied twice with no progress (requires user intervention)
 
-    | Error Code | Classification | Retries | Strategy |
-    | :--- | :--- | :--- | :--- |
-    | **PKG001** | Manifest Invalid | 1 | Regenerate `Package.appxmanifest` from scratch |
-    | **PKG002** | Capability Mismatch | 1 | Inject missing capabilities via CIE |
-    | **PKG003** | Asset Missing | 1 | Generate placeholder assets |
-    | **PKG004** | Sign Failed | 0 | **FATAL**: Certificate corruption requires user intervention |
-    | **PKG005** | Identity Mismatch | 1 | Update manifest to match certificate |
+### Packaging Retry Policy
 
-### Packaging Retry Policy (Deterministic Implementation)
+| Error Code | Classification | Strategy |
+| :--- | :--- | :--- |
+| **PKG001** | Manifest Invalid | Regenerate `Package.appxmanifest` + retry |
+| **PKG002** | Capability Mismatch | Inject missing capabilities via CIE + retry |
+| **PKG003** | Asset Missing | Generate placeholder assets + retry |
+| **PKG004** | Sign Failed | Prompt user for certificate + retry |
+| **PKG005** | Identity Mismatch | Update manifest to match certificate + retry |
 
-```csharp
-// Packaging-specific retry policy with explicit per-error handling
-private static readonly Dictionary<ErrorType, RetryPolicy> PackagingRetryPolicy = new()
-{
-    { ErrorType.PACKAGING_ERROR, RetryPolicy.OneRetry },      // PKG001, PKG003, PKG005
-    { ErrorType.SIGNING_ERROR, RetryPolicy.NoRetry },         // PKG004 - FATAL
-    { ErrorType.CAPABILITY_ERROR, RetryPolicy.OneRetry },     // PKG002
-    { ErrorType.MANIFEST_ERROR, RetryPolicy.OneRetry }        // PKG001
-};
-
-public enum RetryPolicy
-{
-    NoRetry,      // FATAL errors - do not consume retry budget
-    OneRetry,     // Single attempt with auto-fix
-    StandardRetry // Normal retry with backoff
-}
-```
-
-**Fatal Packaging Errors (No Retry)**:
-
-- Disk exhaustion
-- SDK missing
-- Certificate corruption
-- User declined elevation
-
-These errors do NOT consume retry budget and require immediate user intervention.
+**All packaging errors trigger infinite retry with user notification.** The system always attempts automatic recovery first, then prompts the user if intervention is needed, and continues retrying.
 
 ---
 

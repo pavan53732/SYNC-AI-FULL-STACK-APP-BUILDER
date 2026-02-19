@@ -85,7 +85,7 @@ The system uses different capability inference timing for Preview vs Packaging:
 | Phase | Mode | Capability Inference Timing | Rationale |
 |-------|------|----------------------------|-----------|
 | **Preview (Debug)** | Reactive | After build (on failure) | Fast iteration; only infer if build fails due to missing capability |
-| **Packaging (Release)** | Proactive | Before build | Must produce valid installer; no retry cycles allowed |
+| **Packaging (Release)** | Proactive | Before build | Optimize for success; infer capabilities early to minimize retry cycles |
 
 ### Preview Pipeline (Debug Configuration)
 
