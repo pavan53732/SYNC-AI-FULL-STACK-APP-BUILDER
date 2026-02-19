@@ -1,10 +1,6 @@
 # PROJECT HANDBOOK
 
 > **The Developer's Guide to Structure, Contribution, and Deployment**
->
-> _Merged from: PROJECT_STRUCTURE.md, DEVELOPMENT_GUIDE.md, DEPLOYMENT.md_
-
----
 
 ## Preface: Constructing the Constructor
 
@@ -279,6 +275,7 @@ C:\YourBuilder\Workspaces\
 ```
 
 **Key Points**:
+
 - User code lives in `src/` (version controllable, visible)
 - Builder metadata in `.builder/` (hidden, internal management)
 - Snapshots created BEFORE each task (not after)
@@ -387,6 +384,7 @@ C:\YourBuilder\Workspaces\
 All package versions are managed centrally. When the AI generates projects, it uses the same package versions as the builder application to ensure compatibility.
 
 **Version Pinning**:
+
 - Windows App SDK: `1.5.x` (latest stable)
 - .NET SDK: `8.0.x` (LTS)
 - Roslyn: `4.9.x` (matches .NET 8)
@@ -724,12 +722,12 @@ bin/
 
 **Benefits of MSIX**:
 
-| Feature                | Description                                                  |
-| ---------------------- | ------------------------------------------------------------ |
-| **Clean Installation** | No registry pollution, complete uninstall                    |
-| **Updates**            | Differential updates via `.appinstaller` (only changed bits) |
-| **Resource Management**| Block-level deduplication (shared blocks across apps)        |
-| **Security**           | Mandatory code signing, tamper-proof packages                |
+| Feature                 | Description                                                  |
+| ----------------------- | ------------------------------------------------------------ |
+| **Clean Installation**  | No registry pollution, complete uninstall                    |
+| **Updates**             | Differential updates via `.appinstaller` (only changed bits) |
+| **Resource Management** | Block-level deduplication (shared blocks across apps)        |
+| **Security**            | Mandatory code signing, tamper-proof packages                |
 
 ### Automated Packaging Pipeline (Layer 2.5)
 
@@ -745,10 +743,12 @@ Sync AI abstracts the complexity of MSIX packaging:
 ### Code Signing
 
 **Development Signing**:
+
 - Visual Studio creates a temporary certificate (`SyncAI_TemporaryKey.pfx`)
 - Self-signed for local testing only
 
 **Production Signing**:
+
 - You must sign the MSIX with a trusted certificate (from Sectigo, DigiCert, etc.)
 - Microsoft Store processing will sign it for you automatically
 
@@ -767,11 +767,11 @@ certutil -addstore "TrustedPeople" MyCert.cer
 
 ### Deployment Requirements
 
-| Requirement          | Details                                       |
-| -------------------- | --------------------------------------------- |
-| **Target OS**        | Windows 10 Version 1809 (Build 17763) or later |
-| **Dependencies**     | Windows App Runtime (auto-installed)          |
-| **Architecture**     | x64, ARM64 (x86 deprecated)                   |
+| Requirement      | Details                                        |
+| ---------------- | ---------------------------------------------- |
+| **Target OS**    | Windows 10 Version 1809 (Build 17763) or later |
+| **Dependencies** | Windows App Runtime (auto-installed)           |
+| **Architecture** | x64, ARM64 (x86 deprecated)                    |
 
 ### Distribution Channels
 
@@ -788,6 +788,7 @@ certutil -addstore "TrustedPeople" MyCert.cer
 > **Hide complexity, show only results.**
 
 The user should never see:
+
 - Build errors
 - Retry loops
 - Stack traces
@@ -795,6 +796,7 @@ The user should never see:
 - Console windows
 
 The user should only see:
+
 - Working applications
 - Progress indicators
 - Success confirmations
@@ -828,13 +830,13 @@ The user should only see:
 
 ### The 5-Stage Internal Pipeline
 
-| Stage                 | What Happens                    | User Sees        |
-| --------------------- | ------------------------------- | ---------------- |
-| **1. Parse & Understand** | AI analyzes user prompt, extracts intent | "Building..." |
-| **2. Generate**       | Code is generated, files created | "Building..." |
-| **3. Validate**       | Build attempted, errors caught | "Building..." |
-| **4. Correct**        | Silent retry with fixes (up to 5x) | "Building..." |
-| **5. Finalize**       | Success or graceful failure | Result or friendly message |
+| Stage                     | What Happens                             | User Sees                  |
+| ------------------------- | ---------------------------------------- | -------------------------- |
+| **1. Parse & Understand** | AI analyzes user prompt, extracts intent | "Building..."              |
+| **2. Generate**           | Code is generated, files created         | "Building..."              |
+| **3. Validate**           | Build attempted, errors caught           | "Building..."              |
+| **4. Correct**            | Silent retry with fixes (up to 5x)       | "Building..."              |
+| **5. Finalize**           | Success or graceful failure              | Result or friendly message |
 
 ### Design Principles for Lovable-Style Builders
 
@@ -871,13 +873,13 @@ Internally:
 
 Every decision has a default:
 
-| Decision        | Default Choice           |
-| --------------- | ------------------------ |
-| UI Framework    | WinUI 3                  |
-| Architecture    | MVVM                     |
-| Database        | SQLite                   |
-| Navigation      | Frame-based              |
-| State Container | CommunityToolkit.Mvvm    |
+| Decision        | Default Choice        |
+| --------------- | --------------------- |
+| UI Framework    | WinUI 3               |
+| Architecture    | MVVM                  |
+| Database        | SQLite                |
+| Navigation      | Frame-based           |
+| State Container | CommunityToolkit.Mvvm |
 
 #### Principle 5: Real Code Ownership
 
@@ -891,44 +893,46 @@ Every decision has a default:
 #### User-Facing: Never Show Errors
 
 The user should never see:
+
 - ❌ "Build failed: CS0103 The name 'xyz' does not exist"
 - ❌ "NuGet restore failed"
 - ❌ "Error in line 42"
 
 Instead, they see:
+
 - ✅ "Still working on it..."
 - ✅ "Almost there..."
 - ✅ "Taking a bit longer than expected..."
 
 #### System-Level: Categorize and Respond
 
-| Error Type          | System Response                        | User Message              |
-| ------------------- | -------------------------------------- | ------------------------- |
-| **Parse Errors**    | Reprompt AI with context               | "Building..."             |
-| **Generation Errors** | Regenerate with constraints           | "Building..."             |
-| **Validation Errors** | Auto-fix loop (up to 5 retries)       | "Building..."             |
-| **Deployment Errors** | Retry with clean build                | "Almost done..."          |
-| **Unrecoverable Errors** | Graceful degradation, save state   | "Something went wrong. Your progress has been saved." |
+| Error Type               | System Response                  | User Message                                          |
+| ------------------------ | -------------------------------- | ----------------------------------------------------- |
+| **Parse Errors**         | Reprompt AI with context         | "Building..."                                         |
+| **Generation Errors**    | Regenerate with constraints      | "Building..."                                         |
+| **Validation Errors**    | Auto-fix loop (up to 5 retries)  | "Building..."                                         |
+| **Deployment Errors**    | Retry with clean build           | "Almost done..."                                      |
+| **Unrecoverable Errors** | Graceful degradation, save state | "Something went wrong. Your progress has been saved." |
 
 ### Observable Behavioral Patterns
 
-| Pattern | User Observation | Internal Implementation |
-| ------- | ---------------- | ---------------------- |
-| **1. Generation Time** | "Takes 30-60 seconds" | Multi-stage pipeline with retry loops |
-| **2. No Errors Shown** | "It just works or tells me friendly message" | Silent retry with automatic fixes |
-| **3. Surgical Updates** | "Only changed files update" | Roslyn-based AST patching |
-| **4. Real Code** | "I can read and modify everything" | Standard .NET project structure |
-| **5. Automatic Dependencies** | "I didn't add any packages" | AI infers and adds NuGet packages |
+| Pattern                       | User Observation                             | Internal Implementation               |
+| ----------------------------- | -------------------------------------------- | ------------------------------------- |
+| **1. Generation Time**        | "Takes 30-60 seconds"                        | Multi-stage pipeline with retry loops |
+| **2. No Errors Shown**        | "It just works or tells me friendly message" | Silent retry with automatic fixes     |
+| **3. Surgical Updates**       | "Only changed files update"                  | Roslyn-based AST patching             |
+| **4. Real Code**              | "I can read and modify everything"           | Standard .NET project structure       |
+| **5. Automatic Dependencies** | "I didn't add any packages"                  | AI infers and adds NuGet packages     |
 
 ### The Psychology of "Hidden Complexity"
 
-| Aspect | Hidden Complexity | Exposed Complexity |
-| ------ | ----------------- | ------------------ |
-| **Cognitive Load** | Low - User focuses on their app | High - User manages build system |
-| **Confidence** | High - "It just works" | Low - "Why is it failing?" |
-| **Speed Perception** | Fast - Progress indicators | Slow - Error debugging |
-| **Trust** | Built through reliability | Built through understanding |
-| **Learning Curve** | Minimal - Immediate results | Steep - Requires technical knowledge |
+| Aspect               | Hidden Complexity               | Exposed Complexity                   |
+| -------------------- | ------------------------------- | ------------------------------------ |
+| **Cognitive Load**   | Low - User focuses on their app | High - User manages build system     |
+| **Confidence**       | High - "It just works"          | Low - "Why is it failing?"           |
+| **Speed Perception** | Fast - Progress indicators      | Slow - Error debugging               |
+| **Trust**            | Built through reliability       | Built through understanding          |
+| **Learning Curve**   | Minimal - Immediate results     | Steep - Requires technical knowledge |
 
 ### Implementation Checklist
 

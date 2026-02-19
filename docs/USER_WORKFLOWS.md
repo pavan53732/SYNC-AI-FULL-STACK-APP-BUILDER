@@ -1,10 +1,6 @@
 # USER WORKFLOWS & FEATURES
 
 > **The User Experience: From Prompt to Production**
->
-> _Merged from: FEATURES_AND_WORKFLOWS.md, ITERATIVE_REFINEMENT_UX.md, ADVANCED_MODE_SPECIFICATION.md_
-
----
 
 ## Table of Contents
 

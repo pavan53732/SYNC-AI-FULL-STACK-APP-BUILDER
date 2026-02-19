@@ -2,11 +2,7 @@
 
 > **The Big Picture: 7-Layer Architecture, Deployment Model, Process Lifecycle & Hidden Background Systems**
 >
-> _Merged from: ARCHITECTURE.md, EXECUTION_ARCHITECTURE.md, EXECUTION_LIFECYCLE_SPECIFICATION.md, BACKGROUND_SYSTEMS_SPECIFICATION.md_
 
----
-
-**Status**: 🟢 Architecture Finalized — Ready for Implementation
 **Framework**: WinUI 3 (.NET 8)
 **Target OS**: Windows 10 Build 22621+ (Windows 11 standard)
 **Deployment**: MSIX packaging
@@ -367,19 +363,40 @@ public class PackagingService
         }
     }
 
+    /// <summary>
+    /// Updates manifest version using XML DOM manipulation (NOT regex).
+    /// This complies with CODE_INTELLIGENCE.md "No Raw File Writes" principle.
+    /// </summary>
     private async Task SyncManifestVersionAsync(string projectPath, string version)
     {
-        // Update manifest version to match BuilderContext.ProjectMetadata["AppVersion"]
         var manifestPath = Path.Combine(projectPath, "Package.appxmanifest");
-        var manifest = await File.ReadAllTextAsync(manifestPath);
 
-        // Update Version attribute in Identity element
-        manifest = System.Text.RegularExpressions.Regex.Replace(
-            manifest,
-            @"(<Identity[^>]*\sVersion="")[^""]*("")",
-            $"${{1}}{version}${{2}}");
+        // ✅ Use XDocument for structured XML manipulation
+        // ❌ NEVER use Regex.Replace on XML - violates mutation safety principle
+        var doc = XDocument.Load(manifestPath);
 
-        await File.WriteAllTextAsync(manifestPath, manifest);
+        // Find Identity element in the correct namespace
+        XNamespace ns = "http://schemas.microsoft.com/appx/manifest/foundation/windows10";
+        var identityElement = doc.Descendants(ns + "Identity").FirstOrDefault();
+
+        if (identityElement != null)
+        {
+            // Update Version attribute with new version
+            identityElement.SetAttributeValue("Version", version);
+        }
+
+        // Save with preserved formatting
+        var settings = new XmlWriterSettings
+        {
+            OmitXmlDeclaration = false,
+            Indent = true,
+            Encoding = System.Text.Encoding.UTF8
+        };
+
+        using (var writer = XmlWriter.Create(manifestPath, settings))
+        {
+            doc.Save(writer);
+        }
     }
 
     private async Task<string> CreateMsixBundleAsync(string projectPath)

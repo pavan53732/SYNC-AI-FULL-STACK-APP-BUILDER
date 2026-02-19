@@ -2,7 +2,7 @@
 
 > **The Knowledge Layer: Roslyn Integration, Semantic Indexing, Database Schema, Patch Engine & Mutation Safety**
 >
-> _Merged from: ROSLYN_INTEGRATION_SPECIFICATION.md, INDEXING_ARCHITECTURE_SPECIFICATION.md, DATABASE_SPECIFICATION.md, SAFETY_AND_PERFORMANCE_SPECIFICATION.md, API_CONTRACTS.md_
+> \_
 
 ---
 

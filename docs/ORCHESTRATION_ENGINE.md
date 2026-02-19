@@ -2,9 +2,7 @@
 
 > **The Logic Brain: State Machine, Task Lifecycle, Build System, Retry Logic & Concurrency Safety**
 >
-> _Merged from: ORCHESTRATOR_SPECIFICATION.md, BUILD_SYSTEM_SPECIFICATION.md, ERROR_HANDLING_SPECIFICATION.md, API_CONTRACTS.md_
->
-> **Status**: Strict Consolidation (No architectural expansion)
+
 
 ---
 

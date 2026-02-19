@@ -2,9 +2,7 @@
 
 > **The Presentation Layer: Design Philosophy, WinUI 3 Components, Visual State Machine & Error Feedback**
 >
-> _Merged from: DESIGN_PHILOSOPHY.md, UI_SPECIFICATION.md, UI_STATE_MACHINE.md, ERROR_HANDLING_SPECIFICATION.md_
 
----
 
 ## Table of Contents
 
