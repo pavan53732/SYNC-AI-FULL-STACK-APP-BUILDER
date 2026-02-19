@@ -140,6 +140,286 @@ Sync AI abstracts the entire .NET development lifecycle, just as Lovable abstrac
 *   **Prevent over-permissioning**: Only requests capabilities actually used by the code.
 *   **Retry build if missing capability**: If a build fails due to a missing capability, the engine identifies and injects it.
 
+#### Capability Inference Implementation Contract
+
+```csharp
+/// <summary>
+/// Coupling between Roslyn analysis and packaging layer.
+/// Scans compiled code for restricted Windows API usage and maps to capabilities.
+/// </summary>
+public class CapabilityInferenceEngine
+{
+    private readonly IRoslynService _roslynService;
+    private readonly IPackageManifestService _manifestService;
+
+    // Pre-computed namespace → capability mapping
+    private static readonly Dictionary<string, string[]> NamespaceCapabilityMap = new()
+    {
+        ["Windows.Devices.Geolocation"] = new[] { "location" },
+        ["Windows.Devices.Bluetooth"] = new[] { "bluetooth" },
+        ["Windows.Devices.WiFi"] = new[] { "wiFiControl" },
+        ["Windows.Networking.Sockets"] = new[] { "internetClient", "internetClientServer" },
+        ["Windows.Web.Http"] = new[] { "internetClient" },
+        ["Windows.Media.Capture"] = new[] { "microphone", "webcam" },
+        ["Windows.Devices.Enumeration"] = new[] { "serialcommunication" },
+        ["Windows.ApplicationModel.Contacts"] = new[] { "contactsSystem" },
+        ["Windows.ApplicationModel.Appointments"] = new[] { "appointmentsSystem" },
+        ["Windows.Storage"] = new[] { "broadFileSystemAccess" },  // Requires special handling
+        ["Windows.Networking.PushNotifications"] = new[] { "internetClient" },
+        ["Windows.ApplicationModel.UserDataAccounts"] = new[] { "userAccountInformation" }
+    };
+
+    /// <summary>
+    /// Scans project for restricted namespace usage and returns required capabilities.
+    /// </summary>
+    public async Task<CapabilityInferenceResult> InferCapabilitiesAsync(string projectPath)
+    {
+        var usings = await _roslynService.GetAllUsingStatementsAsync(projectPath);
+        var detectedCapabilities = new HashSet<string>();
+        var detectedNamespaces = new List<string>();
+
+        foreach (var usingStatement in usings)
+        {
+            foreach (var (namespace_, capabilities) in NamespaceCapabilityMap)
+            {
+                if (usingStatement.StartsWith(namespace_, StringComparison.OrdinalIgnoreCase))
+                {
+                    detectedNamespaces.Add(namespace_);
+                    foreach (var cap in capabilities)
+                    {
+                        detectedCapabilities.Add(cap);
+                    }
+                }
+            }
+        }
+
+        return new CapabilityInferenceResult
+        {
+            DetectedCapabilities = detectedCapabilities.ToList(),
+            DetectedNamespaces = detectedNamespaces,
+            MissingCapabilities = await GetMissingCapabilitiesAsync(detectedCapabilities)
+        };
+    }
+
+    /// <summary>
+    /// Compares detected capabilities against current manifest and returns missing ones.
+    /// </summary>
+    private async Task<List<string>> GetMissingCapabilitiesAsync(HashSet<string> detected)
+    {
+        var currentManifest = await _manifestService.LoadManifestAsync();
+        var currentCapabilities = currentManifest?.Capabilities ?? new List<string>();
+
+        return detected.Except(currentCapabilities).ToList();
+    }
+
+    /// <summary>
+    /// Injects missing capabilities into the manifest.
+    /// Called during packaging phase after capability scan.
+    /// </summary>
+    public async Task<ManifestUpdateResult> InjectCapabilitiesAsync(
+        string manifestPath,
+        List<string> capabilitiesToAdd)
+    {
+        if (capabilitiesToAdd.Count == 0)
+            return ManifestUpdateResult.NoChangesNeeded;
+
+        var manifest = await _manifestService.LoadManifestAsync();
+
+        foreach (var capability in capabilitiesToAdd)
+        {
+            // Validate capability is valid Windows capability
+            if (!IsValidWindowsCapability(capability))
+            {
+                _logger.LogWarning("Unknown capability detected: {Capability}", capability);
+                continue;
+            }
+
+            manifest.Capabilities.Add(capability);
+        }
+
+        await _manifestService.SaveManifestAsync(manifest);
+
+        return new ManifestUpdateResult
+        {
+            Updated = true,
+            AddedCapabilities = capabilitiesToAdd,
+            ManifestPath = manifestPath
+        };
+    }
+
+    private bool IsValidWindowsCapability(string capability)
+    {
+        // List of valid Windows capabilities
+        var validCapabilities = new HashSet<string>
+        {
+            "internetClient", "internetClientServer", "privateNetworkClientServer",
+            "location", "microphone", "webcam", "usb", "humaninterfacedevice",
+            "bluetooth", "wiFiControl", "radio", "lowLevelDevices",
+            "enterpriseAuthentication", "sharedUserCertificates", "documentsLibrary",
+            "picturesLibrary", "videosLibrary", "musicLibrary", "removableStorage",
+            "appointmentsSystem", "contactsSystem", "userAccountInformation",
+            "phoneCall", "voipCall", "chat", "backgroundMediaPlayback",
+            "backgroundMediaRecording", "userNotificationListener",
+            "serialcommunication", "broadFileSystemAccess"
+        };
+
+        return validCapabilities.Contains(capability);
+    }
+}
+
+public record CapabilityInferenceResult
+{
+    public List<string> DetectedCapabilities { get; init; } = new();
+    public List<string> DetectedNamespaces { get; init; } = new();
+    public List<string> MissingCapabilities { get; init; } = new();
+    public bool HasMissing => MissingCapabilities.Count > 0;
+}
+
+public record ManifestUpdateResult
+{
+    public bool Updated { get; init; }
+    public List<string> AddedCapabilities { get; init; } = new();
+    public string ManifestPath { get; init; }
+
+    public static ManifestUpdateResult NoChangesNeeded => new() { Updated = false };
+}
+```
+
+#### Packaging Pipeline Integration
+
+```csharp
+/// <summary>
+/// Packaging service that orchestrates capability inference, manifest update, and signing.
+/// Implements the atomic packaging pipeline defined in Section 26.
+/// </summary>
+public class PackagingService
+{
+    private readonly CapabilityInferenceEngine _capabilityEngine;
+    private readonly IBuildService _buildService;
+    private readonly ISigningService _signingService;
+    private readonly Orchestrator _orchestrator;
+
+    /// <summary>
+    /// Atomic packaging pipeline with mandatory capability inference.
+    /// </summary>
+    public async Task<PackagingResult> PackageAsync(string projectPath, CancellationToken ct = default)
+    {
+        var pipelineLog = new List<string>();
+
+        try
+        {
+            // STEP 1: CAPABILITY_SCAN (MANDATORY)
+            pipelineLog.Add("CAPABILITY_SCAN");
+            var capabilityResult = await _capabilityEngine.InferCapabilitiesAsync(projectPath);
+
+            if (capabilityResult.HasMissing)
+            {
+                // STEP 2: MANIFEST_UPDATE
+                pipelineLog.Add("MANIFEST_UPDATE");
+                await _capabilityEngine.InjectCapabilitiesAsync(
+                    Path.Combine(projectPath, "Package.appxmanifest"),
+                    capabilityResult.MissingCapabilities);
+            }
+
+            // STEP 3: VERSION_SYNC
+            pipelineLog.Add("VERSION_SYNC");
+            var version = _orchestrator.GetCurrentContext().ProjectMetadata["AppVersion"] as string;
+            await SyncManifestVersionAsync(projectPath, version);
+
+            // STEP 4: BUILD_RELEASE
+            pipelineLog.Add("BUILD_RELEASE");
+            var buildResult = await _buildService.BuildAsync(projectPath, new BuildOptions
+            {
+                Configuration = "Release",
+                Timeout = TimeSpan.FromMinutes(5)
+            }, ct);
+
+            if (!buildResult.Success)
+            {
+                return PackagingResult.Failed($"Build failed: {buildResult.ErrorMessage}", pipelineLog);
+            }
+
+            // STEP 5: PACKAGE_CREATE
+            pipelineLog.Add("PACKAGE_CREATE");
+            var msixPath = await CreateMsixBundleAsync(projectPath);
+
+            // STEP 6: SIGN
+            pipelineLog.Add("SIGN");
+            var signResult = await _signingService.SignAsync(msixPath);
+            if (!signResult.Success)
+            {
+                return PackagingResult.Failed($"Signing failed: {signResult.ErrorMessage}", pipelineLog);
+            }
+
+            // STEP 7: VERIFY
+            pipelineLog.Add("VERIFY");
+            var verifyResult = await _signingService.VerifySignatureAsync(msixPath);
+            if (!verifyResult.Valid)
+            {
+                return PackagingResult.Failed($"Signature verification failed: {verifyResult.ErrorMessage}", pipelineLog);
+            }
+
+            return PackagingResult.Success(msixPath, pipelineLog);
+        }
+        catch (Exception ex)
+        {
+            return PackagingResult.Failed($"Packaging failed: {ex.Message}", pipelineLog);
+        }
+    }
+
+    private async Task SyncManifestVersionAsync(string projectPath, string version)
+    {
+        // Update manifest version to match BuilderContext.ProjectMetadata["AppVersion"]
+        var manifestPath = Path.Combine(projectPath, "Package.appxmanifest");
+        var manifest = await File.ReadAllTextAsync(manifestPath);
+
+        // Update Version attribute in Identity element
+        manifest = System.Text.RegularExpressions.Regex.Replace(
+            manifest,
+            @"(<Identity[^>]*\sVersion="")[^""]*("")",
+            $"${{1}}{version}${{2}}");
+
+        await File.WriteAllTextAsync(manifestPath, manifest);
+    }
+
+    private async Task<string> CreateMsixBundleAsync(string projectPath)
+    {
+        // Generate MSIX bundle via MakeAppx or MSBuild packaging target
+        var distPath = Path.Combine(projectPath, "dist");
+        Directory.CreateDirectory(distPath);
+
+        var msixPath = Path.Combine(distPath, "app.msixbundle");
+        // ... packaging implementation ...
+
+        return msixPath;
+    }
+}
+
+public record PackagingResult
+{
+    public bool Success { get; init; }
+    public string OutputPath { get; init; }
+    public string ErrorMessage { get; init; }
+    public List<string> PipelineLog { get; init; } = new();
+
+    public static PackagingResult Success(string outputPath, List<string> pipelineLog) =>
+        new() { Success = true, OutputPath = outputPath, PipelineLog = pipelineLog };
+
+    public static PackagingResult Failed(string error, List<string> pipelineLog) =>
+        new() { Success = false, ErrorMessage = error, PipelineLog = pipelineLog };
+}
+```
+
+**Key Coupling Points:**
+
+1. **Roslyn → Capability Mapping**: `CapabilityInferenceEngine` depends on `IRoslynService.GetAllUsingStatementsAsync()` to detect namespace usage
+2. **Capability → Manifest**: `IPackageManifestService` is updated based on inference results
+3. **Orchestrator → Version**: `PackagingService` reads version from `BuilderContext.ProjectMetadata["AppVersion"]`
+4. **Build → Package**: `IBuildService.BuildAsync()` is called in Release configuration before packaging
+5. **Package → Sign**: `ISigningService` is invoked after MSIX bundle creation
+
+**INVARIANT**: Capability inference MUST run BEFORE build. Missing capabilities cause build failures that require retry.
+
 ### MSIX Automation
 
 *   **Generate packaging project**: Creates a `.wapproj` or generally compatible packaging layout.
@@ -4879,6 +5159,179 @@ Each Snapshot MUST store and bind:
 3.  **Job Object Constraints**:
     - Memory Limit: 1GB (Preview).
     - CPU Limit: 50% (Preview).
+
+#### 32.2.1 Job Object Implementation Contract
+
+```csharp
+/// <summary>
+/// Creates and configures a Windows Job Object for process isolation.
+/// This is the mechanized enforcement of OS-level isolation policy.
+/// </summary>
+public class JobObjectEnforcer : IDisposable
+{
+    private IntPtr _jobHandle;
+    private readonly JobObjectLimits _limits;
+
+    public JobObjectEnforcer(JobObjectLimits limits)
+    {
+        _limits = limits;
+        _jobHandle = CreateJobObject(IntPtr.Zero, null);
+        ConfigureLimits();
+    }
+
+    private void ConfigureLimits()
+    {
+        // MEMORY LIMIT: 1GB hard cap
+        var memInfo = new JOBOBJECT_BASIC_LIMIT_INFORMATION
+        {
+            LimitFlags = JOB_OBJECT_LIMIT.JOB_OBJECT_LIMIT_JOB_MEMORY |
+                         JOB_OBJECT_LIMIT.JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+            JobMemoryLimit = _limits.MaxMemoryBytes,      // 1GB
+            ProcessMemoryLimit = _limits.MaxMemoryBytes   // 1GB per process
+        };
+
+        // CPU LIMIT: 50% throttle
+        var cpuInfo = new JOBOBJECT_CPU_RATE_CONTROL_INFORMATION
+        {
+            ControlFlags = JOB_OBJECT_CPU_RATE_CONTROL.JOB_OBJECT_CPU_RATE_CONTROL_ENABLE |
+                          JOB_OBJECT_CPU_RATE_CONTROL.JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+            CpuRate = _limits.MaxCpuPercent * 100  // 50% = 5000 (scale is 0-10000)
+        };
+
+        // CHILD PROCESS RESTRICTION: Block dangerous executables
+        var denyList = new JOBOBJECT_BASIC_PROCESS_ID_LIST
+        {
+            NumberOfProcessIdsInList = 0  // No child processes allowed
+        };
+
+        SetInformationJobObject(_jobHandle, JOBOBJECTINFOCLASS.JobObjectBasicLimitInformation,
+                               ref memInfo, (uint)Marshal.SizeOf(memInfo));
+        SetInformationJobObject(_jobHandle, JOBOBJECTINFOCLASS.JobObjectCpuRateControlInformation,
+                               ref cpuInfo, (uint)Marshal.SizeOf(cpuInfo));
+    }
+
+    /// <summary>
+    /// Assigns a process to the Job Object for enforcement.
+    /// </summary>
+    public bool AssignProcess(Process process)
+    {
+        return AssignProcessToJobObject(_jobHandle, process.Handle);
+    }
+
+    // P/Invoke signatures for Windows API
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string lpName);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool SetInformationJobObject(IntPtr hJob, JOBOBJECTINFOCLASS JobObjectInfoClass,
+        ref JOBOBJECT_BASIC_LIMIT_INFORMATION lpJobObjectInfo, uint cbJobObjectInfoLength);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+    public void Dispose()
+    {
+        if (_jobHandle != IntPtr.Zero)
+        {
+            CloseHandle(_jobHandle);
+            _jobHandle = IntPtr.Zero;
+        }
+    }
+}
+
+public record JobObjectLimits
+{
+    public long MaxMemoryBytes { get; init; } = 1L * 1024 * 1024 * 1024; // 1GB
+    public int MaxCpuPercent { get; init; } = 50;  // 50%
+    public TimeSpan MaxExecutionTime { get; init; } = TimeSpan.FromMinutes(5);
+    public HashSet<string> BlockedExecutables { get; init; } = new()
+    {
+        "powershell.exe", "cmd.exe", "reg.exe", "mshta.exe", "wscript.exe", "cscript.exe"
+    };
+}
+```
+
+#### 32.2.2 Child Process Deny-List Enforcement
+
+```csharp
+/// <summary>
+/// Pre-launch validation that blocks dangerous executables from being spawned.
+/// </summary>
+public class ChildProcessDenyList
+{
+    private static readonly HashSet<string> BlockedExecutables = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "powershell.exe", "powershell", "cmd.exe", "cmd",
+        "reg.exe", "reg", "mshta.exe", "mshta",
+        "wscript.exe", "cscript.exe", "rundll32.exe"
+    };
+
+    public bool IsAllowed(string executableName)
+    {
+        var name = Path.GetFileNameWithoutExtension(executableName);
+        return !BlockedExecutables.Contains(name);
+    }
+
+    public void ValidateProcessStart(ProcessStartInfo startInfo)
+    {
+        if (!IsAllowed(startInfo.FileName))
+        {
+            throw new SecurityException($"Blocked executable: {startInfo.FileName}. " +
+                "This executable is on the deny-list for preview isolation.");
+        }
+    }
+}
+```
+
+#### 32.2.3 File ACL Jail Path Enforcement
+
+```csharp
+/// <summary>
+/// Enforces file system ACL jail for preview execution.
+/// Ensures the generated app can only access its designated workspace.
+/// </summary>
+public class FileSystemAclJail
+{
+    private readonly string _workspaceRoot;
+
+    public FileSystemAclJail(string workspaceRoot)
+    {
+        _workspaceRoot = Path.GetFullPath(workspaceRoot);
+    }
+
+    /// <summary>
+    /// Creates a restricted ACL that only permits access to the workspace directory.
+    /// </summary>
+    public void ApplyJailAcl(string targetDirectory)
+    {
+        var directoryInfo = new DirectoryInfo(targetDirectory);
+        var acl = directoryInfo.GetAccessControl();
+
+        // Remove inherited permissions
+        acl.SetAccessRuleProtection(true, false);
+
+        // Add explicit read/write for current user ONLY to workspace
+        var currentUser = WindowsIdentity.GetCurrent().User;
+        acl.AddAccessRule(new FileSystemAccessRule(
+            currentUser,
+            FileSystemRights.Read | FileSystemRights.Write | FileSystemRights.Delete,
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+            PropagationFlags.None,
+            AccessControlType.Allow));
+
+        directoryInfo.SetAccessControl(acl);
+    }
+
+    /// <summary>
+    /// Validates that a path is within the jail boundary.
+    /// </summary>
+    public bool IsPathWithinJail(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        return fullPath.StartsWith(_workspaceRoot, StringComparison.OrdinalIgnoreCase);
+    }
+}
+```
 
 ### 32.3 Token Budget Guard
 

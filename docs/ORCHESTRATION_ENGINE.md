@@ -1831,8 +1831,96 @@ public class GlobalExecutionBudget
     public int TotalRetryCount { get; set; }
     public int MaxSessionRetries { get; set; } = 25;
     public TimeSpan MaxExecutionTime { get; set; } = TimeSpan.FromMinutes(10);
+    public DateTime SessionStartTime { get; set; } = DateTime.UtcNow;
 
     public bool IsExhausted() => TotalRetryCount >= MaxSessionRetries;
+    public bool IsTimedOut() => DateTime.UtcNow - SessionStartTime > MaxExecutionTime;
+
+    public void IncrementRetry()
+    {
+        TotalRetryCount++;
+        // Emit BudgetExhaustedEvent if threshold reached
+        if (IsExhausted())
+        {
+            throw new SessionBudgetExhaustedException(
+                $"Session retry budget exhausted: {TotalRetryCount}/{MaxSessionRetries}");
+        }
+    }
+}
+
+/// <summary>
+/// Immutable binding between snapshot, version, and artifacts.
+/// This struct MUST be created atomically and stored as a unit.
+/// </summary>
+public record BuildIdentity(
+    string SnapshotId,           // Unique snapshot GUID
+    string Version,              // App version (e.g., "1.0.0.0")
+    string ManifestHash,         // SHA256(Package.appxmanifest)
+    string CertificateThumbprint,// Certificate fingerprint
+    string ArtifactHash,         // SHA256(.msixbundle)
+    DateTime CreatedAt           // Timestamp of identity creation
+);
+
+/// <summary>
+/// Enforcer that wires GlobalExecutionBudget into state machine.
+/// Called by BuilderReducer on every RETRYING transition.
+/// </summary>
+public static class BudgetEnforcer
+{
+    public static BuilderContext EnforceBudget(BuilderContext context, BuilderEvent @event)
+    {
+        var budget = context.Budget;
+
+        // CHECK 1: Session retry budget
+        if (budget.IsExhausted())
+        {
+            return context with
+            {
+                State = BuilderState.BUILD_FAILED,
+                EventLog = [..context.EventLog, new SessionBudgetExhaustedEvent
+                {
+                    TotalRetries = budget.TotalRetryCount,
+                    MaxAllowed = budget.MaxSessionRetries
+                }]
+            };
+        }
+
+        // CHECK 2: Session time budget
+        if (budget.IsTimedOut())
+        {
+            return context with
+            {
+                State = BuilderState.BUILD_FAILED,
+                EventLog = [..context.EventLog, new SessionTimeoutEvent
+                {
+                    Elapsed = DateTime.UtcNow - budget.SessionStartTime,
+                    MaxAllowed = budget.MaxExecutionTime
+                }]
+            };
+        }
+
+        // INCREMENT: Count this retry against budget
+        budget.IncrementRetry();
+
+        return context;
+    }
+}
+
+public record SessionBudgetExhaustedEvent : BuilderEvent
+{
+    public int TotalRetries { get; init; }
+    public int MaxAllowed { get; init; }
+}
+
+public record SessionTimeoutEvent : BuilderEvent
+{
+    public TimeSpan Elapsed { get; init; }
+    public TimeSpan MaxAllowed { get; init; }
+}
+
+public class SessionBudgetExhaustedException : Exception
+{
+    public SessionBudgetExhaustedException(string message) : base(message) { }
 }
 
 public enum CircuitState
