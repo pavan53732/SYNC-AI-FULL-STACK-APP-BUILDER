@@ -2939,34 +2939,53 @@ public bool IsDependencySafe(string packageName)
 
 Called during Phase 3 task execution before any NuGet package addition. Packages not in the approved set are rejected without AI retry.
 
-### 12.4 Token Budget Guard
+### 12.4 Context Window Management
 
-AI context is strictly managed to stay within token limits:
+AI context is managed through intelligent relevance-based retrieval:
 
-- **MaxTokensPerRequest = 8000**
-- **TrimContextAsync()** - Intelligently trims context when approaching limit
 - **Relevance scoring** - Files ordered by relevance to current task
+- **Semantic retrieval** - Only include files that are semantically related to the task
+- **Dependency-aware context** - Include files based on symbol dependencies, not arbitrary limits
+- **No hardcoded token limits** - The AI model handles its own context window constraints
 
 ```csharp
-public async Task<string> TrimContextAsync(List<ContextFile> files, int maxTokens)
+public async Task<string> BuildContextAsync(List<ContextFile> files, string taskDescription)
 {
-    var sortedFiles = files.OrderByDescending(f => f.RelevanceScore);
+    // Score files by relevance to the task
+    var scoredFiles = await ScoreByRelevanceAsync(files, taskDescription);
+
+    // Sort by relevance score (highest first)
+    var sortedFiles = scoredFiles.OrderByDescending(f => f.RelevanceScore);
+
     var result = new StringBuilder();
-    var currentTokens = 0;
 
     foreach (var file in sortedFiles)
     {
-        var fileTokens = EstimateTokens(file.Content);
-        if (currentTokens + fileTokens > maxTokens)
-            break;
-
+        // Include the file content - the AI model will handle context window limits
+        result.AppendLine($"// File: {file.Path}");
         result.AppendLine(file.Content);
-        currentTokens += fileTokens;
+        result.AppendLine();
     }
 
     return result.ToString();
 }
+
+private async Task<List<ContextFile>> ScoreByRelevanceAsync(List<ContextFile> files, string taskDescription)
+{
+    // Use semantic similarity to score files against the task
+    var taskEmbedding = await _embeddingService.GetEmbeddingAsync(taskDescription);
+
+    foreach (var file in files)
+    {
+        var fileEmbedding = await _embeddingService.GetEmbeddingAsync(file.Content);
+        file.RelevanceScore = CosineSimilarity(taskEmbedding, fileEmbedding);
+    }
+
+    return files;
+}
 ```
+
+**Key Principle**: Instead of arbitrary token limits, we use semantic relevance to determine what context to include. The AI model is responsible for managing its own context window.
 
 ### 12.5 "What User SHOULD NEVER See" List
 
@@ -5350,13 +5369,15 @@ public class FileSystemAclJail
 }
 ```
 
-### 32.3 Token Budget Guard
+### 32.3 AI Context Management
 
-> **Invariant**: AI consumption must be bounded to prevent cost overruns.
+> **Invariant**: AI context is managed intelligently, not by arbitrary limits.
 
-| Parameter                | Limit           | Action on Overflow                             |
-| :----------------------- | :-------------- | :--------------------------------------------- |
-| **MaxPromptTokens**      | 16,000          | Truncate oldest context                        |
-| **MaxReasoningTokens**   | 8,000           | Abort generation                               |
-| **MaxRetriesPerRequest** | 3               | Fail Task                                      |
-| **CriticalOverflow**     | > $5.00/session | **Hard Circuit Break** (Require User Approval) |
+The system uses semantic relevance to determine what context to include:
+
+- **Semantic Retrieval**: Files are scored by relevance to the current task
+- **Dependency-Aware Context**: Symbol dependencies guide context selection
+- **Model-Managed Window**: The AI model handles its own context window constraints
+- **No Hardcoded Token Limits**: No arbitrary truncation based on token counts
+
+**Key Principle**: We trust the AI model to manage its context window. Our job is to provide the most relevant context, not to artificially limit it.

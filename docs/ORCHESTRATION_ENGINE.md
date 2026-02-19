@@ -194,6 +194,7 @@ public class Task
     public ErrorType? LastError { get; set; }         // Last error encountered
     public string? ErrorMessage { get; set; }         // Error details
     public int RetryBudget { get; set; } = 5;         // Remaining retries
+    public string? LastPatchHash { get; set; }        // SHA256 of last applied patch (for deduplication)
 
     // Admin/Elevation awareness
     public bool RequiresAdmin { get; set; }           // Task requires elevation (signing, cert install)
@@ -306,9 +307,6 @@ public class BuilderContext
 
     // Event log (replayable)
     public List<BuilderEvent> EventLog { get; } = new();
-
-    // Budget/limits
-    public GlobalExecutionBudget Budget { get; } = new(); // Global retry budget & circuit breaker
 
     // Project metadata
     public string ProjectName { get; set; }
@@ -731,16 +729,34 @@ public class RetryPolicy
 
 public class RetryController
 {
-    public static bool ShouldRetry(Task task, BuilderContext context) =>
+    /// <summary>
+    /// Per-Task Retry Model: Each task has its own isolated retry budget.
+    /// No global session-level retry limits. Orchestrator never aborts
+    /// entire session due to retry count.
+    /// </summary>
+    public static bool ShouldRetry(Task task, string? newPatchHash) =>
         task.RetryCount < task.MaxRetries &&
-        context.UsedRetry < context.TotalRetryBudget;
+        !IsIdenticalPatch(task, newPatchHash);
+
+    /// <summary>
+    /// Patch Hash Deduplication: Prevents infinite retry loops by detecting
+    /// when the same patch is applied repeatedly without improvement.
+    /// </summary>
+    private static bool IsIdenticalPatch(Task task, string? newPatchHash)
+    {
+        if (string.IsNullOrEmpty(newPatchHash) || task.LastPatchHash == null)
+            return false;
+
+        return task.LastPatchHash == newPatchHash;
+    }
 
     public static BuilderContext ExecuteRetry(
         BuilderContext context,
         Task failedTask,
-        ErrorClassification errorClassification)
+        ErrorClassification errorClassification,
+        string? newPatchHash = null)
     {
-        if (!ShouldRetry(failedTask, context))
+        if (!ShouldRetry(failedTask, newPatchHash))
         {
             return new BuilderReducer().Reduce(
                 context,
@@ -748,15 +764,22 @@ public class RetryController
                 {
                     TaskId = failedTask.Id,
                     ErrorType = errorClassification.Type,
-                    ErrorMessage = $"Exhausted retries ({failedTask.RetryCount}/{failedTask.MaxRetries})",
+                    ErrorMessage = IsIdenticalPatch(failedTask, newPatchHash)
+                        ? $"Identical patch detected - no progress made"
+                        : $"Exhausted retries ({failedTask.RetryCount}/{failedTask.MaxRetries})",
                     CurrentRetry = failedTask.RetryCount,
                     MaxRetries = failedTask.MaxRetries
                 });
         }
 
-        // Increment retry counters
+        // Increment retry counter
         failedTask.RetryCount++;
-        context.UsedRetry++;
+        
+        // Store patch hash for deduplication
+        if (!string.IsNullOrEmpty(newPatchHash))
+        {
+            failedTask.LastPatchHash = newPatchHash;
+        }
 
         // Emit retry event
         var retryEvent = new RetryStartedEvent
@@ -1824,28 +1847,6 @@ public class CircuitBreaker
     }
 }
 
-public class GlobalExecutionBudget
-{
-    public int TotalRetryCount { get; set; }
-    public int MaxSessionRetries { get; set; } = 25;
-    public TimeSpan MaxExecutionTime { get; set; } = TimeSpan.FromMinutes(10);
-    public DateTime SessionStartTime { get; set; } = DateTime.UtcNow;
-
-    public bool IsExhausted() => TotalRetryCount >= MaxSessionRetries;
-    public bool IsTimedOut() => DateTime.UtcNow - SessionStartTime > MaxExecutionTime;
-
-    public void IncrementRetry()
-    {
-        TotalRetryCount++;
-        // Emit BudgetExhaustedEvent if threshold reached
-        if (IsExhausted())
-        {
-            throw new SessionBudgetExhaustedException(
-                $"Session retry budget exhausted: {TotalRetryCount}/{MaxSessionRetries}");
-        }
-    }
-}
-
 /// <summary>
 /// Immutable binding between snapshot, version, and artifacts.
 /// This struct MUST be created atomically and stored as a unit.
@@ -1858,68 +1859,6 @@ public record BuildIdentity(
     string ArtifactHash,         // SHA256(.msixbundle)
     DateTime CreatedAt           // Timestamp of identity creation
 );
-
-/// <summary>
-/// Enforcer that wires GlobalExecutionBudget into state machine.
-/// Called by BuilderReducer on every RETRYING transition.
-/// </summary>
-public static class BudgetEnforcer
-{
-    public static BuilderContext EnforceBudget(BuilderContext context, BuilderEvent @event)
-    {
-        var budget = context.Budget;
-
-        // CHECK 1: Session retry budget
-        if (budget.IsExhausted())
-        {
-            return context with
-            {
-                State = BuilderState.BUILD_FAILED,
-                EventLog = [..context.EventLog, new SessionBudgetExhaustedEvent
-                {
-                    TotalRetries = budget.TotalRetryCount,
-                    MaxAllowed = budget.MaxSessionRetries
-                }]
-            };
-        }
-
-        // CHECK 2: Session time budget
-        if (budget.IsTimedOut())
-        {
-            return context with
-            {
-                State = BuilderState.BUILD_FAILED,
-                EventLog = [..context.EventLog, new SessionTimeoutEvent
-                {
-                    Elapsed = DateTime.UtcNow - budget.SessionStartTime,
-                    MaxAllowed = budget.MaxExecutionTime
-                }]
-            };
-        }
-
-        // INCREMENT: Count this retry against budget
-        budget.IncrementRetry();
-
-        return context;
-    }
-}
-
-public record SessionBudgetExhaustedEvent : BuilderEvent
-{
-    public int TotalRetries { get; init; }
-    public int MaxAllowed { get; init; }
-}
-
-public record SessionTimeoutEvent : BuilderEvent
-{
-    public TimeSpan Elapsed { get; init; }
-    public TimeSpan MaxAllowed { get; init; }
-}
-
-public class SessionBudgetExhaustedException : Exception
-{
-    public SessionBudgetExhaustedException(string message) : base(message) { }
-}
 
 public enum CircuitState
 {

@@ -608,7 +608,8 @@ public string SanitizeXaml(string xaml)
 - Run generated apps in **sandboxed environment**
 - Limit file system access to project directory
 - Monitor resource usage (CPU, memory)
-- Auto-terminate after timeout (5 minutes)
+- User-controlled termination - user can stop the app at any time
+- Graceful shutdown when the builder closes
 
 ---
 
