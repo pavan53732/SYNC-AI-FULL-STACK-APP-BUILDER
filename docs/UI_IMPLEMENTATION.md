@@ -1103,6 +1103,24 @@ private async Task RollbackToSnapshot(string snapshotId)
 - **Critical**: System continues retrying until success or user cancellation
 - **→** `PREVIEW_READY` (retry succeeded) or `EMPTY_IDLE` (user cancelled)
 
+**User Guidance for SOFT_RECOVERY State**:
+
+When the system enters SOFT_RECOVERY, users should understand:
+1. **The system is still working** - This is not an error state, just extended processing
+2. **Cancellation is always available** - Users can stop at any time without losing progress
+3. **No action is required** - The system will automatically resolve and continue
+4. **Previous work is preserved** - Snapshots ensure no data loss during extended retries
+
+**Recommended User Actions**:
+- Wait for the system to complete (most common)
+- Click "Cancel" to stop and return to the last stable state
+- Switch to other tasks while the system continues in the background
+- Enable Developer Mode to see detailed progress (optional)
+
+**What NOT to do**:
+- Do not close the application (progress will be saved, but it's better to cancel first)
+- Do not modify project files externally during this state
+
 #### 🔷 INTERVENTION_REQUIRED
 
 - **Trigger**: Safety Guard blocks mutation

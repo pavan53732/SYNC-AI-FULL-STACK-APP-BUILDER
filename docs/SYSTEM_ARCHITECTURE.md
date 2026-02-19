@@ -1928,11 +1928,11 @@ public class RetryPolicy
 | **API Rate Limit**  | ✅ Yes    | Fixed delay (60s)           |
 | **Syntax Errors**   | ✅ Yes    | AI re-generation            |
 | **Build Timeout**   | ✅ Yes    | Increase timeout            |
-| **SDK Not Found**   | ❌ No     | User must install           |
-| **API Key Invalid** | ❌ No     | User must fix               |
-| **Disk Full**       | ❌ No     | User must free space        |
+| **SDK Not Found**   | ✅ Yes    | Prompt user + wait + retry  |
+| **API Key Invalid** | ✅ Yes    | Prompt user + wait + retry  |
+| **Disk Full**       | ✅ Yes    | Prompt user + wait + retry  |
 
-> **Note**: For retryable errors, the system retries continuously until success or user cancellation. There is no maximum retry limit.
+> **Note**: The system NEVER gives up. All errors trigger continuous retry with user notification when intervention is needed. The only stopping conditions are: (1) success, (2) user cancellation, or (3) identical patch detected (no progress).
 
 ### 8.6 Auto-Fix Strategies
 

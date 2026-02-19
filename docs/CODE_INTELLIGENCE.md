@@ -1777,6 +1777,12 @@ Optimized for **token efficiency** and **relevance**.
 
 > **PRINCIPLE**: Context is assembled based on relevance, not arbitrary token limits. The AI model manages its own context window constraints. All relevant symbols and files are included to ensure complete understanding.
 
+> **Note**: While no artificial limits are imposed, the system monitors context size and will prioritize the most relevant symbols when the combined context approaches model limits. This ensures complete understanding without overwhelming the AI. The relevance scoring algorithm ensures that:
+> - Files directly related to the current task are always included first
+> - Symbol dependencies are followed to ensure context completeness
+> - Less relevant files are only included if capacity permits
+> - The AI model handles its own context window management
+
 ### Deterministic Context Builder
 
 ````csharp

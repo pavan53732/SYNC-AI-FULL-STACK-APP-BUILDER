@@ -702,11 +702,13 @@ public class RetryPolicy
 {
     public TimeSpan InitialDelay { get; set; } = TimeSpan.FromSeconds(1);
     public double BackoffMultiplier { get; set; } = 2.0;
+    public TimeSpan MaxDelay { get; set; } = TimeSpan.FromSeconds(60); // Cap to prevent excessive waits
 
     public TimeSpan GetDelay(int retryCount)
     {
         var delay = InitialDelay.TotalMilliseconds * Math.Pow(BackoffMultiplier, retryCount);
-        return TimeSpan.FromMilliseconds(delay);
+        // Cap the delay to prevent excessive wait times
+        return TimeSpan.FromMilliseconds(Math.Min(delay, MaxDelay.TotalMilliseconds));
     }
 }
 
