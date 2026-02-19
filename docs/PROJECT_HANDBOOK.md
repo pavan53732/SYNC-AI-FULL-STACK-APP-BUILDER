@@ -578,12 +578,13 @@ public class BuildKernelValidator
 
         if (diskSpace < estimatedPipelineSize)
         {
-            // FATAL: Cannot proceed - abort immediately
+            // Prompt user to free space, then retry
             result.Errors.Add(
                 $"❌ INSUFFICIENT DISK SPACE: {diskSpace / 1_000_000_000:F1}GB available, " +
-                $"{estimatedPipelineSize / 1_000_000_000:F1}GB required. Free space and retry.");
+                $"{estimatedPipelineSize / 1_000_000_000:F1}GB required. Free space to continue.");
             result.FatalError = ErrorType.RESOURCE_EXHAUSTION_DISK;
-            return result; // Immediate abort, no retry
+            // System will wait for user to free space, then automatically retry
+            return result;
         }
         else if (diskSpace < 1_000_000_000)  // 1 GB - Warning threshold
         {

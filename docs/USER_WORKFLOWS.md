@@ -15,16 +15,18 @@
 
 ## 8.1 Environment Failure States
 
-The system monitors for fatal environment conditions that prevent successful construction.
+The system monitors for environment conditions that require user intervention. All states trigger continuous retry with user notification.
 
-| State                   | Detection                        | Recovery Strategy                 | User Message                                             |
-| :---------------------- | :------------------------------- | :-------------------------------- | :------------------------------------------------------- |
-| **LOW_DISK_SPACE**      | Free space < 500MB               | Abort operation, prompt cleanup   | "Disk space critical. Please free up space to continue." |
-| **NO_ADMIN_PRIVILEGE**  | Admin required but denied        | Request UAC elevation             | "Admin checks failed. Please restart as Administrator."  |
-| **SDK_MISSING**         | `dotnet --version` fails         | Trigger SDK download flow         | ".NET SDK not found. Downloading installer..."           |
-| **SDK_CORRUPTED**       | Build fails with known SDK error | Repair/Reinstall SDK              | "SDK appears corrupted. Attempting repair..."            |
-| **CERTIFICATE_EXPIRED** | Date > Expiry                    | Regenerate & Re-sign              | "Certificate expired. Renewing security credentials..."  |
-| **NUGET_CACHE_CORRUPT** | Restore fails repeatedly         | `dotnet nuget locals all --clear` | "Clearing corrupted package cache..."                    |
+| State                   | Detection                        | Recovery Strategy                              | User Message                                                        |
+| :---------------------- | :------------------------------- | :--------------------------------------------- | :------------------------------------------------------------------ |
+| **LOW_DISK_SPACE**      | Free space < 500MB               | Prompt user to free space, wait, retry         | "Disk space critical. Please free up space to continue."            |
+| **NO_ADMIN_PRIVILEGE**  | Admin required but denied        | Request UAC elevation, wait for retry          | "Admin checks failed. Please restart as Administrator."             |
+| **SDK_MISSING**         | `dotnet --version` fails         | Trigger SDK download flow, wait, retry         | ".NET SDK not found. Downloading installer..."                      |
+| **SDK_CORRUPTED**       | Build fails with known SDK error | Repair/Reinstall SDK, retry                    | "SDK appears corrupted. Attempting repair..."                       |
+| **CERTIFICATE_EXPIRED** | Date > Expiry                    | Regenerate & Re-sign, retry                    | "Certificate expired. Renewing security credentials..."             |
+| **NUGET_CACHE_CORRUPT** | Restore fails repeatedly         | `dotnet nuget locals all --clear`, retry       | "Clearing corrupted package cache..."                               |
+
+> **Key Principle**: The system NEVER gives up on its own. All environment states trigger retry loops that continue until success or explicit user cancellation. The system prompts for user intervention when needed, then continues retrying automatically.
 
 ---
 

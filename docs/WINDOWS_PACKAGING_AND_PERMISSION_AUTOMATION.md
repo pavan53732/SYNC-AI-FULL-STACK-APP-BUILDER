@@ -188,14 +188,14 @@ Proceed with MSIX installation or app launch
 
 ### 6.5 Packaging Failure Classification
 
-| Error | Auto-Fixable | Behavior |
+| Error | Recovery Strategy | Behavior |
 | :--- | :--- | :--- |
-| **MAKEAPPX_DISK** | No | Pause with user guidance - disk space/I/O issue requires user action |
-| **SIGNING_ERROR** | No | Pause with user guidance - certificate or key issue requires user action |
-| **CAPABILITY_MISSING** | Yes | Inject capability + rebuild manifest (continuous retry) |
-| **MANIFEST_INVALID** | Yes | Regenerate from template (continuous retry) |
+| **MAKEAPPX_DISK** | Prompt user + wait + retry | Pause with user guidance - disk space/I/O issue, retry after user action |
+| **SIGNING_ERROR** | Prompt user + wait + retry | Pause with user guidance - certificate or key issue, retry after user action |
+| **CAPABILITY_MISSING** | Auto-inject + retry | Inject capability + rebuild manifest (continuous retry) |
+| **MANIFEST_INVALID** | Auto-regenerate + retry | Regenerate from template (continuous retry) |
 
-**Continuous Retry Principle**: All errors trigger continuous retry. User-action-required errors (disk, certificate) pause the retry loop and show guidance. Once the user resolves the issue, retry continues automatically. There are no FATAL states that permanently stop the process.
+**Continuous Retry Principle**: All errors trigger continuous retry until success or user cancellation. User-action-required errors (disk, certificate) pause the retry loop and show guidance. Once the user resolves the issue, retry continues automatically. The system NEVER gives up on its own - only user cancellation stops the process.
 
 ---
 

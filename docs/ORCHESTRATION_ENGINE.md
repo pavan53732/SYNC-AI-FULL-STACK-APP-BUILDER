@@ -233,7 +233,6 @@ public enum BuilderState
     // Packaging Phase
     PACKAGING = 14,          // MSIX bundling & signing
     PACKAGING_SUCCEEDED = 15, // Application ready for distribution
-    PACKAGING_FAILED = 16,    // Packaging failed
     // Mandatory Packaging Steps
     CAPABILITY_CHECK = 17,
     MANIFEST_UPDATING = 18,
@@ -266,10 +265,10 @@ BUILDING                  │
   ↓ (build complete)      │
 VALIDATING                │ (retry < maxRetries)
   ↓ (validation succeeds) └── RETRYING
-BUILD_SUCCEEDED               ↓ (retry < maxRetries)
+BUILD_SUCCEEDED               ↓ (continuous retry)
       ↓                        EXECUTING_TASK
-    CAPABILITY_CHECK             ↓ (retry >= maxRetries)
-      ↓ (changes detected)     BUILD_FAILED
+    CAPABILITY_CHECK             ↓ (continuous until success or user cancel)
+      ↓ (changes detected)
     MANIFEST_UPDATING
       ↓
     REBUILD_REQUIRED
@@ -702,13 +701,11 @@ public class RetryPolicy
 {
     public TimeSpan InitialDelay { get; set; } = TimeSpan.FromSeconds(1);
     public double BackoffMultiplier { get; set; } = 2.0;
-    public TimeSpan MaxDelay { get; set; } = TimeSpan.FromSeconds(60); // Cap to prevent excessive waits
 
     public TimeSpan GetDelay(int retryCount)
     {
         var delay = InitialDelay.TotalMilliseconds * Math.Pow(BackoffMultiplier, retryCount);
-        // Cap the delay to prevent excessive wait times
-        return TimeSpan.FromMilliseconds(Math.Min(delay, MaxDelay.TotalMilliseconds));
+        return TimeSpan.FromMilliseconds(delay);
     }
 }
 
@@ -1742,80 +1739,7 @@ public class GlobalExceptionHandler
 }
 ```
 
-### 10.6 Circuit Breaker
-
-````csharp
-public class CircuitBreaker
-{
-    private int _failureCount;
-    private DateTime _lastFailureTime;
-    private CircuitState _state = CircuitState.Closed;
-
-    private readonly int _failureThreshold = 5;
-    private readonly TimeSpan _timeout = TimeSpan.FromMinutes(1);
-
-    public async Task<T> ExecuteAsync<T>(Func<Task<T>> operation)
-    {
-        if (_state == CircuitState.Open)
-        {
-            if (DateTime.UtcNow - _lastFailureTime > _timeout)
-            {
-                _state = CircuitState.HalfOpen;
-            }
-            else
-            {
-                throw new CircuitBreakerOpenException("Circuit breaker is open");
-            }
-        }
-
-        try
-        {
-            var result = await operation();
-
-            if (_state == CircuitState.HalfOpen)
-            {
-                _state = CircuitState.Closed;
-                _failureCount = 0;
-            }
-
-            return result;
-        }
-        catch (Exception ex)
-        {
-            _failureCount++;
-            _lastFailureTime = DateTime.UtcNow;
-
-            if (_failureCount >= _failureThreshold)
-            {
-                _state = CircuitState.Open;
-            }
-
-            throw;
-        }
-    }
-}
-
-/// <summary>
-/// Immutable binding between snapshot, version, and artifacts.
-/// This struct MUST be created atomically and stored as a unit.
-/// </summary>
-public record BuildIdentity(
-    string SnapshotId,           // Unique snapshot GUID
-    string Version,              // App version (e.g., "1.0.0.0")
-    string ManifestHash,         // SHA256(Package.appxmanifest)
-    string CertificateThumbprint,// Certificate fingerprint
-    string ArtifactHash,         // SHA256(.msixbundle)
-    DateTime CreatedAt           // Timestamp of identity creation
-);
-
-public enum CircuitState
-{
-    Closed,     // Normal operation
-    Open,       // Failing, reject all requests
-    HalfOpen    // Testing if service recovered
-}
-
-### 10.7 Error Prevention
+### 10.6 Error Prevention
 
 #### Input Validation
 

@@ -95,7 +95,7 @@ The system uses different capability inference timing for Preview vs Packaging:
 4.  **Build Failure Check**: If build failed with capability-related error:
     *   Run full **Capability Inference** scan
     *   **Inject** missing capabilities to manifest
-    *   **Rebuild** (single retry allowed)
+    *   **Rebuild** (continuous retry until success or user cancellation)
 5.  **Manifest Evaluation (Post-Build)**:
     *   If manifest changed during build → **Inject** → **Rebuild** (Resource Injection).
     *   If no change → Proceed.
