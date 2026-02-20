@@ -58,7 +58,7 @@ The Runtime Safety Kernel (Orchestrator) is the **enforcement layer** that valid
              │ (Command Request)
              ↓
 ┌──────────────────────────┐
-│   ORCHESTRATOR ENGINE    │ ← CONTROL LAYER (This Spec)
+│   ORCHESTRATOR ENGINE    │ ← RUNTIME SAFETY KERNEL (This Spec)
 │   • State Machine        │
 │   • Task Queue           │
 │   • Retry Controller     │
