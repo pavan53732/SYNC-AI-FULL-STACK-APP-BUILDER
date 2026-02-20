@@ -2,7 +2,9 @@
 
 > **The Law of Agents: Isolation, Permissions, and Memory Scoping**
 >
-> _
+> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
+>
+> _Agents are owned and operated by the AI Construction Engine. The Runtime Safety Kernel enforces their boundaries._
 
 ---
 
@@ -126,7 +128,21 @@ To prevent state leakage, memory is cleared according to the following determini
 
 ## 5. Enforcement Mechanisms
 
-### 5.1 The Sandbox Guard
+### 5.1 AI-Primary Ownership of Enforcement
+
+> **The AI Construction Engine proposes, the Runtime Safety Kernel enforces.**
+
+The enforcement mechanisms follow the AI-Primary model:
+
+| Enforcement Type | Owner | Description |
+|------------------|-------|-------------|
+| File sandbox | Runtime Safety Kernel | Hard rejection if violated |
+| Mutation ceilings | Runtime Safety Kernel | Hard limits enforced before commit |
+| Token budget | Runtime Safety Kernel | Hard timeout if exceeded |
+| Retry strategy | AI Construction Engine | Agents decide how to adapt |
+| Error recovery | AI Construction Engine | Agents decide fix approach |
+
+### 5.2 The Sandbox Guard
 
 Before any `IPatchTransaction` is committed, the `MutationGuard` verifies:
 
