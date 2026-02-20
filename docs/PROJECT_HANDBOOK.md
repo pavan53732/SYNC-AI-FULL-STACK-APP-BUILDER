@@ -493,7 +493,7 @@ appsettings*.json
 
 **DO NOT START WITH LAYER 1 (Intent)**. Instead:
 
-#### Phase 1A: Deterministic Orchestrator Foundation (MUST BE FIRST)
+#### Phase 1A: Deterministic Orchestrator Core Runtime (MUST BE FIRST)
 
 1. **Orchestrator Core**
    - `BuilderReducer.cs` - Deterministic state transitions

@@ -157,26 +157,27 @@ public class SymbolExtractor
         var code = await File.ReadAllTextAsync(filePath);
         var symbols = new List<Symbol>();
 
-        // Lightweight parsing (regex)
-        var classMatches = Regex.Matches(code, @"class\s+(\w+)");
+        // Lightweight parsing (regex) - C# syntax patterns
+        // Note: Full Roslyn indexing is preferred for accuracy; this is a fallback for quick scans
+        var classMatches = Regex.Matches(code, @"(?:public|internal|private|protected)?\s*(?:partial\s+)?class\s+(\w+)");
         foreach (Match match in classMatches)
         {
             symbols.Add(new Symbol
             {
                 Name = match.Groups[1].Value,
                 Kind = "class",
-                Exported = code.Contains($"export class {match.Groups[1].Value}")
+                Exported = match.Value.Contains("public") || match.Value.Contains("internal")
             });
         }
 
-        var functionMatches = Regex.Matches(code, @"(?:function|async function)\s+(\w+)");
-        foreach (Match match in functionMatches)
+        var methodMatches = Regex.Matches(code, @"(?:public|private|protected|internal)\s+(?:static\s+)?(?:async\s+)?(?:[\w<>]+)\s+(\w+)\s*\(");
+        foreach (Match match in methodMatches)
         {
             symbols.Add(new Symbol
             {
                 Name = match.Groups[1].Value,
-                Kind = "function",
-                Exported = code.Contains($"export function {match.Groups[1].Value}")
+                Kind = "method",
+                Exported = match.Value.Contains("public")
             });
         }
 

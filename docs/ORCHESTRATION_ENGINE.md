@@ -240,6 +240,8 @@ public class Task
 
 **Key Design Decision**: No free-form tasks. Only structured, enumerated task types prevent undefined behavior.
 
+> **Note**: `TaskType` is an execution primitive vocabulary. The AI Construction Engine maps flexible blueprint operations into this bounded execution set. This allows the AI to reason with unlimited flexibility while the Runtime Safety Kernel validates against a finite, well-defined execution vocabulary. The enum exists for kernel validation, not to constrain AI planning creativity.
+
 ---
 
 ## 3. State Machine
@@ -249,11 +251,11 @@ public class Task
 ```csharp
 public enum BuilderState
 {
-    IDLE = 0,                // Awaiting user action or spec
-    SPEC_PARSING = 1,        // User intent → structured spec
-    SPEC_PARSED = 2,         // Spec validated, ready for planning
-    TASK_GRAPH_BUILDING = 3, // Planning service creating DAG
-    TASK_GRAPH_BUILT = 4,    // Task DAG complete, ready to execute
+    IDLE = 0,                // Awaiting user action or blueprint
+    BLUEPRINT_DESIGN = 1,    // User intent → adaptive blueprint
+    BLUEPRINT_READY = 2,     // Blueprint validated, ready for planning
+    EXECUTION_PLAN_BUILDING = 3, // Planning service creating execution plan
+    EXECUTION_PLAN_BUILT = 4,    // Execution plan complete, ready to execute
     // Execution Breakdown
     MUTATION_GUARD = 5,      // Pre-execution safety check (Impact/Breaking Change)
     PATCHING = 6,            // Roslyn AST transformation
@@ -285,14 +287,14 @@ public enum BuilderState
 
 ```
 IDLE
-  ↓ (spec arrives)
-SPEC_PARSING
-  ↓ (spec valid)
-SPEC_PARSED
-  ↓ (plan generated)
-TASK_GRAPH_BUILDING
-  ↓ (DAG complete)
-TASK_GRAPH_BUILT
+  ↓ (blueprint request arrives)
+BLUEPRINT_DESIGN
+  ↓ (blueprint valid)
+BLUEPRINT_READY
+  ↓ (execution plan generated)
+EXECUTION_PLAN_BUILDING
+  ↓ (plan complete)
+EXECUTION_PLAN_BUILT
   ↓ (execute next task)
 MUTATION_GUARD
   ↓ (guard safe)
@@ -1745,6 +1747,8 @@ public class ConcurrencyPolicy
 ```
 
 **Iron Law**: Only 1 mutation task at a time. No parallel Roslyn patching.
+
+> **Scope Clarification**: "Strict serialization" applies only to **mutation operations** (code changes via Roslyn patches). Read-only operations like semantic queries, symbol lookups, and file indexing can run in parallel. The state machine serializes the PATCHING → INDEXING → BUILDING sequence, but not read access to the code intelligence system.
 
 ---
 
