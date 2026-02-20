@@ -1,6 +1,10 @@
 # USER WORKFLOWS & FEATURES
 
 > **The User Experience: From Prompt to Production**
+>
+> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
+>
+> _Users interact with the AI Construction Engine. The Runtime Safety Kernel handles all enforcement silently._
 
 ## Table of Contents
 

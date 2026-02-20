@@ -1,6 +1,10 @@
 # PROJECT HANDBOOK
 
 > **The Developer's Guide to Structure, Contribution, and Deployment**
+>
+> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
+>
+> _The AI Construction Engine is the Primary Brain. The Runtime Safety Kernel is the Enforcement Layer._
 
 ## Preface: Constructing the Constructor
 
