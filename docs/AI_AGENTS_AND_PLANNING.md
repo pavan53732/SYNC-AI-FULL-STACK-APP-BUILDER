@@ -329,6 +329,160 @@ validation & fix [5]
 }
 ```
 
+### 3.7 Blueprint → TaskType Mapping Layer (CRITICAL)
+
+> **INVARIANT**: The AI Blueprint uses flexible semantic task types. The Runtime Safety Kernel requires bounded `TaskType` enum values. The Mapping Layer translates between these two worlds.
+
+#### Mapping Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                AI BLUEPRINT LAYER                           │
+│            (Flexible Semantic Task Types)                   │
+│                                                              │
+│  "create-authentication-system"                             │
+│  "build-customer-management-ui"                             │
+│  "implement-data-persistence"                               │
+│  "add-analytics-dashboard"                                  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ BlueprintTaskMapper.Translate()
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│              RUNTIME SAFETY KERNEL LAYER                    │
+│              (Bounded TaskType Enum)                        │
+│                                                              │
+│  CREATE_PROJECT, ADD_VIEW, ADD_VIEWMODEL, ADD_SERVICE,      │
+│  ADD_DEPENDENCY, PATCH_FILE, MODIFY_FILE, etc.              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Mapping Rules
+
+| Blueprint Task Type | Maps To TaskType | AgentRole | Notes |
+|---------------------|------------------|-----------|-------|
+| `create-project` | `CREATE_PROJECT` | ARCHITECT | Root task |
+| `create-page`, `add-view`, `build-ui` | `ADD_VIEW` | FRONTEND | UI creation |
+| `create-viewmodel`, `add-vm` | `ADD_VIEWMODEL` | FRONTEND | VM creation |
+| `create-service`, `add-logic` | `ADD_SERVICE` | BACKEND | Service layer |
+| `add-nuget`, `install-package` | `ADD_DEPENDENCY` | INTEGRATION | Package management |
+| `fix-error`, `patch-code` | `PATCH_FILE` | FIXER | Error repair |
+| `modify-*`, `update-*` | `MODIFY_FILE` | FIXER | Modifications |
+| `generate-manifest` | `GENERATE_MANIFEST` | INTEGRATION | Packaging |
+| `infer-capabilities` | `INFER_CAPABILITIES` | INTEGRATION | Capability scan |
+
+#### BlueprintTaskMapper Implementation
+
+```csharp
+public class BlueprintTaskMapper
+{
+    /// <summary>
+    /// Translates flexible blueprint task types to bounded TaskType enum.
+    /// This is the ONLY place where translation happens.
+    /// </summary>
+    public TaskType MapToTaskType(string blueprintTaskType)
+    {
+        // Normalize to lowercase for matching
+        var normalized = blueprintTaskType.ToLowerInvariant().Replace("-", "_").Replace(" ", "_");
+
+        return normalized switch
+        {
+            // Project-level
+            "create_project" or "init_project" or "new_project" => TaskType.CREATE_PROJECT,
+
+            // UI Layer
+            "create_page" or "add_page" or "add_view" or "create_view" or "build_ui" => TaskType.ADD_VIEW,
+
+            // ViewModel Layer
+            "create_viewmodel" or "add_viewmodel" or "add_vm" or "create_vm" => TaskType.ADD_VIEWMODEL,
+
+            // Service Layer
+            "create_service" or "add_service" or "add_logic" or "implement_service" => TaskType.ADD_SERVICE,
+
+            // Dependencies
+            "add_dependency" or "add_nuget" or "install_package" or "add_package" => TaskType.ADD_DEPENDENCY,
+
+            // Modifications
+            "modify_file" or "update_file" or "change_file" => TaskType.MODIFY_FILE,
+
+            // Fixes
+            "patch_file" or "fix_error" or "fix_file" or "repair_file" => TaskType.PATCH_FILE,
+
+            // File Operations
+            "add_file" or "create_file" => TaskType.ADD_FILE,
+            "delete_file" or "remove_file" => TaskType.DELETE_FILE,
+            "refactor_file" or "restructure_file" => TaskType.REFACTOR_FILE,
+
+            // Packaging
+            "generate_manifest" or "create_manifest" => TaskType.GENERATE_MANIFEST,
+            "infer_capabilities" or "detect_capabilities" => TaskType.INFER_CAPABILITIES,
+            "configure_packaging" => TaskType.CONFIGURE_PACKAGING,
+            "generate_certificate" => TaskType.GENERATE_CERTIFICATE,
+            "sign_package" => TaskType.SIGN_PACKAGE,
+            "build_msix" => TaskType.BUILD_MSIX,
+
+            // Database
+            "migrate_schema" or "run_migration" => TaskType.MIGRATE_SCHEMA,
+
+            // Unknown - safe default
+            _ => TaskType.PATCH_FILE // Safest default for unknown operations
+        };
+    }
+
+    /// <summary>
+    /// Maps TaskType to AgentRole for execution context injection.
+    /// </summary>
+    public AgentRole MapToAgentRole(TaskType taskType) => taskType switch
+    {
+        TaskType.CREATE_PROJECT => AgentRole.ARCHITECT,
+        TaskType.ADD_VIEW => AgentRole.FRONTEND,
+        TaskType.ADD_VIEWMODEL => AgentRole.FRONTEND,
+        TaskType.ADD_SERVICE => AgentRole.BACKEND,
+        TaskType.ADD_DEPENDENCY => AgentRole.INTEGRATION,
+        TaskType.MODIFY_FILE => AgentRole.FIXER,
+        TaskType.PATCH_FILE => AgentRole.FIXER,
+        TaskType.ADD_FILE => AgentRole.FIXER,
+        TaskType.DELETE_FILE => AgentRole.FIXER,
+        TaskType.REFACTOR_FILE => AgentRole.FIXER,
+        TaskType.GENERATE_MANIFEST => AgentRole.INTEGRATION,
+        TaskType.INFER_CAPABILITIES => AgentRole.INTEGRATION,
+        TaskType.CONFIGURE_PACKAGING => AgentRole.INTEGRATION,
+        TaskType.GENERATE_CERTIFICATE => AgentRole.INTEGRATION,
+        TaskType.SIGN_PACKAGE => AgentRole.INTEGRATION,
+        TaskType.BUILD_MSIX => AgentRole.INTEGRATION,
+        TaskType.MIGRATE_SCHEMA => AgentRole.SCHEMA,
+        _ => AgentRole.FIXER
+    };
+}
+```
+
+#### Translation Flow
+
+```
+1. AI creates Blueprint with semantic task types:
+   {
+     "tasks": [
+       { "type": "create-page", "name": "LoginScreen" },
+       { "type": "build-auth-service", "name": "AuthService" }
+     ]
+   }
+
+2. BlueprintTaskMapper.Translate() called for each task:
+   "create-page" → TaskType.ADD_VIEW
+   "build-auth-service" → TaskType.ADD_SERVICE
+
+3. Orchestrator receives bounded TaskType:
+   - Validates against enum (compile-time safety)
+   - Creates AgentExecutionContext with mapped AgentRole
+   - Enforces mutation ceilings
+
+4. Execution proceeds with deterministic safety guarantees
+```
+
+#### Validation Rule
+
+> **The Runtime Safety Kernel NEVER sees raw blueprint task types.** All task types MUST be translated through `BlueprintTaskMapper` before reaching the state machine. Unknown task types default to `PATCH_FILE` with `FIXER` role for safety.
+
 ---
 
 ## 4. Multi-Agent Specifications

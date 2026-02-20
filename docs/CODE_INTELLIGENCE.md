@@ -82,6 +82,86 @@ The system uses a **tiered indexing approach** optimized for different scenarios
 
 > **PRINCIPLE**: The system uses the appropriate analysis depth for the task. Lightweight indexing provides fast initial scans, while Full Semantic mode ensures accuracy for mutations. The system automatically escalates to Full Semantic when deeper analysis is required.
 
+### Mutation Mode Enforcement (INVARIANT)
+
+> **CRITICAL**: All mutation operations MUST use Full Semantic Mode. Lightweight Mode is strictly FORBIDDEN for any operation that modifies code.
+
+#### Enforcement Rule
+
+```csharp
+public class MutationModeEnforcer
+{
+    /// <summary>
+    /// Called BEFORE any patch operation. Throws if not in Full Semantic Mode.
+    /// </summary>
+    public void EnsureFullSemanticModeForMutation(IndexingMode currentMode)
+    {
+        if (currentMode != IndexingMode.FULL_SEMANTIC)
+        {
+            throw new InvalidOperationException(
+                "MUTATION_REQUIRES_FULL_SEMANTIC: " +
+                "All mutation operations require Full Semantic Mode. " +
+                "Current mode: " + currentMode + ". " +
+                "Call UpgradeToFullSemanticModeAsync() before attempting mutations.");
+        }
+    }
+}
+
+public enum IndexingMode
+{
+    LIGHTWEIGHT,    // Shallow metadata only
+    FULL_SEMANTIC   // Complete Roslyn AST + symbol graph
+}
+```
+
+#### Mode Transition Flow
+
+```
+MUTATION REQUEST RECEIVED
+         │
+         ▼
+┌────────────────────────────────┐
+│ CHECK: Current Indexing Mode   │
+└────────────────────────────────┘
+         │
+         ├── LIGHTWEIGHT ──────────────────────────┐
+         │                                         │
+         │                                         ▼
+         │                        ┌────────────────────────────────┐
+         │                        │ UPGRADE: To Full Semantic Mode │
+         │                        │ - Build Roslyn Compilation     │
+         │                        │ - Generate Symbol Graph        │
+         │                        │ - Index XAML Bindings          │
+         │                        └────────────────────────────────┘
+         │                                         │
+         │                                         ▼
+         │                        ┌────────────────────────────────┐
+         │                        │ PROCEED: With Mutation         │
+         │                        └────────────────────────────────┘
+         │
+         └── FULL_SEMANTIC ──────┐
+                                   │
+                                   ▼
+                  ┌────────────────────────────────┐
+                  │ PROCEED: With Mutation         │
+                  └────────────────────────────────┘
+```
+
+#### Why This Matters
+
+| Scenario | LIGHTWEIGHT Mode | FULL_SEMANTIC Mode |
+|----------|------------------|-------------------|
+| Project listing | ✅ Allowed | ✅ Allowed |
+| File tree view | ✅ Allowed | ✅ Allowed |
+| Quick symbol search | ✅ Allowed | ✅ Allowed |
+| **Code patch** | ❌ **FORBIDDEN** | ✅ Required |
+| **Method rename** | ❌ **FORBIDDEN** | ✅ Required |
+| **Class extraction** | ❌ **FORBIDDEN** | ✅ Required |
+| **Capability inference** | ❌ **FORBIDDEN** | ✅ Required |
+| **Impact analysis** | ❌ **FORBIDDEN** | ✅ Required |
+
+> **Rationale**: Lightweight Mode lacks the full AST and semantic model needed to safely apply mutations. Attempting mutations without full semantic context risks syntax corruption, broken references, and inconsistent state.
+
 ### Enterprise Architecture Overview
 
 ```

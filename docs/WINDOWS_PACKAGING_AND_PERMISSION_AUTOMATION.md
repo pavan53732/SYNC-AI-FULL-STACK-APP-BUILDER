@@ -234,3 +234,212 @@ Proceed with MSIX installation or app launch
 
 - `MyApp_1.0.0.0_x64.msix`
 - `MyApp_1.0.0.0_x64.cer` (Public key)
+
+---
+
+## 8. Windows Sandbox Failure Path (CRITICAL)
+
+> **INVARIANT**: Windows Sandbox is an OPTIONAL execution environment. The system MUST handle sandbox unavailability gracefully without blocking app execution.
+
+### 8.1 Sandbox Availability Detection
+
+Before attempting sandboxed execution, the system checks:
+
+```csharp
+public class WindowsSandboxDetector
+{
+    public async Task<SandboxAvailability> CheckAvailabilityAsync()
+    {
+        // 1. Check if Windows Sandbox feature is enabled
+        var featureEnabled = await IsWindowsSandboxFeatureEnabledAsync();
+
+        // 2. Check if hardware virtualization is available
+        var virtualizationAvailable = await IsVirtualizationAvailableAsync();
+
+        // 3. Check if sandbox executable exists
+        var executableExists = File.Exists(
+            Path.Combine(Environment.SystemDirectory, "WindowsSandbox.exe"));
+
+        return new SandboxAvailability
+        {
+            IsAvailable = featureEnabled && virtualizationAvailable && executableExists,
+            FeatureEnabled = featureEnabled,
+            VirtualizationAvailable = virtualizationAvailable,
+            ExecutableExists = executableExists,
+            UnavailableReason = DetermineReason(featureEnabled, virtualizationAvailable, executableExists)
+        };
+    }
+}
+```
+
+### 8.2 Sandbox Execution Decision Matrix
+
+| Sandbox Available | App Has Capabilities | Execution Mode | Rationale |
+|-------------------|---------------------|----------------|-----------|
+| ✅ Yes | ✅ Yes | **Sandboxed** | Full isolation for capability-requiring apps |
+| ✅ Yes | ❌ No | **Direct** | No sandbox needed for simple apps |
+| ❌ No | ✅ Yes | **Direct with Warning** | User warned about capability usage without isolation |
+| ❌ No | ❌ No | **Direct** | Normal execution, no sandbox needed |
+
+### 8.3 Sandbox Failure Recovery Flow
+
+```
+SANDBOX EXECUTION REQUEST
+         │
+         ▼
+┌────────────────────────────────┐
+│ Check Sandbox Availability     │
+└────────────────────────────────┘
+         │
+         ├── AVAILABLE ──────────────────────────────┐
+         │                                           │
+         │                                           ▼
+         │                        ┌────────────────────────────────┐
+         │                        │ Execute in Windows Sandbox     │
+         │                        └────────────────────────────────┘
+         │                                           │
+         │                                           ├── SUCCESS ──→ Return Result
+         │                                           │
+         │                                           └── FAILURE ──→ Log Error
+         │                                                            │
+         │                                                            ▼
+         │                                          ┌────────────────────────────────┐
+         │                                          │ FALLBACK: Direct Execution     │
+         │                                          │ Emit SandboxFallbackEvent      │
+         │                                          └────────────────────────────────┘
+         │                                                            │
+         │                                                            ▼
+         │                                                          Return Result
+         │
+         └── UNAVAILABLE ────────────────────────────┐
+                                                     │
+                                                     ▼
+                              ┌────────────────────────────────┐
+                              │ Check: App Has Capabilities?   │
+                              └────────────────────────────────┘
+                                     │
+                                     ├── HAS CAPABILITIES ────┐
+                                     │                        │
+                                     │                        ▼
+                                     │     ┌────────────────────────────────────┐
+                                     │     │ Emit: SandboxUnavailableEvent      │
+                                     │     │ Show: Warning toast to user        │
+                                     │     │ Log: Capability usage without      │
+                                     │     │      sandbox isolation             │
+                                     │     └────────────────────────────────────┘
+                                     │                        │
+                                     │                        ▼
+                                     │              Execute Directly
+                                     │
+                                     └── NO CAPABILITIES ────┐
+                                                              │
+                                                              ▼
+                                              Execute Directly (No Warning Needed)
+```
+
+### 8.4 Fallback Implementation
+
+```csharp
+public class SandboxExecutionService
+{
+    public async Task<ExecutionResult> ExecuteAppAsync(
+        string appPath,
+        SandboxPolicy policy)
+    {
+        var availability = await _sandboxDetector.CheckAvailabilityAsync();
+
+        if (!availability.IsAvailable)
+        {
+            // Log sandbox unavailability
+            _logger.LogWarning("Windows Sandbox unavailable: {Reason}", availability.UnavailableReason);
+
+            // Check if app has capabilities requiring isolation
+            var capabilities = await _capabilityEngine.GetAppCapabilitiesAsync(appPath);
+
+            if (capabilities.Any())
+            {
+                // Emit event for audit trail
+                await _eventBus.PublishAsync(new SandboxUnavailableEvent
+                {
+                    AppPath = appPath,
+                    RequiredCapabilities = capabilities,
+                    Reason = availability.UnavailableReason,
+                    FallbackMode = ExecutionFallbackMode.Direct
+                });
+
+                // Show user warning (non-blocking toast)
+                await _toastService.ShowWarningAsync(
+                    "App Preview Running Without Sandbox Isolation",
+                    $"This app requires {string.Join(", ", capabilities)} but Windows Sandbox is unavailable. " +
+                    "Running directly for preview purposes.");
+            }
+
+            // Execute directly as fallback
+            return await ExecuteDirectAsync(appPath, policy);
+        }
+
+        // Attempt sandboxed execution
+        try
+        {
+            return await ExecuteInSandboxAsync(appPath, policy);
+        }
+        catch (SandboxExecutionException ex)
+        {
+            _logger.LogError(ex, "Sandbox execution failed, falling back to direct execution");
+
+            // Emit fallback event
+            await _eventBus.PublishAsync(new SandboxFallbackEvent
+            {
+                AppPath = appPath,
+                Exception = ex.Message,
+                FallbackMode = ExecutionFallbackMode.Direct
+            });
+
+            // Fallback to direct execution
+            return await ExecuteDirectAsync(appPath, policy);
+        }
+    }
+}
+```
+
+### 8.5 Events for Audit Trail
+
+```csharp
+public record SandboxUnavailableEvent : BuilderEvent
+{
+    public string AppPath { get; init; }
+    public List<string> RequiredCapabilities { get; init; }
+    public string Reason { get; init; }
+    public ExecutionFallbackMode FallbackMode { get; init; }
+}
+
+public record SandboxFallbackEvent : BuilderEvent
+{
+    public string AppPath { get; init; }
+    public string Exception { get; init; }
+    public ExecutionFallbackMode FallbackMode { get; init; }
+}
+
+public enum ExecutionFallbackMode
+{
+    None,           // No fallback needed
+    Direct,         // Fell back to direct execution
+    Cancelled       // Execution cancelled due to safety concerns
+}
+```
+
+### 8.6 User Communication
+
+| Scenario | User Message | Severity |
+|----------|--------------|----------|
+| Sandbox unavailable, app has capabilities | "App Preview Running Without Sandbox Isolation" | Warning (Toast) |
+| Sandbox execution failed, fallback succeeded | "Preview running in standard mode" | Info (Toast) |
+| Both sandbox and direct failed | "Preview failed to start" | Error (Dialog) |
+
+### 8.7 Why This Matters
+
+> **Rationale**: Windows Sandbox is not available on all Windows editions (requires Pro/Enterprise) and may be disabled by policy. The system must gracefully degrade to direct execution rather than failing completely. This ensures the preview functionality works for all users, with appropriate warnings when isolation is unavailable.
+
+---
+
+## 9. Reference

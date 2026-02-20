@@ -62,6 +62,83 @@ Sync AI is a **Local AI Full-Stack Windows Native App Builder** that autonomousl
 
 ---
 
+## 1.1 Capability Inference Timing Matrix (Canonical)
+
+> **INVARIANT**: This is the single canonical definition of capability inference timing. All other documents must reference this section.
+
+### Two-Phase Capability Model
+
+The system uses fundamentally different capability inference timing for Preview vs Packaging:
+
+| Phase | Mode | Capability Inference Timing | Rationale |
+|-------|------|----------------------------|-----------|
+| **Preview (Debug)** | Reactive | After build (on failure only) | Fast iteration; only infer if build fails due to missing capability |
+| **Packaging (Release)** | Proactive | Before build | Optimize for success; infer capabilities early to minimize retry cycles |
+
+### Debug Preview Pipeline (Reactive Model)
+
+```
+1. PRE-BUILD FAST SCAN (Optional)
+   └── Quick Roslyn scan for obvious capability-requiring namespaces
+   └── If found AND missing from manifest → Inject immediately
+
+2. BUILD (Debug)
+   └── Generate binaries
+
+3. ROSLYN REINDEX
+   └── Update semantic model
+
+4. BUILD FAILURE CHECK (Reactive Inference)
+   └── IF build failed with capability-related error:
+       ├── Run FULL Capability Inference scan
+       ├── Inject missing capabilities to manifest
+       └── Rebuild (continuous retry until success or user cancellation)
+
+5. MANIFEST EVALUATION (Post-Build)
+   └── IF manifest changed during build → Inject → Rebuild
+   └── IF no change → Proceed
+
+6. LAUNCH
+   └── Execute in isolated environment
+```
+
+> **Key Difference**: Preview allows "build → detect → fix → rebuild" cycle because iteration speed matters more than perfection.
+
+### Release Packaging Pipeline (Proactive Model)
+
+```
+1. CAPABILITY_SCAN (MANDATORY first step)
+   └── Full semantic analysis BEFORE any build
+
+2. MANIFEST_UPDATE
+   └── Inject all detected capabilities
+
+3. VERSION_SYNC
+   └── Align version numbers
+
+4. BUILD_RELEASE
+   └── Build with complete manifest
+
+5. PACKAGE_CREATE
+   └── Generate MSIX
+
+6. SIGN
+   └── Apply code signature
+
+7. VERIFY
+   └── Validate signature integrity
+```
+
+> **INVARIANT**: For Packaging, capability inference MUST run BEFORE build. Missing capabilities cause build failures that require retry. Proactive inference minimizes these failures.
+
+### Cross-Document References
+
+- **PREVIEW_SYSTEM.md** — Implements Debug Preview Pipeline
+- **ORCHESTRATION_ENGINE.md** — State machine references CAPABILITY_CHECK state
+- **WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md** — Implements Release Packaging Pipeline
+
+---
+
 ## 2. AI Construction Engine
 
 ### Role

@@ -246,6 +246,91 @@ public class Task
 
 ---
 
+## 2.1 AgentExecutionContext Injection Rule (MANDATORY)
+
+> **INVARIANT**: `AgentExecutionContext` MUST be injected into `BuilderContext` before any task execution begins. Without this, mutation ceilings cannot be enforced.
+
+### Injection Points
+
+| Injection Point | Timing | Responsible Component |
+|-----------------|--------|----------------------|
+| Before EXECUTING_TASK state | After task dequeued, before execution | Orchestrator |
+| Before MUTATION_GUARD validation | After EXECUTING_TASK, before patching | Orchestrator |
+| Before PATCHING state | After guard passes, before patch | Orchestrator |
+
+### Injection Sequence
+
+```
+1. Task dequeued from execution queue
+2. Orchestrator creates AgentExecutionContext:
+   a. Map TaskType → AgentRole
+   b. Set TaskId from current task
+   c. Set AllowedFilePatterns based on AgentRole
+   d. Set MaxFilesTouchedPerTask, MaxNodesModifiedPerTask from defaults
+3. Call BuilderContext.SetActiveAgentContext(context)
+4. Call BuilderContext.ValidateAgentContext() — throws if null
+5. Transition to EXECUTING_TASK state
+```
+
+### TaskType → AgentRole Mapping
+
+```csharp
+public static AgentRole GetAgentRoleForTaskType(TaskType taskType) => taskType switch
+{
+    TaskType.CREATE_PROJECT => AgentRole.ARCHITECT,
+    TaskType.ADD_VIEW => AgentRole.FRONTEND,
+    TaskType.ADD_VIEWMODEL => AgentRole.FRONTEND,
+    TaskType.ADD_SERVICE => AgentRole.BACKEND,
+    TaskType.MODIFY_FILE => AgentRole.FIXER,
+    TaskType.PATCH_FILE => AgentRole.FIXER,
+    TaskType.ADD_DEPENDENCY => AgentRole.INTEGRATION,
+    TaskType.GENERATE_MANIFEST => AgentRole.INTEGRATION,
+    // ... all other task types mapped
+    _ => AgentRole.FIXER // Safe default
+};
+```
+
+### Enforcement in State Machine
+
+```csharp
+// In Orchestrator - before state transition to EXECUTING_TASK
+private async Task PrepareTaskExecutionAsync(Task task, BuilderContext context)
+{
+    // 1. Create context based on task type
+    var agentRole = GetAgentRoleForTaskType(task.Type);
+    var agentContext = new AgentExecutionContext
+    {
+        Role = agentRole,
+        TaskId = task.Id,
+        AllowedFilePatterns = GetAllowedPatternsForRole(agentRole),
+        RestrictedFiles = GetRestrictedFilesForRole(agentRole),
+        MaxFilesTouchedPerTask = 5,  // Default ceiling
+        MaxNodesModifiedPerTask = 100, // Default ceiling
+        MemoryScope = MemoryScope.TASK_SCOPED
+    };
+
+    // 2. Inject into BuilderContext
+    context.ActiveAgentContext = agentContext;
+
+    // 3. Validate injection succeeded
+    context.ValidateAgentContext(); // Throws if null
+
+    // 4. Now safe to transition
+    // State transition to EXECUTING_TASK happens after this
+}
+```
+
+### Validation Before Mutation
+
+The `BuilderContext.ValidateAgentContext()` method MUST be called before:
+- Transitioning to `MUTATION_GUARD` state
+- Transitioning to `PATCHING` state
+- Any `MutationCeilingEnforcer.ValidateMutationCeilingAsync()` call
+
+Without this validation, the contract is not enforceable.
+
+---
+
 ## 3. State Machine
 
 ### Builder States
@@ -522,6 +607,34 @@ public record SnapshotRollbackEvent : BuilderEvent
     public string Reason { get; init; }
     public bool Success { get; init; }
     public string? ErrorMessage { get; init; }
+}
+
+// === RUNTIME SAFETY: Snapshot Pruning Events ===
+public record SnapshotPruningEvent : BuilderEvent
+{
+    public string ProjectId { get; init; }
+    public int SnapshotsBefore { get; init; }
+    public int SnapshotsAfter { get; init; }
+    public List<string> PrunedSnapshotIds { get; init; }
+    public long BytesFreed { get; init; }
+}
+
+public record SnapshotHashVerificationEvent : BuilderEvent
+{
+    public string SnapshotId { get; init; }
+    public string ExpectedHash { get; init; }
+    public string ActualHash { get; init; }
+    public bool IsValid { get; init; }
+    public string? CorruptionDetails { get; init; }
+}
+
+public record SnapshotIntegrityFailureEvent : BuilderEvent
+{
+    public string SnapshotId { get; init; }
+    public string CorruptedFile { get; init; }
+    public string Reason { get; init; }
+    public bool RecoveryAttempted { get; init; }
+    public bool RecoverySucceeded { get; init; }
 }
 
 public record RetryEscalationEvent : BuilderEvent
@@ -1357,6 +1470,205 @@ private async Task HandleAbortAsync(Task task, BuilderContext context)
 | RETRY | After each retry | Isolates retry attempts |
 
 
+### 7.7 Snapshot Hash Integrity & Pruning Service
+
+The Snapshot Service ensures data integrity and manages disk space through hash verification and automatic pruning.
+
+#### Hash Integrity Verification
+
+Every snapshot stores a hash of its contents. This hash is verified on:
+
+1. **Snapshot Creation** - Hash computed and stored with snapshot metadata
+2. **Snapshot Restore** - Hash verified before restore proceeds
+3. **Periodic Integrity Check** - Weekly background scan
+
+```csharp
+public class SnapshotIntegrityService
+{
+    /// <summary>
+    /// Verifies snapshot integrity by recomputing hash.
+    /// Called before restore and during weekly integrity checks.
+    /// </summary>
+    public async Task<SnapshotIntegrityResult> VerifySnapshotIntegrityAsync(string snapshotId)
+    {
+        var snapshot = await _snapshotRepository.GetByIdAsync(snapshotId);
+        if (snapshot == null)
+        {
+            return SnapshotIntegrityResult.NotFound(snapshotId);
+        }
+
+        // Recompute hash from snapshot file
+        var actualHash = await ComputeSnapshotHashAsync(snapshot.FilePath);
+        var expectedHash = snapshot.ContentHash;
+
+        var isValid = actualHash == expectedHash;
+
+        // Emit verification event for audit trail
+        await _eventBus.PublishAsync(new SnapshotHashVerificationEvent
+        {
+            SnapshotId = snapshotId,
+            ExpectedHash = expectedHash,
+            ActualHash = actualHash,
+            IsValid = isValid,
+            CorruptionDetails = isValid ? null : "Hash mismatch detected"
+        });
+
+        if (!isValid)
+        {
+            // Attempt recovery from parent snapshot
+            var recoveryResult = await AttemptRecoveryAsync(snapshot);
+            
+            await _eventBus.PublishAsync(new SnapshotIntegrityFailureEvent
+            {
+                SnapshotId = snapshotId,
+                CorruptedFile = snapshot.FilePath,
+                Reason = "Hash mismatch - file may be corrupted",
+                RecoveryAttempted = true,
+                RecoverySucceeded = recoveryResult.Success
+            });
+
+            return SnapshotIntegrityResult.Corrupted(snapshotId, recoveryResult);
+        }
+
+        return SnapshotIntegrityResult.Valid(snapshotId);
+    }
+
+    private async Task<string> ComputeSnapshotHashAsync(string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var hash = await sha256.ComputeHashAsync(stream);
+        return Convert.ToBase64String(hash);
+    }
+
+    private async Task<RecoveryResult> AttemptRecoveryAsync(Snapshot snapshot)
+    {
+        // Try to recover from parent snapshot chain
+        if (snapshot.ParentSnapshotId != null)
+        {
+            var parentValid = await VerifySnapshotIntegrityAsync(snapshot.ParentSnapshotId);
+            if (parentValid.IsValid)
+            {
+                // Parent is valid, we can recreate this snapshot
+                _logger.LogWarning("Snapshot {Id} corrupted, recovering from parent", snapshot.Id);
+                return RecoveryResult.SuccessWithParent(snapshot.ParentSnapshotId);
+            }
+        }
+
+        // No valid parent, mark for deletion
+        return RecoveryResult.Failed("No valid parent snapshot for recovery");
+    }
+}
+```
+
+#### Snapshot Pruning Service
+
+Prevents disk space explosion by automatically pruning old snapshots.
+
+```csharp
+public class SnapshotPruningService
+{
+    private const int MaxSnapshotsPerProject = 50;
+    private const int MinSnapshotsToKeep = 10;
+    
+    /// <summary>
+    /// Runs daily to prune old snapshots. Emits SnapshotPruningEvent for audit.
+    /// </summary>
+    public async Task<PruningResult> PruneSnapshotsAsync(string projectId)
+    {
+        var snapshots = await _snapshotRepository.GetByProjectAsync(projectId);
+        var snapshotsBefore = snapshots.Count;
+
+        if (snapshots.Count <= MaxSnapshotsPerProject)
+        {
+            return PruningResult.NoPruningNeeded(snapshots.Count);
+        }
+
+        // Identify snapshots to prune (oldest first, but keep markers)
+        var toPrune = snapshots
+            .OrderBy(s => s.CreatedUtc)
+            .Take(snapshots.Count - MinSnapshotsToKeep)
+            .Where(s => !s.IsMarkedForKeeping) // User can mark important snapshots
+            .ToList();
+
+        var prunedIds = new List<string>();
+        long bytesFreed = 0;
+
+        foreach (var snapshot in toPrune)
+        {
+            try
+            {
+                var fileInfo = new FileInfo(snapshot.FilePath);
+                bytesFreed += fileInfo.Length;
+
+                await _snapshotRepository.DeleteAsync(snapshot.Id);
+                File.Delete(snapshot.FilePath);
+                prunedIds.Add(snapshot.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to prune snapshot {Id}", snapshot.Id);
+            }
+        }
+
+        var snapshotsAfter = snapshots.Count - prunedIds.Count;
+
+        // Emit pruning event for audit trail
+        await _eventBus.PublishAsync(new SnapshotPruningEvent
+        {
+            ProjectId = projectId,
+            SnapshotsBefore = snapshotsBefore,
+            SnapshotsAfter = snapshotsAfter,
+            PrunedSnapshotIds = prunedIds,
+            BytesFreed = bytesFreed
+        });
+
+        return new PruningResult
+        {
+            SnapshotsPruned = prunedIds.Count,
+            BytesFreed = bytesFreed,
+            PrunedIds = prunedIds
+        };
+    }
+}
+```
+
+#### Pruning Policy Rules
+
+| Rule | Threshold | Action |
+|------|-----------|--------|
+| **Max Count** | 50 snapshots | Prune oldest unmarked |
+| **Min Keep** | Always keep 10 | Never prune below minimum |
+| **Marked Snapshots** | User-marked | Never prune marked snapshots |
+| **Version Snapshots** | Post-packaging | Keep for at least 30 days |
+| **Failure Snapshots** | Post-abort | Keep for at least 7 days |
+
+#### Integration Points
+
+```csharp
+// Called daily by Background Maintenance Thread
+public async Task RunDailyMaintenanceAsync()
+{
+    var projects = await _projectRepository.GetAllActiveAsync();
+    
+    foreach (var project in projects)
+    {
+        // Prune old snapshots
+        await _snapshotPruningService.PruneSnapshotsAsync(project.Id);
+        
+        // Weekly integrity check (run on Sundays)
+        if (DateTime.UtcNow.DayOfWeek == DayOfWeek.Sunday)
+        {
+            var snapshots = await _snapshotRepository.GetByProjectAsync(project.Id);
+            foreach (var snapshot in snapshots)
+            {
+                await _snapshotIntegrityService.VerifySnapshotIntegrityAsync(snapshot.Id);
+            }
+        }
+    }
+}
+```
+
 ---
 
 ## 8. Execution Lifecycle
@@ -1751,6 +2063,165 @@ public class ConcurrencyPolicy
 **Iron Law**: Only 1 mutation task at a time. No parallel Roslyn patching.
 
 > **Scope Clarification**: "Strict serialization" applies only to **mutation operations** (code changes via Roslyn patches). Read-only operations like semantic queries, symbol lookups, and file indexing can run in parallel. The state machine serializes the PATCHING → INDEXING → BUILDING sequence, but not read access to the code intelligence system.
+
+### Detailed Concurrency Matrix
+
+| Operation | Can Run With | Cannot Run With | Lock Type |
+|-----------|--------------|-----------------|-----------|
+| **Blueprint Design** | Read queries, Indexing | Mutation, Build | None (read-only) |
+| **Task Graph Building** | Read queries | Mutation, Build | None (memory-only) |
+| **Patching (Mutation)** | Nothing | All other operations | Exclusive Write Lock |
+| **Indexing** | Read queries, Blueprint | Mutation, Build | Shared Read Lock |
+| **Building** | Nothing | All other operations | Exclusive Build Lock |
+| **Validation** | Read queries | Mutation, Build | Shared Read Lock |
+| **Packaging** | Read queries | Mutation, Build | Shared Read Lock |
+| **Snapshot Pruning** | Nothing | All other operations | Maintenance Lock |
+| **Read Queries** | All read operations | Mutation | Shared Read Lock |
+
+### Concurrency Enforcement Implementation
+
+```csharp
+public class ConcurrencyLockManager
+{
+    private readonly ReaderWriterLockSlim _mutationLock = new();
+    private readonly SemaphoreSlim _buildLock = new(1, 1);
+    private readonly SemaphoreSlim _maintenanceLock = new(1, 1);
+    
+    /// <summary>
+    /// Acquires the appropriate lock for an operation.
+    /// Throws TimeoutException if lock cannot be acquired within timeout.
+    /// </summary>
+    public async Task<IDisposable> AcquireLockAsync(
+        OperationType operation,
+        TimeSpan timeout = default)
+    {
+        timeout = timeout == TimeSpan.Zero ? TimeSpan.FromSeconds(30) : timeout;
+        
+        return operation switch
+        {
+            OperationType.Mutation => await AcquireMutationLockAsync(timeout),
+            OperationType.Build => await AcquireBuildLockAsync(timeout),
+            OperationType.Maintenance => await AcquireMaintenanceLockAsync(timeout),
+            OperationType.Read => new ReadLockScope(_mutationLock),
+            _ => new NullLockScope()
+        };
+    }
+    
+    private async Task<IDisposable> AcquireMutationLockAsync(TimeSpan timeout)
+    {
+        // Mutation requires exclusive access
+        if (!_mutationLock.TryEnterWriteLock(timeout))
+        {
+            throw new TimeoutException(
+                "Could not acquire mutation lock. Another mutation or build is in progress.");
+        }
+        
+        return new MutationLockScope(_mutationLock);
+    }
+    
+    private async Task<IDisposable> AcquireBuildLockAsync(TimeSpan timeout)
+    {
+        // Build requires both mutation lock (read) and build lock (exclusive)
+        if (!_mutationLock.TryEnterReadLock(timeout))
+        {
+            throw new TimeoutException(
+                "Could not acquire read lock for build. Mutation in progress.");
+        }
+        
+        if (!await _buildLock.WaitAsync(timeout))
+        {
+            _mutationLock.ExitReadLock();
+            throw new TimeoutException(
+                "Could not acquire build lock. Another build is in progress.");
+        }
+        
+        return new BuildLockScope(_mutationLock, _buildLock);
+    }
+    
+    private async Task<IDisposable> AcquireMaintenanceLockAsync(TimeSpan timeout)
+    {
+        // Maintenance requires exclusive access to everything
+        if (!await _maintenanceLock.WaitAsync(timeout))
+        {
+            throw new TimeoutException(
+                "Could not acquire maintenance lock. Maintenance already in progress.");
+        }
+        
+        if (!_mutationLock.TryEnterWriteLock(timeout))
+        {
+            _maintenanceLock.Release();
+            throw new TimeoutException(
+                "Could not acquire mutation lock for maintenance.");
+        }
+        
+        return new MaintenanceLockScope(_mutationLock, _maintenanceLock);
+    }
+}
+
+// Lock scope implementations (IDisposable pattern for automatic release)
+private class MutationLockScope : IDisposable
+{
+    private readonly ReaderWriterLockSlim _lock;
+    public MutationLockScope(ReaderWriterLockSlim @lock) => _lock = @lock;
+    public void Dispose() => _lock.ExitWriteLock();
+}
+
+private class BuildLockScope : IDisposable
+{
+    private readonly ReaderWriterLockSlim _mutationLock;
+    private readonly SemaphoreSlim _buildLock;
+    public BuildLockScope(ReaderWriterLockSlim mutationLock, SemaphoreSlim buildLock)
+    {
+        _mutationLock = mutationLock;
+        _buildLock = buildLock;
+    }
+    public void Dispose()
+    {
+        _buildLock.Release();
+        _mutationLock.ExitReadLock();
+    }
+}
+
+private class ReadLockScope : IDisposable
+{
+    private readonly ReaderWriterLockSlim _lock;
+    public ReadLockScope(ReaderWriterLockSlim @lock) => _lock = @lock;
+    public void Dispose() => _lock.ExitReadLock();
+}
+
+private class MaintenanceLockScope : IDisposable
+{
+    private readonly ReaderWriterLockSlim _mutationLock;
+    private readonly SemaphoreSlim _maintenanceLock;
+    public MaintenanceLockScope(ReaderWriterLockSlim mutationLock, SemaphoreSlim maintenanceLock)
+    {
+        _mutationLock = mutationLock;
+        _maintenanceLock = maintenanceLock;
+    }
+    public void Dispose()
+    {
+        _mutationLock.ExitWriteLock();
+        _maintenanceLock.Release();
+    }
+}
+
+private class NullLockScope : IDisposable { public void Dispose() { } }
+
+public enum OperationType
+{
+    Read,
+    Mutation,
+    Build,
+    Maintenance
+}
+```
+
+### Deadlock Prevention Rules
+
+1. **Lock Ordering**: Always acquire locks in order: Maintenance → Mutation → Build → Read
+2. **Timeout Always**: Never wait indefinitely for a lock
+3. **No Nested Locks**: A single operation should not hold multiple exclusive locks
+4. **Release on Exception**: Use `try/finally` or `IDisposable` to ensure lock release
 
 ---
 

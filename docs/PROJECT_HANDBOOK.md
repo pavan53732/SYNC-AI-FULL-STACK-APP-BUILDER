@@ -85,8 +85,8 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 │   │   │   │
 │   │   │   ├── Layer 1: Blueprint & Intent (AI Construction Engine)
 │   │   │   │   ├── IntentService.cs
-│   │   │   │   ├── FeatureExtractor.cs
-│   │   │   │   ├── SpecValidator.cs
+│   │   │   │   ├── IntentInterpreter.cs
+│   │   │   │   ├── BlueprintValidator.cs
 │   │   │   │   └── StackSelector.cs
 │   │   │   │
 │   │   │   ├── Layer 2: Planning Service
