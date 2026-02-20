@@ -72,7 +72,7 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 │   │   │
 │   │   ├── Services/                  # Core Business Logic (7-Layer Architecture)
 │   │   │   │
-│   │   │   ├── 🔴 Runtime Safety Kernel (Orchestration Core)
+│   │   │   ├── 🔴 Runtime Safety Kernel (Enforcement Layer)
 │   │   │   │   ├── Orchestration/
 │   │   │   │   │   ├── BuilderReducer.cs
 │   │   │   │   │   ├── TaskSchema.cs
@@ -83,7 +83,7 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 │   │   │   │   │   ├── ErrorClassifier.cs
 │   │   │   │   │   └── IOrchestrator.cs
 │   │   │   │
-│   │   │   ├── Layer 1: Intent & Specification
+│   │   │   ├── Layer 1: Blueprint & Intent (AI Construction Engine)
 │   │   │   │   ├── IntentService.cs
 │   │   │   │   ├── FeatureExtractor.cs
 │   │   │   │   ├── SpecValidator.cs
@@ -102,7 +102,7 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 │   │   │   │   ├── SchemaMapper.cs
 │   │   │   │   └── RouteRegistry.cs
 │   │   │   │
-│   │   │   ├── Layer 4: Multi-Agent Orchestrator
+│   │   │   ├── Layer 4: Multi-Agent System (AI Construction Engine)
 │   │   │   │   ├── AgentOrchestrator.cs
 │   │   │   │   ├── ArchitectAgent.cs
 │   │   │   │   ├── SchemaAgent.cs

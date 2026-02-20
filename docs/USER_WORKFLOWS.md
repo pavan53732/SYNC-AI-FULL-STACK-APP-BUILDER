@@ -31,6 +31,11 @@ The system monitors for environment conditions that require user intervention. A
 | **NUGET_CACHE_CORRUPT** | Restore fails repeatedly         | `dotnet nuget locals all --clear`, retry       | "Clearing corrupted package cache..."                               |
 
 > **Key Principle**: The system NEVER gives up on its own. All environment states trigger retry loops that continue until success or explicit user cancellation. The system prompts for user intervention when needed, then continues retrying automatically.
+>
+> **Retry Distinction**:
+> - **Mutation Retry Ceiling**: Code mutation cycles are bounded (max 10 retries per task) with staged escalation through Fix → Integration → Architecture levels before abort.
+> - **Environment Recovery Loops**: Unbounded — disk space recovery, SDK installation, NuGet cache repair continue until resolved or user cancels.
+> - This distinction ensures deterministic code safety while maintaining resilience for environmental issues.
 
 ---
 
