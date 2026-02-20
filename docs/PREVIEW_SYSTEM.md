@@ -59,110 +59,6 @@ public class PreviewService
         CodeFileType fileType)
     {
         var files = await GetProjectFilesAsync(projectPath, fileType);
-# Preview System Specification - Hybrid Approach
-
-## Overview
-
-The Preview System provides **three modes** for users to visualize generated WinUI 3 applications:
-
-1.  **Embedded XAML Preview** - Real-time rendering inside the builder
-2.  **Code View** - Syntax-highlighted source code inspection
-3.  **Full Launch** - Compiled application execution in separate window
-
-> **Crucial Distinction**: Unlike web-based prototyping tools, the "Full Launch" renders a **real, compiled .NET 8 binary** running natively on Windows. It is not a simulation; it is the actual production application.
-
----
-
-
-## 1.2 PREVIEW PIPELINE (MANDATORY ORDER)
-
-> **Invariant**: This sequence is strict. No step may be skipped or reordered.
-
-### Two-Phase Capability Model (Debug/Preview vs Release/Packaging)
-
-The system uses different capability inference timing for Preview vs Packaging:
-
-| Phase | Mode | Capability Inference Timing | Rationale |
-|-------|------|----------------------------|-----------|
-| **Preview (Debug)** | Reactive | After build (on failure) | Fast iteration; only infer if build fails due to missing capability |
-| **Packaging (Release)** | Proactive | Before build | Optimize for success; infer capabilities early to minimize retry cycles |
-
-### Preview Pipeline (Debug Configuration)
-
-1.  **Pre-Build Capability Scan (Fast Check)**: Quick Roslyn scan for obvious capability-requiring namespaces. If found and missing from manifest → Inject immediately.
-2.  **Build (Debug)**: Generate binaries.
-3.  **Roslyn Reindex**: Update semantic model.
-4.  **Build Failure Check**: If build failed with capability-related error:
-    *   Run full **Capability Inference** scan
-    *   **Inject** missing capabilities to manifest
-    *   **Rebuild** (continuous retry until success or user cancellation)
-5.  **Manifest Evaluation (Post-Build)**:
-    *   If manifest changed during build → **Inject** → **Rebuild** (Resource Injection).
-    *   If no change → Proceed.
-6.  **Launch**: Execute in isolated environment.
-
-> **Key Difference from Packaging**: Preview allows "build → detect → fix → rebuild" cycle because iteration speed matters more than perfection. Packaging MUST run inference before build because installers cannot be partially fixed.
-
-### Packaging Pipeline (Release Configuration)
-
-As defined in SYSTEM_ARCHITECTURE.md:
-1. **CAPABILITY_SCAN** (MANDATORY first step)
-2. MANIFEST_UPDATE
-3. VERSION_SYNC
-4. BUILD_RELEASE
-5. PACKAGE_CREATE
-6. SIGN
-7. VERIFY
-
-> **INVARIANT**: For Packaging, capability inference MUST run BEFORE build. Missing capabilities cause build failures that require retry.
-
-## Architecture
-
-### Preview Service Layer
-
-```csharp
-public class PreviewService
-{
-    private readonly BuildService _buildService;
-    private readonly XamlRenderService _xamlRenderer;
-    private readonly CodeHighlightService _codeHighlighter;
-
-    // Mode 1: Quick XAML Preview (Embedded)
-    // ⚠️ LIMITATION: Only works for simple XAML without code-behind/ViewModels
-    public async Task<UIElement> RenderXamlPreviewAsync(string xamlContent)
-    {
-        UIElement element = null;
-        Exception parseException = null;
-
-        // CRITICAL: XamlReader.Load MUST run on UI thread (WinUI 3 thread affinity)
-        await _dispatcherQueue.EnqueueAsync(() =>
-        {
-            try
-            {
-                // Parse XAML string to UIElement
-                element = XamlReader.Load(xamlContent) as UIElement;
-            }
-            catch (XamlParseException ex)
-            {
-                parseException = ex;
-                _logger.LogError(ex, "XAML parse failed at line {Line}", ex.LineNumber);
-            }
-        });
-
-        if (parseException != null)
-        {
-            throw new PreviewException($"XAML parsing failed: {parseException.Message}", parseException);
-        }
-
-        return element;
-    }
-
-    // Mode 2: Code View (Syntax Highlighted)
-    public async Task<FormattedCode> GetFormattedCodeAsync(
-        string projectPath,
-        CodeFileType fileType)
-    {
-        var files = await GetProjectFilesAsync(projectPath, fileType);
         var highlighted = await _codeHighlighter.HighlightAsync(files);
 
         return highlighted;
@@ -171,9 +67,6 @@ public class PreviewService
     // Mode 3: Full Launch (Compiled App)
     // Strict Policy:
     // All full launches execute inside Windows Sandbox isolation.
-    **Critical Ordering**: Capability inference is executed **immediately after a successful build and before packaging begins**.
-
-    > **Proactive Model**: Missing capabilities are detected *during* the build phase via Roslyn analysis, not just at runtime. This allows "Self-Haling" fixes to inject capabilities before the app crashes.
     // Direct host execution is forbidden.
     // User consent is required before first launch.
     public async Task<Process> LaunchFullPreviewAsync(string projectPath)

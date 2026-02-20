@@ -17,26 +17,6 @@
 7. [Design Philosophy & UX Principles](#7-design-philosophy--ux-principles)
 8. [Error Handling Strategy](#8-error-handling-strategy)
 
-## 8.1 Environment Failure States
-
-The system monitors for environment conditions that require user intervention. All states trigger continuous retry with user notification.
-
-| State                   | Detection                        | Recovery Strategy                              | User Message                                                        |
-| :---------------------- | :------------------------------- | :--------------------------------------------- | :------------------------------------------------------------------ |
-| **LOW_DISK_SPACE**      | Free space < 500MB               | Prompt user to free space, wait, retry         | "Disk space critical. Please free up space to continue."            |
-| **NO_ADMIN_PRIVILEGE**  | Admin required but denied        | Request UAC elevation, wait for retry          | "Admin checks failed. Please restart as Administrator."             |
-| **SDK_MISSING**         | `dotnet --version` fails         | Trigger SDK download flow, wait, retry         | ".NET SDK not found. Downloading installer..."                      |
-| **SDK_CORRUPTED**       | Build fails with known SDK error | Repair/Reinstall SDK, retry                    | "SDK appears corrupted. Attempting repair..."                       |
-| **CERTIFICATE_EXPIRED** | Date > Expiry                    | Regenerate & Re-sign, retry                    | "Certificate expired. Renewing security credentials..."             |
-| **NUGET_CACHE_CORRUPT** | Restore fails repeatedly         | `dotnet nuget locals all --clear`, retry       | "Clearing corrupted package cache..."                               |
-
-> **Key Principle**: The system NEVER gives up on its own. All environment states trigger retry loops that continue until success or explicit user cancellation. The system prompts for user intervention when needed, then continues retrying automatically.
->
-> **Retry Distinction**:
-> - **Mutation Retry Ceiling**: Code mutation cycles are bounded (max 10 retries per task) with staged escalation through Fix → Integration → Architecture levels before abort.
-> - **Environment Recovery Loops**: Unbounded — disk space recovery, SDK installation, NuGet cache repair continue until resolved or user cancels.
-> - This distinction ensures deterministic code safety while maintaining resilience for environmental issues.
-
 ---
 
 ## 1. Core Features Overview
@@ -751,5 +731,25 @@ The system handles 5 categories of errors internally:
 | **Error Handling** | Auto-Fix / Generic Message | Stack Traces + Fix Attempts |
 | **Database**       | Invisible                  | Table Viewer                |
 | **File System**    | Hidden                     | File Tree Visible           |
+
+### 8.1 Environment Failure States
+
+The system monitors for environment conditions that require user intervention. All states trigger continuous retry with user notification.
+
+| State                   | Detection                        | Recovery Strategy                              | User Message                                                        |
+| :---------------------- | :------------------------------- | :--------------------------------------------- | :------------------------------------------------------------------ |
+| **LOW_DISK_SPACE**      | Free space < 500MB               | Prompt user to free space, wait, retry         | "Disk space critical. Please free up space to continue."            |
+| **NO_ADMIN_PRIVILEGE**  | Admin required but denied        | Request UAC elevation, wait for retry          | "Admin checks failed. Please restart as Administrator."             |
+| **SDK_MISSING**         | `dotnet --version` fails         | Trigger SDK download flow, wait, retry         | ".NET SDK not found. Downloading installer..."                      |
+| **SDK_CORRUPTED**       | Build fails with known SDK error | Repair/Reinstall SDK, retry                    | "SDK appears corrupted. Attempting repair..."                       |
+| **CERTIFICATE_EXPIRED** | Date > Expiry                    | Regenerate & Re-sign, retry                    | "Certificate expired. Renewing security credentials..."             |
+| **NUGET_CACHE_CORRUPT** | Restore fails repeatedly         | `dotnet nuget locals all --clear`, retry       | "Clearing corrupted package cache..."                               |
+
+> **Key Principle**: The system NEVER gives up on its own. All environment states trigger retry loops that continue until success or explicit user cancellation. The system prompts for user intervention when needed, then continues retrying automatically.
+>
+> **Retry Distinction**:
+> - **Mutation Retry Ceiling**: Code mutation cycles are bounded (max 10 retries per task) with staged escalation through Fix → Integration → Architecture levels before abort.
+> - **Environment Recovery Loops**: Unbounded — disk space recovery, SDK installation, NuGet cache repair continue until resolved or user cancels.
+> - This distinction ensures deterministic code safety while maintaining resilience for environmental issues.
 
 ---

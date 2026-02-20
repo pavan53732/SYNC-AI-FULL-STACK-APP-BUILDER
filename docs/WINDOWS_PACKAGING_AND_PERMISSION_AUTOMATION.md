@@ -442,4 +442,27 @@ public enum ExecutionFallbackMode
 
 ---
 
-## 9. Reference
+## 9. References
+
+- [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 7-layer overview, deployment model
+- [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) — State machine, build system, retry logic
+- [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) — Roslyn indexing, symbol graph, capability scanning
+- [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) — Sandbox implementation, process isolation
+- [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — AI/Kernel relationship, enforcement layer
+
+---
+
+## Document Status
+
+- **Status:** 🔴 CRITICAL FOUNDATION
+- **Complexity:** High (Windows security model, signing requirements)
+- **Risk:** CRITICAL if skipped (apps won't install without proper signing)
+- **Maintainer:** Security & Packaging Team
+
+---
+
+## Change Log
+
+| Date | Change | Author |
+|------|--------|--------|
+| 2026-02-20 | Initial specification | Architecture Team |
