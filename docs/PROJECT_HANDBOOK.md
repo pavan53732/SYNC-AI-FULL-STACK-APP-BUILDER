@@ -8,7 +8,7 @@
 
 ## Preface: Constructing the Constructor
 
-Sync AI is **not** an AI coding assistant. It is an **Autonomous Software Construction System**.
+Sync AI is **a Local AI Full-Stack Windows App Builder**. The AI Construction Engine is the Primary Brain that designs and builds applications. The Runtime Safety Kernel enforces hard boundaries silently.
 
 When contributing, remember:
 

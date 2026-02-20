@@ -38,14 +38,14 @@ The system monitors for environment conditions that require user intervention. A
 
 ### The "Lovable" for Desktop Experience
 
-Sync AI brings the "Lovable" experience to Windows Desktop:
+Sync AI is a **Local AI Full-Stack Windows App Builder**:
 
-1.  **Autonomous Construction**: The user is not a developer; the user is the **architect**. The system is the builder.
+1.  **AI-Primary Construction**: The AI Construction Engine is the Primary Brain. The user describes intent, AI designs and builds.
 2.  **No IDE Required**: Zero exposure to Visual Studio, `.csproj` files, or terminals.
 3.  **Local-First & Private**: All code, data, and builds stay on the user's machine.
-4.  **End-to-End Responsibility**: The system owns the stack from **Schema → UI → Tests → Packaging**.
+4.  **End-to-End Responsibility**: The AI owns the stack from **Schema → UI → Tests → Packaging**.
 
-It is a **fully autonomous Windows-native software construction system**.
+The **AI Construction Engine** creates adaptive blueprints and generates complete applications. The **Runtime Safety Kernel** enforces hard boundaries silently.
 
 This system does not generate fragments or starter templates.
 It constructs **complete, runnable, production-ready Windows-native applications**.

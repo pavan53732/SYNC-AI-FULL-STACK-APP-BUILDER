@@ -1,18 +1,18 @@
 # AI AGENTS AND PLANNING
 
-> **The AI Construction Engine: Intent Parsing, DAG Planning, Multi-Agent Specifications & Execution Contracts**
+> **The AI Construction Engine: Blueprint Design, Adaptive Planning & Multi-Agent Coordination**
 >
 > **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
 >
-> _The AI Construction Engine is the primary intelligence that drives all construction operations. The Runtime Safety Kernel validates and enforces safety boundaries._
+> _The AI Construction Engine is the PRIMARY BRAIN. It designs adaptive blueprints, learns from errors, and owns the entire construction strategy. The Runtime Safety Kernel enforces hard boundaries silently._
 
 ---
 
 ## Table of Contents
 
 1. [Overview](#1-overview)
-2. [Intent and Specification Layer](#2-intent-and-specification-layer)
-3. [Planning Layer (Task Graph / DAG)](#3-planning-layer-task-graph--dag)
+2. [AI Architecture Blueprint Model](#2-ai-architecture-blueprint-model)
+3. [Adaptive Planning Layer](#3-adaptive-planning-layer)
 4. [Multi-Agent Specifications](#4-multi-agent-specifications)
 5. [Agent Execution Contracts](#5-agent-execution-contracts)
 6. [Agent Orchestration Pattern](#6-agent-orchestration-pattern)
@@ -23,39 +23,92 @@
 
 ## 1. Overview
 
-The AI Agents and Planning layer transforms unstructured user prompts into structured, executable task graphs and coordinates multiple specialized agents to generate code.
+The AI Construction Engine transforms unstructured user prompts into adaptive architectural blueprints and coordinates multiple specialized agents to generate complete, runnable applications.
 
-### Architectural Position
+### AI-Primary Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer 7: User Interface (WinUI 3 / XAML)                   │
+│  AI CONSTRUCTION ENGINE (Primary Brain)                     │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ Blueprint Designer    → Adaptive architecture design    ││
+│  │ Multi-Agent System    → Specialized code generation     ││
+│  │ Planning Engine       → Task graph construction         ││
+│  │ Retry Controller      → Error recovery strategy (1-9)   ││
+│  └─────────────────────────────────────────────────────────┘│
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 6: Orchestrator Engine                               │
-├─────────────────────────────────────────────────────────────┤
-│  Layer 5: AI Agent Layer ← THIS SPEC                        │
-├─────────────────────────────────────────────────────────────┤
-│  Layer 4: Code Intelligence (Roslyn)                        │
+│  RUNTIME SAFETY KERNEL (Enforcement Layer)                  │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ Mutation Guard       → Validate before apply            ││
+│  │ Snapshot Manager     → Restore points                   ││
+│  │ Retry Governor       → Hard ceiling (10+)               ││
+│  │ Operation Whitelist  → Only approved operations         ││
+│  └─────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Core Responsibilities
 
-1. **Intent Parsing**: Transform natural language into structured specifications
-2. **Task Graph Generation**: Create ordered, executable plans (DAGs)
-3. **Agent Coordination**: Orchestrate multiple specialized agents
-4. **Code Generation**: Produce syntactically correct C#/XAML code
-5. **Self-Correction**: Fix errors through iterative refinement
+1. **Blueprint Design**: AI creates adaptive architectural blueprints, not rigid specs
+2. **Intent Understanding**: Natural language → semantic understanding → creative design
+3. **Adaptive Planning**: Task graphs that evolve based on build feedback
+4. **Agent Coordination**: Orchestrate multiple specialized agents
+5. **Code Generation**: Produce syntactically correct C#/XAML code
+6. **Self-Correction**: AI learns from errors and adapts strategy
 
 ---
 
-## 2. Intent and Specification Layer
+## 2. AI Architecture Blueprint Model
 
 ### 2.1 Purpose
 
-Transform unstructured user prompts into structured, machine-readable specifications that prevent hallucination and ensure consistency.
+The AI Construction Engine creates **adaptive architectural blueprints**, not rigid specifications. The blueprint is a living model that evolves based on build feedback, error patterns, and user refinements.
 
-### 2.2 Process Flow
+> **Key Difference from Deterministic Specs:**
+> - Old: Rigid JSON schema → fixed pipeline → single output
+> - New: AI Blueprint → adaptive design → evolves with feedback
+
+### 2.2 Blueprint Structure
+
+The AI Architecture Blueprint contains these components:
+
+```
+AI ARCHITECTURE BLUEPRINT
+├── Architecture Intent Model
+│   ├── User Intent (semantic understanding)
+│   ├── Implicit Requirements (AI-inferred)
+│   └── Constraint Set (user + system constraints)
+│
+├── Component Graph
+│   ├── UI Components (pages, dialogs, controls)
+│   ├── Services (business logic, data access)
+│   ├── Models (entities, DTOs, view models)
+│   └── Infrastructure (database, configuration)
+│
+├── Domain Model
+│   ├── Entities (persistent data structures)
+│   ├── Relationships (entity associations)
+│   ├── Business Rules (validation, invariants)
+│   └── Data Flows (how data moves through system)
+│
+├── Service Contracts
+│   ├── Service Interfaces (what each service does)
+│   ├── Dependencies (service-to-service relationships)
+│   └── Integration Points (external APIs, database)
+│
+├── Navigation Graph
+│   ├── Page Hierarchy (navigation structure)
+│   ├── Routes (how users move through app)
+│   └── State Transitions (view state changes)
+│
+└── Cross-Cutting Concerns
+    ├── Authentication & Authorization
+    ├── Error Handling Strategy
+    ├── Logging & Diagnostics
+    └── Performance Considerations
+```
+
+### 2.3 Blueprint Generation Flow
 
 **Input:**
 ```
@@ -63,107 +116,116 @@ Transform unstructured user prompts into structured, machine-readable specificat
 customer database, and analytics dashboard"
 ```
 
-**Processing:**
+**AI Processing (NOT deterministic extraction):**
 
-1. **NLP Feature Extraction** - Identify requested features
-2. **Stack Selection** - Choose appropriate tech stack
-3. **Constraint Inference** - Deduce implicit requirements (e.g., auth implies session management)
-4. **Dependency Mapping** - Identify feature interdependencies
-5. **Validation** - Check for conflicts or impossibilities
+1. **Semantic Understanding** - AI comprehends intent, not just keywords
+2. **Creative Design** - AI proposes architecture based on best practices
+3. **Constraint Integration** - System constraints merged with user requirements
+4. **Blueprint Synthesis** - AI creates comprehensive architectural model
+5. **Validation Loop** - Blueprint validated against known patterns
 
-**Output (Structured JSON):**
+**Output (AI Architecture Blueprint):**
 
 ```json
 {
-  "projectType": "windows-desktop-app",
-  "projectName": "CRM System",
-  "features": [
-    {
-      "id": "authentication",
-      "type": "auth",
-      "subType": "windows-auth",
-      "dependencies": ["user-database"],
-      "priority": 1
-    },
-    {
-      "id": "rbac",
-      "type": "access-control",
-      "roles": ["admin", "manager", "user"],
-      "dependencies": ["authentication"],
-      "priority": 2
-    },
-    {
-      "id": "customer-database",
-      "type": "data-model",
-      "tables": ["customers", "contacts", "interactions"],
-      "dependencies": ["database-setup"],
-      "priority": 1
-    },
-    {
-      "id": "analytics-dashboard",
-      "type": "ui",
-      "components": ["charts", "metrics", "filters"],
-      "dependencies": ["customer-database", "rbac"],
-      "priority": 3
-    }
-  ],
-  "stack": {
-    "ui": "WinUI3",
-    "backend": ".NET8",
-    "database": "SQLite",
-    "auth": "Windows Authentication"
+  "blueprint_id": "bp_crm_20260220",
+  "version": 1,
+  "architecture_intent": {
+    "user_intent": "CRM system with auth, RBAC, customer data, analytics",
+    "implicit_requirements": [
+      "Session management for authentication",
+      "Password hashing for security",
+      "Audit logging for compliance",
+      "Export functionality for reports"
+    ],
+    "design_philosophy": "Enterprise-grade, maintainable, testable"
   },
-  "constraints": {
-    "maxComplexity": "medium",
-    "requiredPackages": ["Microsoft.UI.Xaml", "System.Data.Sqlite"],
-    "incompatibleFeatures": []
+  "component_graph": {
+    "ui_components": {
+      "pages": ["Dashboard", "CustomerList", "CustomerDetail", "Analytics", "Login"],
+      "dialogs": ["AddCustomer", "EditCustomer", "ConfirmDelete"],
+      "controls": ["CustomerCard", "MetricWidget", "ChartDisplay"]
+    },
+    "services": {
+      "core": ["AuthService", "CustomerService", "AnalyticsService"],
+      "infrastructure": ["DatabaseService", "NavigationService", "DialogService"]
+    },
+    "models": {
+      "entities": ["Customer", "Contact", "Interaction", "User", "Role"],
+      "view_models": ["DashboardViewModel", "CustomerListViewModel"],
+      "dtos": ["CustomerDto", "AnalyticsReportDto"]
+    }
+  },
+  "domain_model": {
+    "entities": [
+      {
+        "name": "Customer",
+        "properties": ["Id", "Name", "Email", "CreatedAt", "Status"],
+        "relationships": ["hasMany:Contact", "hasMany:Interaction"]
+      }
+    ],
+    "business_rules": [
+      "Email must be unique across customers",
+      "Customer status cannot be changed to 'deleted' if active interactions exist"
+    ]
+  },
+  "navigation_graph": {
+    "entry_point": "Login",
+    "routes": [
+      { "from": "Login", "to": "Dashboard", "condition": "authenticated" },
+      { "from": "Dashboard", "to": "CustomerList", "trigger": "menu_click" },
+      { "from": "CustomerList", "to": "CustomerDetail", "trigger": "item_select" }
+    ]
+  },
+  "cross_cutting": {
+    "authentication": { "method": "WindowsAuth", "session_timeout": "30min" },
+    "authorization": { "model": "RBAC", "roles": ["Admin", "Manager", "User"] },
+    "error_handling": { "strategy": "user_friendly_messages", "logging": "structured" }
   }
 }
 ```
 
-### 2.3 Benefits
+### 2.4 Adaptive Blueprint Evolution
 
-- **No hallucination** - Features derived from extraction, not free-form
-- **Explicit dependencies** - Clear what depends on what
-- **Conflict detection** - Catch contradictory requirements early
-- **Stack consistency** - All modules use same tech choices
+The blueprint **evolves** during construction:
 
-### 2.4 Project Specification Contract
-
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "type": "object",
-  "properties": {
-    "projectId": { "type": "string" },
-    "projectName": { "type": "string" },
-    "stack": {
-      "type": "object",
-      "properties": {
-        "ui": { "enum": ["WinUI3", "WPF", "Console"] },
-        "language": { "const": "C#" },
-        "framework": { "const": ".NET 8.0" },
-        "database": { "enum": ["SQLite", "None"] }
-      },
-      "required": ["ui", "language", "framework"]
-    },
-    "features": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "type": { "type": "string" },
-          "description": { "type": "string" },
-          "dependencies": { "type": "array", "items": { "type": "string" } }
-        },
-        "required": ["id", "type", "description"]
-      }
-    }
-  },
-  "required": ["projectId", "projectName", "stack", "features"]
-}
 ```
+Initial Blueprint (v1)
+       ↓
+Build Attempt #1 → Errors detected
+       ↓
+AI analyzes errors, adapts blueprint
+       ↓
+Revised Blueprint (v2)
+       ↓
+Build Attempt #2 → New errors
+       ↓
+AI learns pattern, adapts strategy
+       ↓
+Revised Blueprint (v3)
+       ↓
+Build Succeeds → Final Blueprint locked
+```
+
+### 2.5 Key Differences from Deterministic Specs
+
+| Aspect | Deterministic Spec (Old) | AI Blueprint (New) |
+|--------|--------------------------|-------------------|
+| **Structure** | Rigid JSON schema | Flexible semantic model |
+| **Evolution** | Fixed after creation | Evolves with feedback |
+| **Error Handling** | Pipeline fails | AI adapts strategy |
+| **Creativity** | Template-based | AI-designed |
+| **Validation** | Schema validation | Pattern validation |
+| **Retry Strategy** | Fixed retry count | AI decides based on error type |
+
+### 2.6 Blueprint Governance
+
+| Aspect | Owner | Description |
+|--------|-------|-------------|
+| Blueprint creation | AI Construction Engine | AI designs initial architecture |
+| Blueprint adaptation | AI Construction Engine | AI modifies based on build feedback |
+| Blueprint validation | Runtime Safety Kernel | Kernel enforces hard boundaries |
+| Blueprint persistence | Runtime Safety Kernel | Snapshots of blueprint versions |
 
 ---
 

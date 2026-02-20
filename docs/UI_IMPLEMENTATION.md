@@ -33,7 +33,7 @@
 > It means the system is sophisticated AND the UI abstracts away the details.
 > **The Goal**: A completely autonomous construction environment where the user never needs to touch an IDE, CLI, or compiler logs.
 >
-> **The Factory Metaphor**: The UI is the control room of an autonomous factory. The user sets the parameters (prompts), and the factory (Orchestrator + Agents) handles the dangerous machinery (compilers, file I/O) behind safety glass. The user sees the product, not the assembly line.
+> **The AI-Primary Metaphor**: The UI is the interface to the AI Construction Engine. The user describes what they want (prompts), and the AI Construction Engine designs and builds the application. The Runtime Safety Kernel enforces hard boundaries silently. The user sees the product, not the construction process.
 
 **What Users See** vs **What Happens Internally**:
 
