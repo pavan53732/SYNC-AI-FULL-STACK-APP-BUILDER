@@ -2,7 +2,9 @@
 
 > **The Knowledge Layer: Roslyn Integration, Semantic Indexing, Database Schema, Patch Engine & Mutation Safety**
 >
-> \_
+> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
+>
+> _The Code Intelligence layer provides knowledge to the AI Construction Engine. The Runtime Safety Kernel enforces mutation boundaries._
 
 ---
 
@@ -1638,8 +1640,21 @@ public class IntentClassifier
 The guard sits between the AI's proposal and the Patch Engine:
 
 ```
-AI Patch Proposal → [Mutation Safety Guard] → Patch Engine
+AI Construction Engine → [Mutation Safety Guard (Runtime Safety Kernel)] → Patch Engine
 ```
+
+### AI-Primary Ownership of Mutations
+
+> **The AI Construction Engine proposes mutations, the Runtime Safety Kernel validates and applies them.**
+
+| Mutation Stage | Owner | Description |
+|----------------|-------|-------------|
+| Proposal generation | AI Construction Engine | Agent decides what changes to make |
+| Target validation | Runtime Safety Kernel | Hard rejection if target doesn't exist |
+| Impact analysis | Runtime Safety Kernel | Determines affected symbols |
+| Breaking change detection | Runtime Safety Kernel | Blocks unsafe mutations |
+| AST simulation | Runtime Safety Kernel | Dry run before commit |
+| Error recovery | AI Construction Engine | Agent decides how to fix failures |
 
 ### Layer 1: Target Existence Validation
 
