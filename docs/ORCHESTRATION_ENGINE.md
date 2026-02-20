@@ -309,9 +309,36 @@ public class BuilderContext
     public string ProjectPath { get; set; }
     public Dictionary<string, object> ProjectMetadata { get; } = new();
 
+    // === RUNTIME SAFETY: Agent Execution Context Injection ===
+    /// <summary>
+    /// Active agent context providing safety ceilings and isolation boundaries.
+    /// MUST be set before any task execution begins.
+    /// Source: AGENT_EXECUTION_CONTRACT.md
+    /// </summary>
+    public AgentExecutionContext? ActiveAgentContext { get; set; }
+
+    // Safety Ceilings (Delegate from ActiveAgentContext for fast access)
+    public int MaxFilesTouchedPerTask => ActiveAgentContext?.MaxFilesTouchedPerTask ?? 5;
+    public int MaxNodesModifiedPerTask => ActiveAgentContext?.MaxNodesModifiedPerTask ?? 100;
+
+    // Snapshot tracking for rollback
+    public string? SemanticSnapshotHash { get; set; }      // Hash BEFORE current task
+    public string? LastStableSnapshotHash { get; set; }    // Hash of last verified build
+
     // Debug info
     public List<string> DebugLog { get; } = new();
     public DateTime StartTime { get; } = DateTime.Now;
+
+    // === RUNTIME SAFETY: Context Validation ===
+    public void ValidateAgentContext()
+    {
+        if (ActiveAgentContext == null)
+        {
+            throw new InvalidOperationException(
+                "AgentExecutionContext must be injected into BuilderContext before task execution. " +
+                "See AGENT_EXECUTION_CONTRACT.md §4 for injection pattern.");
+        }
+    }
 }
 ```
 
@@ -393,6 +420,30 @@ public record RetryStartedEvent : BuilderEvent
     public int CurrentRetry { get; init; }
     public ErrorType PreviousError { get; init; }
 }
+
+// === RUNTIME SAFETY: Mutation Ceiling Events ===
+public record MutationCeilingValidatedEvent : BuilderEvent
+{
+    public string TaskId { get; init; }
+    public int FilesTouched { get; init; }
+    public int NodesModified { get; init; }
+    public bool HasBreakingChanges { get; init; }
+}
+
+public record MutationCeilingExceededEvent : BuilderEvent
+{
+    public string TaskId { get; init; }
+    public string RejectionReason { get; init; }
+    public string CeilingType { get; init; }  // "MaxFilesTouchedPerTask" or "MaxNodesModifiedPerTask" or "BreakingChange"
+}
+
+// === RUNTIME SAFETY: Memory Lifecycle Events ===
+public record MemoryScopeDisposedEvent : BuilderEvent
+{
+    public MemoryScope Scope { get; init; }
+    public string ProjectId { get; init; }
+    public int ResourcesReleased { get; init; }
+}
 ```
 
 **Design**: Events are immutable records. Full event log enables perfect replay for debugging or audit.
@@ -439,8 +490,22 @@ public class BuilderReducer
             (BuilderState.TASK_GRAPH_BUILT, TaskStartedEvent e) =>
                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.MUTATION_GUARD, @event),
 
+            // === RUNTIME SAFETY: Mutation Ceiling Check in State Machine ===
+            // MUTATION_GUARD validates AgentExecutionContext and MutationCeilings BEFORE patching
             (BuilderState.MUTATION_GUARD, TaskGuardPassedEvent e) =>
+                ExecuteMutationGuardValidation(context, e.TaskId, @event),
+
+            // Only transition to PATCHING if mutation ceiling validation passed
+            (BuilderState.MUTATION_GUARD, MutationCeilingValidatedEvent e) =>
                  UpdateTaskAndTransition(context, e.TaskId, BuilderState.PATCHING, @event),
+
+            // Handle mutation ceiling exceeded - trigger retry with different strategy
+            (BuilderState.MUTATION_GUARD, MutationCeilingExceededEvent e) =>
+                context with
+                {
+                    State = BuilderState.RETRYING,
+                    EventLog = [..context.EventLog, @event]
+                },
 
             (BuilderState.PATCHING, TaskPatchedEvent e) =>
                  UpdateTaskAndTransition(context, e.TaskId, BuilderState.INDEXING, @event),
@@ -484,6 +549,14 @@ public class BuilderReducer
                     EventLog = [..context.EventLog, @event]
                 },
 
+            // === RUNTIME SAFETY: Memory Lifecycle Wired to State Transitions ===
+            // Memory disposal events are emitted at specific lifecycle points
+            // These transitions trigger MemoryLifecycleManager calls via side effects
+            
+            // Memory disposal on task completion (success)
+            (BuilderState.VALIDATING, TaskCompletedEvent e) => 
+                DisposeMemoryAndTransition(context, MemoryScope.TASK, e),
+
             // === INVALID TRANSITION ===
             _ => throw new InvalidOperationException(
                 $"Invalid transition: {context.State} + {(@event.GetType().Name)} not allowed")
@@ -512,6 +585,63 @@ public class BuilderReducer
             State = newState,
             CurrentTaskId = newState == BuilderState.TASK_GRAPH_BUILT ? null : taskId,
             EventLog = [..context.EventLog, @event]
+        };
+    }
+
+    // === RUNTIME SAFETY: Mutation Guard Validation ===
+    /// <summary>
+    /// Validates AgentExecutionContext and mutation ceilings before allowing PATCHING state.
+    /// This is the enforcement point for runtime safety guarantees.
+    /// </summary>
+    private static BuilderContext ExecuteMutationGuardValidation(
+        BuilderContext context,
+        string taskId,
+        BuilderEvent @event)
+    {
+        // 1. Validate AgentExecutionContext is injected
+        if (context.ActiveAgentContext == null)
+        {
+            throw new InvalidOperationException(
+                "AgentExecutionContext not injected. " +
+                "Call BuilderContext.ValidateAgentContext() before task execution.");
+        }
+
+        // 2. Emit validation event (actual validation happens in MutationCeilingEnforcer)
+        // This is a placeholder - in real implementation, this would call:
+        // var result = await _mutationCeilingEnforcer.ValidateMutationCeilingAsync(patch, context.ActiveAgentContext);
+        // For the reducer (pure function), we just emit the event that triggers validation
+
+        return context with
+        {
+            State = BuilderState.MUTATION_GUARD,
+            EventLog = [..context.EventLog, @event]
+        };
+    }
+
+    // === RUNTIME SAFETY: Memory Lifecycle Helper ===
+    /// <summary>
+    /// Disposes memory scope and transitions state.
+    /// Emits MemoryScopeDisposedEvent for audit trail.
+    /// </summary>
+    private static BuilderContext DisposeMemoryAndTransition(
+        BuilderContext context,
+        MemoryScope scope,
+        BuilderEvent originalEvent)
+    {
+        // Emit memory disposal event
+        var memoryEvent = new MemoryScopeDisposedEvent
+        {
+            Scope = scope,
+            ProjectId = context.ProjectPath,
+            ResourcesReleased = 0 // Actual count tracked by MemoryLifecycleManager
+        };
+
+        // In real implementation, this triggers:
+        // _memoryLifecycleManager.DisposeScope(scope, context.ProjectPath);
+
+        return context with
+        {
+            EventLog = [..context.EventLog, originalEvent, memoryEvent]
         };
     }
 }
