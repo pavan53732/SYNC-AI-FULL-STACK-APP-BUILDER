@@ -72,7 +72,7 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 │   │   │
 │   │   ├── Services/                  # Core Business Logic (7-Layer Architecture)
 │   │   │   │
-│   │   │   ├── 🔴 FOUNDATION: Orchestration Core
+│   │   │   ├── 🔴 Runtime Safety Kernel (Orchestration Core)
 │   │   │   │   ├── Orchestration/
 │   │   │   │   │   ├── BuilderReducer.cs
 │   │   │   │   │   ├── TaskSchema.cs

@@ -93,8 +93,10 @@ The Runtime Safety Kernel (Orchestrator) is the **enforcement layer** that valid
 ```
 ✓ No implicit transitions
 ✓ No uncontrolled parallel mutation
-✓ One active task at a time (strict serialization)
+✓ One active task at a time (strict serialization for mutation execution)
 ✓ Bounded autonomous refinement (max 10 retries with staged escalation)
+
+> **Note**: Serialization applies to mutation execution only. AI planning and blueprint reasoning may occur concurrently — the Runtime Safety Kernel serializes only when applying changes to the codebase.
 ✓ Immutable state transitions (functional programming)
 ✓ Full event log for replay/debug (deterministic replay)
 ✓ Deterministic termination (FAILED state with rollback on exhaustion)
