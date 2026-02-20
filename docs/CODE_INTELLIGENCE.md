@@ -66,15 +66,21 @@ File.WriteAllText("MyClass.cs", formatted.ToFullString());
 
 ## 2. Indexing Architecture
 
-### Strict Indexing Policy (Mandatory)
+### Indexing Policy
 
-    The system uses **Full Semantic Mode** for all operations:
+The system uses a **tiered indexing approach** optimized for different scenarios:
 
-    *   Full Roslyn AST, symbol graph, and cross-file resolution.
-    *   Required for all operations including retrieval, mutation, and capability inference.
-    *   Ensures consistent, deterministic behavior across all system components.
+**Full Semantic Mode** (Default for Production Operations):
+*   Full Roslyn AST, symbol graph, and cross-file resolution.
+*   Required for all mutation operations and capability inference.
+*   Ensures consistent, deterministic behavior for code changes.
 
-    > **PRINCIPLE**: The system always uses the deepest available analysis mode. No artificial throttling or shallow indexing modes are used, ensuring maximum accuracy and capability inference at all times.
+**Lightweight Mode** (Initial Scans and Quick Lookups):
+*   Shallow metadata index for fast project overview.
+*   Used for initial project discovery and UI listings.
+*   Automatically upgraded to Full Semantic when mutations are needed.
+
+> **PRINCIPLE**: The system uses the appropriate analysis depth for the task. Lightweight indexing provides fast initial scans, while Full Semantic mode ensures accuracy for mutations. The system automatically escalates to Full Semantic when deeper analysis is required.
 
 ### Enterprise Architecture Overview
 

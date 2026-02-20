@@ -20,7 +20,7 @@
 
 ## 1. Core Philosophy
 
-To prevent "autonomy drift" and ensuring deterministic system behavior, all agents operate under a **Strict Execution Contract**. 
+To prevent "autonomy drift" and ensuring deterministic system behavior, all agents operate under a **Bounded Execution Contract**.
 
 *   **No Universal Access**: An agent can only touch files relevant to its role.
 *   **No Shared Writable Memory**: Agents cannot overwrite global state.
