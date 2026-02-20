@@ -90,10 +90,29 @@ Without a deterministic orchestrator:
 ✓ No implicit transitions
 ✓ No uncontrolled parallel mutation
 ✓ One active task at a time (strict serialization)
-✓ Autonomous infinite refinement (retry until success or user cancellation)
+✓ Bounded autonomous refinement (max 10 retries with staged escalation)
 ✓ Immutable state transitions (functional programming)
 ✓ Full event log for replay/debug (deterministic replay)
+✓ Deterministic termination (FAILED state with rollback on exhaustion)
 ```
+
+### Retry Governance Contract
+
+The system enforces a **strict retry ceiling** to prevent infinite loops:
+
+| Retry Range | Stage | Action | Rollback |
+|-------------|-------|--------|----------|
+| 1-3 | FIX_LEVEL | Local token repairs | None |
+| 4-6 | INTEGRATION_LEVEL | DI/wiring review | None |
+| 7-9 | ARCHITECTURE_LEVEL | Plan re-evaluation | Create checkpoint |
+| 10+ | ABORT | **Stop and notify user** | Full rollback to `LastStableSnapshotHash` |
+
+**Circuit Breaker**: After 10 retries, the system:
+1. Rolls back to `LastStableSnapshotHash`
+2. Transitions to `BuilderState.FAILED`
+3. Clears all task-scoped memory
+4. Emits `BuildFailedEvent` for user notification
+5. Awaits user intervention (spec modification or environment fix)
 
 ---
 
@@ -145,8 +164,9 @@ public enum TaskStatus
     PENDING,             // Queued, awaiting execution
     RUNNING,             // Currently executing
     VALIDATING,          // Build/validation phase
-    RETRYING,            // Failed, attempting retry
-    COMPLETED            // Success (system retries indefinitely until success or user cancellation)
+    RETRYING,            // Failed, attempting retry (max 10 total)
+    COMPLETED,           // Task succeeded
+    FAILED               // Task failed after max retries exhausted
 }
 
 public enum ErrorType
@@ -230,9 +250,13 @@ public enum BuilderState
     RETRYING = 10,           // Retry in progress
     EXECUTING_TASK = 11,     // Task execution/retry in progress
     BUILD_SUCCEEDED = 12,    // All tasks completed
+    // === TERMINAL FAILURE STATE ===
+    FAILED = 13,             // Max retries exceeded - system stopped, awaiting user intervention
     // Packaging Phase
     PACKAGING = 14,          // MSIX bundling & signing
     PACKAGING_SUCCEEDED = 15, // Application ready for distribution
+    // Packaging Failure
+    PACKAGING_FAILED = 16,   // Packaging failed after max retries
     // Mandatory Packaging Steps
     CAPABILITY_CHECK = 17,
     MANIFEST_UPDATING = 18,
@@ -258,32 +282,50 @@ TASK_GRAPH_BUILT
   ↓ (execute next task)
 MUTATION_GUARD
   ↓ (guard safe)
-PATCHING ←────────────────┐
-  ↓ (patch applied)       │
-INDEXING                  │
-  ↓ (index updated)       │
-BUILDING                  │
-  ↓ (build complete)      │
-VALIDATING                │ (retry < maxRetries)
-  ↓ (validation succeeds) └── RETRYING
-BUILD_SUCCEEDED               ↓ (continuous retry)
-      ↓                        EXECUTING_TASK
-    CAPABILITY_CHECK             ↓ (continuous until success or user cancel)
-      ↓ (changes detected)
-    MANIFEST_UPDATING
-      ↓
-    REBUILD_REQUIRED
-      ↓
-    BUILDING
-      ↓
-    PACKAGING
-      ↓
-    SIGNING
-      ↓
-    SIGNATURE_VALIDATION
-      ↓
-    PACKAGING_SUCCEEDED
+PATCHING ←─────────────────────────────┐
+  ↓ (patch applied)                     │
+INDEXING                                │
+  ↓ (index updated)                     │
+BUILDING                                │
+  ↓ (build complete)                    │
+VALIDATING                              │
+  │                                     │
+  ├──(validation succeeds)──→ BUILD_SUCCEEDED
+  │                                ↓
+  │                           CAPABILITY_CHECK
+  │                                ↓ (changes detected)
+  │                           MANIFEST_UPDATING
+  │                                ↓
+  │                           REBUILD_REQUIRED
+  │                                ↓
+  │                           BUILDING
+  │                                ↓
+  │                           PACKAGING
+  │                                ↓
+  │                           SIGNING
+  │                                ↓
+  │                           SIGNATURE_VALIDATION
+  │                                ↓
+  │                           PACKAGING_SUCCEEDED
+  │
+  └──(validation fails)──→ RETRYING
+                              │
+                              ├──(retry < 10)──→ EXECUTING_TASK ──→ MUTATION_GUARD
+                              │                                              ↑
+                              │                                              │
+                              └──(retry >= 10 / ABORT stage)──→ FAILED ───────┘
+                                         │                              ROLLBACK
+                                         ↓                         (to LastStableSnapshot)
+                                    [User intervention required]
 ```
+
+### Terminal States
+
+| State | Type | Description | Recovery |
+|-------|------|-------------|----------|
+| `PACKAGING_SUCCEEDED` | Success | Application built, packaged, and ready | None needed |
+| `FAILED` | Failure | Max retries exceeded, rollback complete | User must modify spec or environment |
+| `PACKAGING_FAILED` | Failure | Packaging failed after retries | User must check signing config |
 
 ---
 
@@ -419,6 +461,7 @@ public record RetryStartedEvent : BuilderEvent
     public string TaskId { get; init; }
     public int CurrentRetry { get; init; }
     public ErrorType PreviousError { get; init; }
+    public RetryStage Stage { get; init; }
 }
 
 // === RUNTIME SAFETY: Mutation Ceiling Events ===
@@ -443,6 +486,32 @@ public record MemoryScopeDisposedEvent : BuilderEvent
     public MemoryScope Scope { get; init; }
     public string ProjectId { get; init; }
     public int ResourcesReleased { get; init; }
+}
+
+// === TERMINAL FAILURE EVENTS ===
+public record BuildFailedEvent : BuilderEvent
+{
+    public string TaskId { get; init; }
+    public string Reason { get; init; }
+    public ErrorClassification Error { get; init; }
+    public int TotalRetries { get; init; }
+    public string? RollbackSnapshotId { get; init; }
+}
+
+public record SnapshotRollbackEvent : BuilderEvent
+{
+    public string SnapshotId { get; init; }
+    public string Reason { get; init; }
+    public bool Success { get; init; }
+    public string? ErrorMessage { get; init; }
+}
+
+public record RetryEscalationEvent : BuilderEvent
+{
+    public string TaskId { get; init; }
+    public RetryStage PreviousStage { get; init; }
+    public RetryStage NewStage { get; init; }
+    public int RetryCount { get; init; }
 }
 ```
 
@@ -524,9 +593,9 @@ public class BuilderReducer
             (BuilderState.VALIDATING, TaskCompletedEvent e) =>
                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.TASK_GRAPH_BUILT, @event),
 
-            // === FAILURE & AUTOMATIC RETRY PATH ===
-            // System always retries - no max retry limit
-            // Only stops if user cancels or identical patch detected (no progress)
+            // === FAILURE & BOUNDED RETRY PATH ===
+            // System retries up to max 10 attempts with staged escalation
+            // RetryController determines stage and handles ABORT transition
             (BuilderState.VALIDATING, TaskFailedEvent e) =>
                 context with
                 {
