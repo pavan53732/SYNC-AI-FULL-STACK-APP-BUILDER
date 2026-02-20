@@ -17,16 +17,18 @@
 5. [State Reducer](#5-state-reducer)
 6. [Error Classification & Intelligence](#6-error-classification--intelligence)
 7. [Retry Controller](#7-retry-controller)
-8. [Concurrency Rules](#8-concurrency-rules)
-9. [Build System](#9-build-system)
-10. [Error Handling](#10-error-handling)
-11. [API Contracts](#11-api-contracts)
-12. [Appendix A: Supporting Types](#appendix-a-supporting-types)
-13. [Appendix B: Implementation Sequence](#appendix-b-implementation-sequence)
-14. [Appendix C: Testing Strategy](#appendix-c-testing-strategy)
-15. [Appendix D: Why This Matters](#appendix-d-why-this-matters)
-16. [Appendix E: Design Philosophy Connection](#appendix-e-design-philosophy-connection)
-17. [Appendix F: Next Deliverables](#appendix-f-next-deliverables-in-order)
+8. [Execution Lifecycle](#8-execution-lifecycle)
+9. [Background Systems](#9-background-systems)
+10. [Concurrency Rules](#10-concurrency-rules)
+11. [Build System](#11-build-system)
+12. [Error Handling](#12-error-handling)
+13. [API Contracts](#13-api-contracts)
+14. [Appendix A: Supporting Types](#appendix-a-supporting-types)
+15. [Appendix B: Implementation Sequence](#appendix-b-implementation-sequence)
+16. [Appendix C: Testing Strategy](#appendix-c-testing-strategy)
+17. [Appendix D: Why This Matters](#appendix-d-why-this-matters)
+18. [Appendix E: Design Philosophy Connection](#appendix-e-design-philosophy-connection)
+19. [Appendix F: Next Deliverables](#appendix-f-next-deliverables-in-order)
 
 ---
 
@@ -2225,9 +2227,9 @@ public enum OperationType
 
 ---
 
-## 9. Build System
+## 11. Build System
 
-### 10.1 Responsibilities
+### 11.1 Responsibilities
 
 The Build System is responsible for:
 
@@ -2240,7 +2242,7 @@ The Build System is responsible for:
 - **Support cancellation** - Allow user to cancel builds
 - **Snapshot management** - Create/restore workspace snapshots
 
-### 10.2 Build Flow
+### 11.2 Build Flow
 
 #### Standard Build Sequence
 
@@ -2306,7 +2308,7 @@ The Build System is responsible for:
                          └───────────────────────────┘
 ```
 
-### 10.3 Build Runner Implementation
+### 11.3 Build Runner Implementation
 
 #### IBuildService Interface
 
@@ -2393,7 +2395,7 @@ public class RestoreResult
 }
 ```
 
-### 10.4 Error Classification (Build Layer)
+### 11.4 Error Classification (Build Layer)
 
 #### ErrorType Enum (Simple Taxonomy)
 
@@ -2481,7 +2483,7 @@ public class ErrorClassifier
 }
 ```
 
-### 10.5 Build Service Implementation
+### 11.5 Build Service Implementation
 
 #### BuildService Class (API-Based)
 
@@ -2653,7 +2655,7 @@ public class StructuredLogger : ILogger
 }
 ```
 
-### 10.6 Snapshot Management
+### 11.6 Snapshot Management
 
 ```csharp
 public class SnapshotManager
@@ -2690,9 +2692,9 @@ public class SnapshotManager
 
 ---
 
-## 10. Error Handling
+## 12. Error Handling
 
-### 10.1 Error Handling Philosophy
+### 12.1 Error Handling Philosophy
 
 #### Core Principles
 
@@ -2711,7 +2713,7 @@ public class SnapshotManager
 | **Error**    | Blocking, recoverable | Red error icon      | User must resolve    |
 | **Critical** | System-level failure  | Red with alert      | Immediate attention  |
 
-### 10.2 Error Classification Taxonomy
+### 12.2 Error Classification Taxonomy
 
 All errors across the system are classified into strict enums.
 
@@ -2784,7 +2786,7 @@ public enum OrchestratorErrorType
 }
 ```
 
-### 10.3 Error Recovery Services
+### 12.3 Error Recovery Services
 
 #### Build Error Recovery
 
@@ -2909,7 +2911,7 @@ public class SnapshotRollbackService
 }
 ```
 
-### 10.4 User-Facing Error Messages
+### 12.4 User-Facing Error Messages
 
 ```csharp
 public class ErrorMessageProvider
@@ -3027,7 +3029,7 @@ public class ActionButton
 </ContentDialog>
 ```
 
-### 10.5 Logging & Wiring Strategy
+### 12.5 Logging & Wiring Strategy
 
 ```csharp
 public class ErrorLogger
@@ -3109,7 +3111,7 @@ public class GlobalExceptionHandler
 }
 ```
 
-### 10.6 Error Prevention
+### 12.6 Error Prevention
 
 #### Input Validation
 
@@ -3207,7 +3209,7 @@ public class PreconditionResult
 
 ---
 
-## 11. API Contracts
+## 13. API Contracts
 
 ### Part 1: Internal Service Interfaces
 

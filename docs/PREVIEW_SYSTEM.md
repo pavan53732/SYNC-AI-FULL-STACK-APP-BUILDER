@@ -12,6 +12,50 @@ The Preview System provides **three modes** for users to visualize generated Win
 
 ---
 
+## 1.2 PREVIEW PIPELINE (MANDATORY ORDER)
+
+> **Invariant**: This sequence is strict. No step may be skipped or reordered.
+
+### Two-Phase Capability Model (Debug/Preview vs Release/Packaging)
+
+The system uses different capability inference timing for Preview vs Packaging:
+
+| Phase | Mode | Capability Inference Timing | Rationale |
+|-------|------|----------------------------|-----------|
+| **Preview (Debug)** | Reactive | After build (on failure) | Fast iteration; only infer if build fails due to missing capability |
+| **Packaging (Release)** | Proactive | Before build | Optimize for success; infer capabilities early to minimize retry cycles |
+
+### Preview Pipeline (Debug Configuration)
+
+1. **Pre-Build Capability Scan (Fast Check)**: Quick Roslyn scan for obvious capability-requiring namespaces. If found and missing from manifest → Inject immediately.
+2. **Build (Debug)**: Generate binaries.
+3. **Roslyn Reindex**: Update semantic model.
+4. **Build Failure Check**: If build failed with capability-related error:
+   - Run full **Capability Inference** scan
+   - **Inject** missing capabilities to manifest
+   - **Rebuild** (continuous retry until success or user cancellation)
+5. **Manifest Evaluation (Post-Build)**:
+   - If manifest changed during build → **Inject** → **Rebuild** (Resource Injection).
+   - If no change → Proceed.
+6. **Launch**: Execute in isolated environment.
+
+> **Key Difference from Packaging**: Preview allows "build → detect → fix → rebuild" cycle because iteration speed matters more than perfection. Packaging MUST run inference before build because installers cannot be partially fixed.
+
+### Packaging Pipeline (Release Configuration)
+
+As defined in SYSTEM_ARCHITECTURE.md:
+1. **CAPABILITY_SCAN** (MANDATORY first step)
+2. MANIFEST_UPDATE
+3. VERSION_SYNC
+4. BUILD_RELEASE
+5. PACKAGE_CREATE
+6. SIGN
+7. VERIFY
+
+> **INVARIANT**: For Packaging, capability inference MUST run BEFORE build. Missing capabilities cause build failures that require retry.
+
+---
+
 ## Architecture
 
 ### Preview Service Layer
