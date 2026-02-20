@@ -4,6 +4,8 @@
 >
 > _This document defines WHAT layers exist, HOW they interact, and WHAT invariants govern the system. Detailed implementations are delegated to specialized specifications._
 
+**Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
+
 ---
 
 ## Related Documentation
@@ -40,9 +42,11 @@
 
 ### What is Sync AI?
 
-> **Sync AI is Lovable for Windows Desktop** — a local-first, autonomous AI full-stack builder that generates, compiles, fixes, previews, and packages complete native .NET applications end-to-end from natural language.
+> **Sync AI is a fully local AI full-stack Windows native app builder** that autonomously designs, generates, compiles, validates, fixes, and packages complete production-ready applications from natural language prompts.
 
-**The User does not develop. The System constructs.**
+**AI leads the construction. The Runtime Safety Kernel enforces deterministic guarantees.**
+
+See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel relationship.
 
 ### Framework & Target
 
@@ -67,13 +71,20 @@
 
 ## 2. The 7-Layer Architecture
 
+> **AI-Primary Architecture:** The AI Construction Engine sits at the top, directing all construction. The Runtime Safety Kernel enforces deterministic guarantees.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 7: User Interface (WinUI 3 / XAML)                   │
 │  ─ Prompt input, real-time preview, version timeline         │
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 6: Orchestrator Engine                                │
-│  ─ Task decomposition, state machine, retry logic            │
+│  Layer 6.5: AI Construction Engine (PRIMARY INTELLIGENCE)   │
+│  ─ Intent understanding, architecture design, code generation│
+│  ─ Owns retry strategy (cycles 1-9), adaptive planning       │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 6: Runtime Safety Kernel                              │
+│  ─ Mutation validation, snapshot management, abort authority │
+│  ─ Enforces deterministic execution, hard ceilings (cycle 10)│
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 5: AI Agent Layer                                     │
 │  ─ Multi-agent code generation, prompt engineering           │
@@ -94,6 +105,30 @@
 │  ─ Isolated projects, snapshots, symbol/dependency storage   │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### AI-Primary Control Hierarchy
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                 AI CONSTRUCTION ENGINE                       │
+│                   (Primary Brain)                            │
+│                                                              │
+│   AI leads construction: proposes, designs, generates        │
+│   Owns retry strategy for cycles 1-9                         │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ Proposes mutations
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                RUNTIME SAFETY KERNEL                         │
+│                  (Enforcement Layer)                         │
+│                                                              │
+│   Kernel enforces safety: validates, snapshots, aborts       │
+│   Owns abort authority at cycle 10+                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**See:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for complete details.
 
 ### Layer Ownership Map
 
@@ -405,26 +440,45 @@ All version references MUST derive from this value:
 
 ### 8.1 Retry Philosophy
 
-> **The system NEVER gives up. It retries continuously until success or user cancellation.**
+> **AI owns the retry strategy. The Kernel enforces hard ceilings.**
 
-### 8.2 Retry Stages (Escalation)
+The AI Construction Engine has full flexibility to adapt, retry, and escalate during cycles 1-9. The Runtime Safety Kernel enforces a hard abort at cycle 10+.
 
-| Stage | Retry Range | Agent Responsible |
-|-------|-------------|-------------------|
-| FIX_LEVEL | 1-3 | Fix Agent (local token repairs) |
-| INTEGRATION_LEVEL | 4-6 | Integration Agent (DI, wiring) |
-| ARCHITECTURE_LEVEL | 7-9 | Architect Agent (plan re-evaluation) |
-| ABORT | 10+ | Rollback and prompt user |
+### 8.2 Retry Ownership
 
-### 8.3 Stopping Conditions
+| Range | Owner | Enforcement | Behavior |
+|-------|-------|-------------|----------|
+| 1-9 | AI Construction Engine | Strategy flexible | AI adapts, learns, retries |
+| 10+ | Runtime Safety Kernel | Hard abort + rollback | System stops, user notified |
+
+### 8.3 AI Retry Strategy (Cycles 1-9)
+
+The AI Construction Engine may:
+- **FIX_LEVEL (1-3)**: Fix Agent handles local token repairs
+- **INTEGRATION_LEVEL (4-6)**: Integration Agent handles DI and wiring
+- **ARCHITECTURE_LEVEL (7-9)**: Architect Agent re-evaluates the plan
+
+AI selects which agent handles the fix and adapts approach based on errors.
+
+### 8.4 Kernel Enforcement (Cycle 10+)
+
+The Runtime Safety Kernel:
+- Stops all mutations immediately
+- Rolls back to `LastStableSnapshotHash`
+- Emits `BuildFailedEvent`
+- Clears task-scoped memory
+- Awaits user intervention
+
+### 8.5 Stopping Conditions
 
 The system ONLY stops when:
 
 1. **Success** — Build passes, packaging completes
 2. **User Cancellation** — Explicit cancel request
-3. **Identical Patch Detected** — No progress (same patch hash as previous attempt)
+3. **Hard Ceiling (Cycle 10)** — Kernel-enforced abort
+4. **Identical Patch Detected** — No progress (same patch hash as previous attempt)
 
-**Detailed Retry Logic:** See [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §7
+**Detailed Retry Logic:** See [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §7 and [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) §5
 
 ---
 

@@ -1,6 +1,8 @@
 # ORCHESTRATION ENGINE
 
-> **The Logic Brain: State Machine, Task Lifecycle, Build System, Retry Logic & Concurrency Safety**
+> **Runtime Safety & Execution Kernel: State Machine, Task Lifecycle, Build System, Retry Logic & Concurrency Safety**
+>
+> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
 >
 
 
@@ -30,11 +32,11 @@
 
 ## 1. Core Challenge & Positioning
 
-### Why the Orchestrator Must Come First
+### Why the Runtime Safety Kernel Must Exist
 
-**Priority**: 🔴 **FIRST DELIVERABLE** — Must implement before all other components.
+**Priority**: 🔴 **FIRST DELIVERABLE** — The enforcement layer that guarantees deterministic execution.
 
-Without a deterministic orchestrator:
+The Runtime Safety Kernel (Orchestrator) is the **enforcement layer** that validates all AI-driven construction. Without it:
 
 - Roslyn patch engine can produce cascading corruption
 - Retry loops become nondeterministic
@@ -42,7 +44,9 @@ Without a deterministic orchestrator:
 - State debugging becomes impossible
 - Silent error fixing can perpetuate failures
 
-**Solution**: Control layer MUST exist BEFORE mutation layer.
+**Key Principle**: The Runtime Safety Kernel enforces deterministic execution guarantees for AI-driven construction operations.
+
+> **AI leads, Kernel enforces.** The AI Construction Engine proposes mutations; the Kernel validates, snapshots, and guarantees safety.
 
 ### Architectural Position
 
@@ -98,21 +102,31 @@ Without a deterministic orchestrator:
 
 ### Retry Governance Contract
 
-The system enforces a **strict retry ceiling** to prevent infinite loops:
+> **AI owns the retry strategy. The Kernel enforces hard ceilings.**
 
-| Retry Range | Stage | Action | Rollback |
-|-------------|-------|--------|----------|
-| 1-3 | FIX_LEVEL | Local token repairs | None |
-| 4-6 | INTEGRATION_LEVEL | DI/wiring review | None |
-| 7-9 | ARCHITECTURE_LEVEL | Plan re-evaluation | Create checkpoint |
-| 10+ | ABORT | **Stop and notify user** | Full rollback to `LastStableSnapshotHash` |
+The AI Construction Engine has full flexibility to adapt, retry, and escalate during cycles 1-9. The Runtime Safety Kernel enforces a hard abort at cycle 10+.
 
-**Circuit Breaker**: After 10 retries, the system:
-1. Rolls back to `LastStableSnapshotHash`
-2. Transitions to `BuilderState.FAILED`
-3. Clears all task-scoped memory
-4. Emits `BuildFailedEvent` for user notification
-5. Awaits user intervention (spec modification or environment fix)
+| Retry Range | Owner | Enforcement | Behavior |
+|-------------|-------|-------------|----------|
+| 1-9 | AI Construction Engine | Strategy flexible | AI adapts, learns, retries |
+| 10+ | Runtime Safety Kernel | Hard abort + rollback | System stops, user notified |
+
+**AI Retry Strategy (Cycles 1-9)**:
+| Stage | Range | Agent Responsible |
+|-------|-------|-------------------|
+| FIX_LEVEL | 1-3 | Fix Agent (local token repairs) |
+| INTEGRATION_LEVEL | 4-6 | Integration Agent (DI/wiring review) |
+| ARCHITECTURE_LEVEL | 7-9 | Architect Agent (plan re-evaluation) |
+
+**Kernel Enforcement (Cycle 10+)**: The Runtime Safety Kernel:
+1. Stops all mutations immediately
+2. Rolls back to `LastStableSnapshotHash`
+3. Transitions to `BuilderState.FAILED`
+4. Clears all task-scoped memory
+5. Emits `BuildFailedEvent` for user notification
+6. Awaits user intervention
+
+> See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) §5 for complete retry ownership details.
 
 ---
 
