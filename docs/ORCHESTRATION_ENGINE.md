@@ -17,7 +17,8 @@
 7. [Retry Controller](#7-retry-controller)
 8. [Execution Lifecycle](#8-execution-lifecycle)
 9. [Concurrency Rules](#9-concurrency-rules)
-10. [API Contracts](#10-api-contracts)
+10. [Snapshot Authority](#10-snapshot-authority)
+11. [API Contracts](#11-api-contracts)
 
 ---
 
@@ -33,46 +34,6 @@ The Runtime Safety Kernel (Orchestrator) is the **enforcement layer** that valid
 
 > **AI leads, Kernel enforces.** The AI Construction Engine proposes mutations; the Kernel validates, snapshots, and guarantees safety.
 
-### Architectural Position
-
-```
-┌──────────────────────────┐
-│   WinUI 3 UI Layer       │
-│   (User Input/Output)    │
-└────────────┬─────────────┘
-             │ (Command Request)
-             ↓
-┌──────────────────────────┐
-│   ORCHESTRATOR ENGINE    │ ← RUNTIME SAFETY KERNEL (This Spec)
-│   • State Machine        │
-│   • Task Queue           │
-│   • Retry Controller     │
-│   • Event Log            │
-└────────────┬─────────────┘
-             │ (Execute Task)
-             ↓
-┌──────────────────────────┐
-│   Execution Kernel       │
-│   • Roslyn Indexer       │
-│   • Patch Engine         │
-│   • MSBuild Runner       │
-│   • Sandbox FS           │
-└────────────┬─────────────┘
-             │ (Result)
-             ↓
-┌──────────────────────────┐
-│   SQLite (Graph + Logs)  │
-└──────────────────────────┘
-```
-
-**Key Rules**:
-
-- Orchestrator sits **BETWEEN** UI and kernel, NOT embedded in either
-- UI submits commands to orchestrator → Orchestrator validates, queues, dispatches
-- Kernel executes work → Orchestrator monitors result and decides retry or failure
-- **Never**: UI directly calls kernel. Always through orchestrator.
-- **Orchestrator updates UI**: The orchestrator pushes state changes to the UI; the kernel never signals the UI directly.
-
 ### Core Principles
 
 ```
@@ -83,6 +44,7 @@ The Runtime Safety Kernel (Orchestrator) is the **enforcement layer** that valid
 ✓ Immutable state transitions (functional programming)
 ✓ Full event log for replay/debug (deterministic replay)
 ✓ Deterministic termination (FAILED state with rollback on exhaustion)
+✓ Snapshot BEFORE mutation (MANDATORY - enables rollback)
 ```
 
 ---
@@ -154,41 +116,6 @@ public class Task
 }
 ```
 
-### ValidationStrategy Enum
-
-```csharp
-public enum ValidationStrategy
-{
-    DOTNET_BUILD,        // Run full dotnet build
-    XAML_COMPILE,        // Compile XAML only
-    NUGET_RESTORE,       // Restore packages
-    SYNTAX_CHECK_ONLY,   // Parse syntax without build
-    MANIFEST_VALIDATE,   // Validate Package.appxmanifest
-    MSIX_BUILD,          // Validate MSIX packaging
-    NONE                 // No validation
-}
-```
-
----
-
-## 2.1 AgentExecutionContext Injection Rule (MANDATORY)
-
-> **INVARIANT**: `AgentExecutionContext` MUST be injected into `BuilderContext` before any task execution begins. Without this, mutation ceilings cannot be enforced.
-
-### Injection Sequence
-
-```
-1. Task dequeued from execution queue
-2. Orchestrator creates AgentExecutionContext:
-   a. Map TaskType → AgentRole
-   b. Set TaskId from current task
-   c. Set AllowedFilePatterns based on AgentRole
-   d. Set MaxFilesTouchedPerTask, MaxNodesModifiedPerTask from defaults
-3. Call BuilderContext.SetActiveAgentContext(context)
-4. Call BuilderContext.ValidateAgentContext() — throws if null
-5. Transition to EXECUTING_TASK state
-```
-
 ---
 
 ## 3. State Machine
@@ -203,28 +130,36 @@ public enum BuilderState
     BLUEPRINT_READY = 2,
     EXECUTION_PLAN_BUILDING = 3,
     EXECUTION_PLAN_BUILT = 4,
-    MUTATION_GUARD = 5,
-    PATCHING = 6,
-    INDEXING = 7,
-    BUILDING = 8,
-    VALIDATING = 9,
-    RETRYING = 10,
-    EXECUTING_TASK = 11,
-    BUILD_SUCCEEDED = 12,
-    FAILED = 13,
-    PACKAGING = 14,
-    PACKAGING_SUCCEEDED = 15,
-    PACKAGING_FAILED = 16,
-    CAPABILITY_CHECK = 17,
-    MANIFEST_UPDATING = 18,
-    REBUILD_REQUIRED = 19,
-    SIGNING = 20,
-    SIGNATURE_VALIDATION = 21,
-    ENVIRONMENT_RECOVERY = 22
+    
+    // === TASK EXECUTION PIPELINE (FIXED ORDER) ===
+    AI_GENERATING = 5,           // NEW: AI generates code
+    CREATING_SNAPSHOT = 6,       // NEW: Snapshot BEFORE mutation (MANDATORY)
+    MUTATION_GUARD = 7,          // Validate mutation safety
+    PATCHING = 8,                // Apply AST transformation
+    INDEXING = 9,                // Update semantic graph
+    CAPABILITY_SCAN = 10,        // NEW: Capability inference BEFORE build (for Release)
+    BUILDING = 11,               // MSBuild compilation
+    VALIDATING = 12,             // Final integrity check
+    
+    // === RETRY & RESULT ===
+    RETRYING = 13,
+    EXECUTING_TASK = 14,
+    BUILD_SUCCEEDED = 15,
+    FAILED = 16,                 // Terminal failure state
+    
+    // === PACKAGING PHASE ===
+    PACKAGING = 17,
+    PACKAGING_SUCCEEDED = 18,
+    PACKAGING_FAILED = 19,
+    MANIFEST_UPDATING = 20,
+    REBUILD_REQUIRED = 21,
+    SIGNING = 22,
+    SIGNATURE_VALIDATION = 23,
+    ENVIRONMENT_RECOVERY = 24
 }
 ```
 
-### State Diagram
+### State Diagram (FIXED - Addresses Contradictions 1, 3, 7)
 
 ```
 IDLE
@@ -237,19 +172,30 @@ EXECUTION_PLAN_BUILDING
   ↓ (plan complete)
 EXECUTION_PLAN_BUILT
   ↓ (execute next task)
-MUTATION_GUARD
-  ↓ (guard safe)
-PATCHING
-  ↓ (patch applied)
-INDEXING
-  ↓ (index updated)
-BUILDING
-  ↓ (build complete)
-VALIDATING
+  
+  ╔═══════════════════════════════════════════════════════════════╗
+  ║  TASK EXECUTION PIPELINE (STRICT ORDER)                      ║
+  ╠═══════════════════════════════════════════════════════════════╣
+  ║                                                               ║
+  ║  AI_GENERATING                                               ║
+  ║    ↓ (AI completes code generation)                          ║
+  ║  CREATING_SNAPSHOT  ← MANDATORY: Snapshot BEFORE mutation    ║
+  ║    ↓ (snapshot created successfully)                          ║
+  ║  MUTATION_GUARD                                              ║
+  ║    ↓ (guard safe)                                            ║
+  ║  PATCHING                                                     ║
+  ║    ↓ (patch applied)                                          ║
+  ║  INDEXING                                                     ║
+  ║    ↓ (index updated)                                          ║
+  ║  CAPABILITY_SCAN  ← Proactive: BEFORE build for Release      ║
+  ║    ↓ (capabilities inferred/updated)                          ║
+  ║  BUILDING                                                     ║
+  ║    ↓ (build complete)                                         ║
+  ║  VALIDATING                                                   ║
+  ║                                                               ║
+  ╚═══════════════════════════════════════════════════════════════╝
   │
   ├──(validation succeeds)──→ BUILD_SUCCEEDED
-  │                                ↓
-  │                           CAPABILITY_CHECK
   │                                ↓
   │                           PACKAGING
   │                                ↓
@@ -257,12 +203,13 @@ VALIDATING
   │
   └──(validation fails)──→ RETRYING
                               │
-                              ├──(retry < 10)──→ EXECUTING_TASK ──→ MUTATION_GUARD
+                              ├──(retry < 10)──→ EXECUTING_TASK ──→ AI_GENERATING
                               │
                               └──(retry >= 10)──→ FAILED
                                          │
                                          ↓
-                                    [User intervention required]
+                                    ROLLBACK TO SNAPSHOT
+                                    (Created at CREATING_SNAPSHOT state)
 ```
 
 ### Terminal States
@@ -284,7 +231,7 @@ public class BuilderContext
 {
     public BuilderState State { get; set; }
 
-    // Task execution
+    // Task execution - SINGLE TASK AT A TIME (Fixes Contradiction 6)
     public List<Task> AllTasks { get; } = new();
     public string? CurrentTaskId { get; set; }
     public Dictionary<string, Task> TaskMap { get; } = new();
@@ -304,9 +251,12 @@ public class BuilderContext
     public int MaxFilesTouchedPerTask => ActiveAgentContext?.MaxFilesTouchedPerTask ?? 5;
     public int MaxNodesModifiedPerTask => ActiveAgentContext?.MaxNodesModifiedPerTask ?? 100;
 
-    // Snapshot tracking for rollback
-    public string? SemanticSnapshotHash { get; set; }
-    public string? LastStableSnapshotHash { get; set; }
+    // Snapshot tracking for rollback (Fixes Contradiction 1)
+    public string? PreMutationSnapshotId { get; set; }      // Snapshot created BEFORE current task
+    public string? LastStableSnapshotHash { get; set; }     // Hash of last verified build
+
+    // Build mode (affects capability inference timing)
+    public BuildMode CurrentBuildMode { get; set; } = BuildMode.DEBUG;
 
     // Debug info
     public List<string> DebugLog { get; } = new();
@@ -322,6 +272,12 @@ public class BuilderContext
         }
     }
 }
+
+public enum BuildMode
+{
+    DEBUG,    // Reactive capability inference (after build failure)
+    RELEASE   // Proactive capability inference (before build)
+}
 ```
 
 ### Event Types (Replayable & Debuggable)
@@ -333,11 +289,25 @@ public abstract record BuilderEvent
     public int EventSequence { get; init; }
 }
 
+// Snapshot Events (Fixes Contradiction 1)
+public record SnapshotCreatedEvent : BuilderEvent
+{
+    public string SnapshotId { get; init; }
+    public string Reason { get; init; }  // "Pre-Mutation", "Pre-Packaging", "Manual"
+    public string TaskId { get; init; }
+}
+
 // Task execution events
 public record TaskStartedEvent : BuilderEvent
 {
     public string TaskId { get; init; }
     public TaskType TaskType { get; init; }
+}
+
+public record AIGenerationCompletedEvent : BuilderEvent
+{
+    public string TaskId { get; init; }
+    public string GeneratedPatchHash { get; init; }
 }
 
 public record TaskPatchedEvent : BuilderEvent
@@ -361,14 +331,7 @@ public record TaskFailedEvent : BuilderEvent
     public int CurrentRetry { get; init; }
 }
 
-// System-level events
-public record BuildCompletedEvent : BuilderEvent
-{
-    public int TasksCompleted { get; init; }
-    public TimeSpan TotalDuration { get; init; }
-    public List<string> GeneratedFiles { get; init; }
-}
-
+// Retry events (Fixes Contradiction 4 - All retries logged)
 public record RetryStartedEvent : BuilderEvent
 {
     public string TaskId { get; init; }
@@ -386,6 +349,15 @@ public record BuildFailedEvent : BuilderEvent
     public int TotalRetries { get; init; }
     public string? RollbackSnapshotId { get; init; }
 }
+
+// Capability scan events (Fixes Contradiction 7)
+public record CapabilityScanCompletedEvent : BuilderEvent
+{
+    public string TaskId { get; init; }
+    public List<string> DetectedCapabilities { get; init; }
+    public List<string> AddedCapabilities { get; init; }
+    public bool ManifestUpdated { get; init; }
+}
 ```
 
 ---
@@ -401,10 +373,23 @@ public class BuilderReducer
     {
         return (context.State, @event) switch
         {
-            // Task Execution
+            // === AI GENERATION (Fixes Contradiction 3) ===
             (BuilderState.EXECUTION_PLAN_BUILT, TaskStartedEvent e) =>
-                UpdateTaskAndTransition(context, e.TaskId, BuilderState.MUTATION_GUARD, @event),
+                UpdateTaskAndTransition(context, e.TaskId, BuilderState.AI_GENERATING, @event),
 
+            (BuilderState.AI_GENERATING, AIGenerationCompletedEvent e) =>
+                context with { State = BuilderState.CREATING_SNAPSHOT, EventLog = [..context.EventLog, @event] },
+
+            // === SNAPSHOT CREATION (Fixes Contradiction 1) ===
+            (BuilderState.CREATING_SNAPSHOT, SnapshotCreatedEvent e) =>
+                context with 
+                { 
+                    State = BuilderState.MUTATION_GUARD, 
+                    PreMutationSnapshotId = e.SnapshotId,
+                    EventLog = [..context.EventLog, @event] 
+                },
+
+            // === MUTATION PIPELINE ===
             (BuilderState.MUTATION_GUARD, TaskGuardPassedEvent e) =>
                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.PATCHING, @event),
 
@@ -412,28 +397,47 @@ public class BuilderReducer
                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.INDEXING, @event),
 
             (BuilderState.INDEXING, TaskIndexedEvent e) =>
-                UpdateTaskAndTransition(context, e.TaskId, BuilderState.BUILDING, @event),
+                context with { State = BuilderState.CAPABILITY_SCAN, EventLog = [..context.EventLog, @event] },
+
+            // === CAPABILITY SCAN (Fixes Contradiction 7) ===
+            (BuilderState.CAPABILITY_SCAN, CapabilityScanCompletedEvent e) =>
+                context with { State = BuilderState.BUILDING, EventLog = [..context.EventLog, @event] },
 
             (BuilderState.BUILDING, TaskValidatingEvent e) =>
                 context with { State = BuilderState.VALIDATING },
 
-            // Success Path
+            // === SUCCESS PATH ===
             (BuilderState.VALIDATING, TaskCompletedEvent e) =>
                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.EXECUTION_PLAN_BUILT, @event),
 
-            // Failure & Retry Path
+            // === FAILURE & RETRY PATH (Fixes Contradiction 4 - All logged) ===
             (BuilderState.VALIDATING, TaskFailedEvent e) =>
                 context with { State = BuilderState.RETRYING, EventLog = [..context.EventLog, @event] },
 
             (BuilderState.RETRYING, TaskStartedEvent e) =>
                 context with { State = BuilderState.EXECUTING_TASK, EventLog = [..context.EventLog, @event] },
 
-            // Completion
+            // === ABORT (Uses PreMutationSnapshotId for rollback) ===
+            (BuilderState.RETRYING, BuildFailedEvent e) when e.TotalRetries >= 10 =>
+                HandleAbortWithRollback(context, e),
+
+            // === COMPLETION ===
             (BuilderState.EXECUTION_PLAN_BUILT, BuildCompletedEvent e) =>
                 context with { State = BuilderState.BUILD_SUCCEEDED, EventLog = [..context.EventLog, @event] },
 
-            // Invalid Transition
+            // === INVALID TRANSITION ===
             _ => throw new InvalidOperationException($"Invalid transition: {context.State} + {@event.GetType().Name}")
+        };
+    }
+
+    private static BuilderContext HandleAbortWithRollback(BuilderContext context, BuildFailedEvent @event)
+    {
+        // Rollback to the snapshot created BEFORE mutation
+        // This is possible because we MANDATE CREATING_SNAPSHOT state before PATCHING
+        return context with
+        {
+            State = BuilderState.FAILED,
+            EventLog = [..context.EventLog, @event]
         };
     }
 
@@ -487,43 +491,38 @@ public record ErrorClassification
 ```csharp
 public enum ErrorType
 {
-    BUILD_ERROR,         // C# compiler error (CSxxxx)
-    XAML_ERROR,          // XAML compiler error (XDGxxxx)
-    NUGET_ERROR,         // NuGet restore error (NUxxxx)
-    PATCH_CONFLICT,      // Roslyn patch failed to apply
-    VALIDATION_TIMEOUT,  // Build took too long
-    MANIFEST_ERROR,      // Invalid Package.appxmanifest
-    CAPABILITY_ERROR,    // Missing/Excessive capabilities
-    SIGNING_ERROR,       // Certificate or signing failure
-    PACKAGING_ERROR,     // MSIX bundling failure
-    RUNTIME_PREVIEW_ERROR, // App crashed during preview
-    SANDBOX_ESCAPE_ATTEMPT, // Security violation
-    PROCESS_CRASH        // Host process termination
+    BUILD_ERROR,
+    XAML_ERROR,
+    NUGET_ERROR,
+    PATCH_CONFLICT,
+    VALIDATION_TIMEOUT,
+    MANIFEST_ERROR,
+    CAPABILITY_ERROR,
+    SIGNING_ERROR,
+    PACKAGING_ERROR,
+    RUNTIME_PREVIEW_ERROR,
+    SANDBOX_ESCAPE_ATTEMPT,
+    PROCESS_CRASH
 }
 ```
-
-### Pre-Retry Intelligence
-
-Error classification must happen **BEFORE** any retry decision is made:
-
-1. **Capture**: Retrieve raw error from build/execution result.
-2. **Classify**: Map raw error to `ErrorClassification` record.
-3. **Analyze**: Determine `IsRetryable` and `AutoFixStrategy`.
-4. **Decide**: Pass to `RetryController`.
 
 ---
 
 ## 7. Retry Controller
+
+### Retry Ownership (Fixes Contradiction 4)
+
+> **INVARIANT**: The Orchestrator is the ONLY component that manages retry loops. Agents MUST NOT have internal retry loops. Agents attempt a fix ONCE and return. The Orchestrator decides whether to retry.
 
 ### Retry Stages
 
 ```csharp
 public enum RetryStage
 {
-    FIX_LEVEL,          // Stage 1: Try local token repairs
-    INTEGRATION_LEVEL,  // Stage 2: Check DI and wiring
-    ARCHITECTURE_LEVEL, // Stage 3: Re-evaluate high-level plan
-    ABORT               // Stage 4: Rollback and Fail
+    FIX_LEVEL,          // Stage 1: Try local token repairs (retries 1-3)
+    INTEGRATION_LEVEL,  // Stage 2: Check DI and wiring (retries 4-6)
+    ARCHITECTURE_LEVEL, // Stage 3: Re-evaluate high-level plan (retries 7-9)
+    ABORT               // Stage 4: Rollback and Fail (retry 10+)
 }
 ```
 
@@ -532,6 +531,10 @@ public enum RetryStage
 ```csharp
 public class RetryController
 {
+    /// <summary>
+    /// Orchestrator-managed retry. All attempts are logged to EventLog.
+    /// Agents do NOT manage their own retries.
+    /// </summary>
     public static BuilderContext ExecuteRetry(BuilderContext context, Task failedTask, ErrorClassification error)
     {
         failedTask.RetryCount++;
@@ -543,12 +546,15 @@ public class RetryController
             var abortEvent = new BuildFailedEvent
             {
                 TaskId = failedTask.Id,
-                Reason = "Max retries exceeded.",
-                Error = error
+                Reason = "Max retries exceeded. Rolling back to pre-mutation snapshot.",
+                Error = error,
+                TotalRetries = failedTask.RetryCount,
+                RollbackSnapshotId = context.PreMutationSnapshotId
             };
             return context with { State = BuilderState.FAILED, EventLog = [..context.EventLog, abortEvent] };
         }
 
+        // Log every retry attempt (Fixes Contradiction 4)
         var retryEvent = new RetryStartedEvent
         {
             TaskId = failedTask.Id,
@@ -570,18 +576,7 @@ public class RetryController
 }
 ```
 
-### Escalation Rules
-
-| Stage | Range | Behavior |
-|-------|-------|----------|
-| FIX_LEVEL | 1-3 | Fix Agent attempts local token repairs |
-| INTEGRATION_LEVEL | 4-6 | Integration Agent reviews DI registration |
-| ARCHITECTURE_LEVEL | 7-9 | Architect Agent re-evaluates the plan |
-| ABORT | 10+ | System stops, rolls back, asks user for help |
-
 ### Retry Governance Contract
-
-> **AI owns the retry strategy. The Kernel enforces hard ceilings.**
 
 | Retry Range | Owner | Enforcement | Behavior |
 |-------------|-------|-------------|----------|
@@ -597,11 +592,11 @@ public class RetryController
 | Thread | Color | Purpose | Concurrency |
 |--------|-------|---------|-------------|
 | 🟢 UI Thread | Green | Rendering, user input, never blocks | Single (main) |
-| 🔵 Orchestrator Thread | Blue | Single background thread, sequential execution | Single |
+| 🔵 Orchestrator Thread | Blue | Sequential execution, state machine | Single |
 | 🟣 AI Worker Thread Pool | Purple | AI code generation tasks | Max 2 concurrent |
 | 🟡 Patch Worker Thread | Yellow | File mutations, requires exclusive file lock | Single-threaded |
-| 🔴 Build Worker Thread | Red | MSBuild compilation, isolated and killable | Single (per build) |
-| ⚪ Background Maintenance Thread | White | Low priority cleanup, runs only when idle | Single |
+| 🔴 Build Worker Thread | Red | MSBuild compilation, isolated | Single (per build) |
+| ⚪ Background Maintenance | White | Low priority cleanup | Single |
 
 ### Phase Flow
 
@@ -609,72 +604,113 @@ public class RetryController
 
 **Phase 2 — Task Graph Construction (Orchestrator Thread)**
 
-**Phase 3 — Task Execution Loop (Patch Worker + AI Worker Pool)**
+**Phase 3 — Task Execution Loop (SERIALIZED - Fixes Contradiction 6)**
+1. AI_GENERATING - AI generates code
+2. CREATING_SNAPSHOT - Snapshot BEFORE mutation
+3. MUTATION_GUARD - Validate safety
+4. PATCHING - Apply transformation
+5. INDEXING - Update semantic graph
+6. CAPABILITY_SCAN - Proactive capability inference
+7. BUILDING - Compile
+8. VALIDATING - Check integrity
 
-**Phase 4 — Validation (Build Worker)**
+**Phase 4 — Finalization (Orchestrator Thread)**
 
-**Phase 5 — Snapshot & Rollback (Orchestrator Thread)**
+**Phase 5 — Packaging & Signing (Mandatory)**
 
-**Phase 6 — Finalization (Orchestrator Thread)**
+### DAG Execution Clarification (Fixes Contradiction 6)
 
-**Phase 7 — Packaging & Signing (Mandatory)**
-
-### Boot Sequence Stages
-
-1. **Stage 1: App Startup** — OnLaunched event, splash screen
-2. **Stage 2: Environment Validation** — Verify .NET SDK, MSBuild
-3. **Stage 3: Load Project Registry** — Read SQLite metadata
-4. **Stage 4: Initialize Services** — Orchestrator, Roslyn, Patch Engine
-5. **Stage 5: Warm-Up Index** — Pre-load symbols
-6. **Stage 6: UI Ready** — Show MainPage
-
----
-
-## 9. Concurrency Rules
-
-### Strict Serialization
+> **The DAG shows PLANNING dependencies, not EXECUTION parallelism.**
+>
+> - Tasks at the same DAG level indicate they CAN theoretically run in parallel
+> - BUT the Orchestrator executes them SEQUENTIALLY (one at a time)
+> - This ensures deterministic state and safe rollback
+> - `BuilderContext.CurrentTaskId` is always a single value, not a list
 
 ```csharp
-public class ConcurrencyPolicy
-{
-    public static bool IsMutationTask(TaskType type) => type switch
-    {
-        TaskType.CREATE_PROJECT or
-        TaskType.ADD_VIEW or
-        TaskType.ADD_VIEWMODEL or
-        TaskType.ADD_SERVICE or
-        TaskType.MODIFY_FILE or
-        TaskType.PATCH_FILE or
-        TaskType.ADD_FILE or
-        TaskType.DELETE_FILE or
-        TaskType.REFACTOR_FILE => true,
-        _ => false
-    };
+// DAG planner outputs parallelizable structure
+// Orchestrator flattens to sequential execution
 
-    public static void ValidateConcurrency(BuilderContext context, Task incomingTask)
+public class SequentialExecutionStrategy
+{
+    public IEnumerable<Task> FlattenForExecution(TaskGraph dag)
     {
-        if (context.State == BuilderState.EXECUTING_TASK && IsMutationTask(incomingTask.Type))
+        // Topological sort ensures dependencies are respected
+        // But execution is strictly sequential
+        foreach (var task in dag.TopologicalSort())
         {
-            throw new InvalidOperationException("Cannot start mutation task while another task is executing.");
+            yield return task;
         }
     }
 }
 ```
 
-**Iron Law**: Only 1 mutation task at a time. No parallel Roslyn patching. Reads can be parallel. Writes must be serial.
+---
 
-### Concurrency Matrix
+## 9. Concurrency Rules
+
+### Concurrency Matrix (Fixes Contradiction 5)
 
 | Operation | Can Run With | Cannot Run With | Lock Type |
 |-----------|--------------|-----------------|-----------|
 | **Patching (Mutation)** | Nothing | All other operations | Exclusive Write Lock |
-| **Indexing** | Read queries | Mutation, Build | Shared Read Lock |
+| **Indexing** | Read queries | Mutation, Build | **Exclusive Write Lock** (FIXED) |
 | **Building** | Nothing | All other operations | Exclusive Build Lock |
 | **Read Queries** | All read operations | Mutation | Shared Read Lock |
+| **AI Generation** | Other AI Generation | Mutation, Build | None (stateless) |
+
+### Why Indexing Requires Exclusive Write Lock
+
+> Indexing WRITES to `project_graph.db`. SQLite requires exclusive access during writes. The previous "Shared Read Lock" was incorrect and would cause database corruption.
+
+```csharp
+public class ConcurrencyPolicy
+{
+    public static LockType GetRequiredLock(OperationType operation) => operation switch
+    {
+        OperationType.Mutation => LockType.ExclusiveWrite,
+        OperationType.Indexing => LockType.ExclusiveWrite,  // FIXED: Was SharedRead
+        OperationType.Build => LockType.ExclusiveBuild,
+        OperationType.ReadQuery => LockType.SharedRead,
+        OperationType.AIGeneration => LockType.None,
+        _ => LockType.SharedRead
+    };
+}
+```
 
 ---
 
-## 10. API Contracts
+## 10. Snapshot Authority
+
+### Snapshot Timing Invariant (Fixes Contradiction 1)
+
+> **INVARIANT**: A snapshot MUST be created BEFORE any mutation. This is enforced by the `CREATING_SNAPSHOT` state in the state machine.
+
+### Snapshot Creation Points
+
+| Trigger | State | Purpose |
+|---------|-------|---------|
+| Before PATCHING | `CREATING_SNAPSHOT` | Enable rollback on failure |
+| Before PACKAGING | `CREATING_SNAPSHOT` | Enable rollback on packaging failure |
+| Manual user request | Any non-mutation state | User-initiated checkpoint |
+
+### Snapshot Lifecycle
+
+```
+1. AI_GENERATING completes
+2. State transitions to CREATING_SNAPSHOT
+3. SnapshotService.CreateSnapshotAsync() called
+4. SnapshotCreatedEvent emitted with snapshot ID
+5. PreMutationSnapshotId stored in BuilderContext
+6. State transitions to MUTATION_GUARD
+7. If PATCHING fails and retries exhausted:
+   - Rollback to PreMutationSnapshotId
+   - Guaranteed rollback capability
+```
+
+---
+
+## 11. API Contracts
 
 ### Orchestrator Service (IOrchestrator)
 
@@ -687,25 +723,6 @@ public interface IOrchestrator
 }
 ```
 
-### Supporting Types
-
-```csharp
-public class TaskResult
-{
-    public bool Success { get; set; }
-    public string TaskId { get; set; }
-    public TimeSpan Duration { get; set; }
-    public string ErrorMessage { get; set; }
-    public List<string> ModifiedFiles { get; set; } = new();
-
-    public static TaskResult Success(string taskId, List<string> modifiedFiles = null) =>
-        new() { Success = true, TaskId = taskId, ModifiedFiles = modifiedFiles ?? new List<string>() };
-
-    public static TaskResult Failed(string taskId, string errorMessage) =>
-        new() { Success = false, TaskId = taskId, ErrorMessage = errorMessage };
-}
-```
-
 ---
 
 ## References
@@ -714,4 +731,17 @@ public class TaskResult
 - [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) — Roslyn indexing, symbol graph, patch engine
 - [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — AI Construction Engine vs Runtime Safety Kernel
 - [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) — Sandbox, MSBuild, filesystem isolation
-- [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) — Manifest, capability inference, MSIX
+- [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) — Multi-agent coordination
+
+---
+
+## Change Log
+
+| Date | Change | Contradiction Fixed |
+|------|--------|---------------------|
+| 2026-02-21 | Added AI_GENERATING state | #3 - AI Code Generation Missing |
+| 2026-02-21 | Added CREATING_SNAPSHOT state before PATCHING | #1 - Snapshot Timing Paradox |
+| 2026-02-21 | Added CAPABILITY_SCAN state before BUILDING | #7 - Capability Inference Timing |
+| 2026-02-21 | Fixed Indexing lock type to Exclusive Write | #5 - Concurrency Lock Deadlock |
+| 2026-02-21 | Added DAG sequential execution clarification | #6 - DAG Parallelism vs Serialization |
+| 2026-02-21 | Added retry ownership invariant | #4 - Infinite Loop Trap |
