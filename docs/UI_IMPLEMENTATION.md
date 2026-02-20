@@ -1483,6 +1483,51 @@ public string GetErrorContext(BuildError error)
 }
 ```
 
+### Error Dialog Component
+
+The Error Dialog provides a consistent UI for displaying errors to users:
+
+```xaml
+<ContentDialog x:Name="ErrorDialog"
+               Title="{x:Bind ViewModel.ErrorTitle}"
+               PrimaryButtonText="{x:Bind ViewModel.PrimaryButtonText}"
+               CloseButtonText="Close">
+    <StackPanel Spacing="16">
+        <!-- Error Icon -->
+        <FontIcon Glyph="{x:Bind ViewModel.ErrorIcon}"
+                  FontSize="48"
+                  Foreground="{x:Bind ViewModel.ErrorColor}"/>
+
+        <!-- Error Message -->
+        <TextBlock Text="{x:Bind ViewModel.ErrorMessage}"
+                   TextWrapping="Wrap"
+                   Style="{StaticResource BodyTextBlockStyle}"/>
+
+        <!-- User Action -->
+        <InfoBar Severity="{x:Bind ViewModel.Severity}"
+                 IsOpen="True"
+                 Title="What to do next"
+                 Message="{x:Bind ViewModel.UserAction}"/>
+
+        <!-- Action Button (if applicable) -->
+        <HyperlinkButton Content="{x:Bind ViewModel.ActionButtonText}"
+                         NavigateUri="{x:Bind ViewModel.ActionButtonUrl}"
+                         Visibility="{x:Bind ViewModel.HasActionButton}"/>
+
+        <!-- Technical Details (Expandable) -->
+        <Expander Header="Technical Details"
+                  IsExpanded="False">
+            <ScrollViewer MaxHeight="200">
+                <TextBlock Text="{x:Bind ViewModel.TechnicalDetails}"
+                           FontFamily="Consolas"
+                           FontSize="12"
+                           IsTextSelectionEnabled="True"/>
+            </ScrollViewer>
+        </Expander>
+    </StackPanel>
+</ContentDialog>
+```
+
 ### Anti-Terror UX Rules
 
 **Never show**:
