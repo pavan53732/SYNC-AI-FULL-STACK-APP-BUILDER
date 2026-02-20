@@ -32,9 +32,9 @@ The Execution Environment provides the foundational infrastructure for safe, iso
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 7: User Interface (WinUI 3 / XAML)                   │
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 6: Orchestrator Engine                               │
+│  Layer 6: Runtime Safety Kernel                             │
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 5: AI Agent Layer                                    │
+│  Layer 5: AI Construction Engine                            │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 4: Code Intelligence (Roslyn)                        │
 ├─────────────────────────────────────────────────────────────┤
