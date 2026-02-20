@@ -71,22 +71,18 @@ File.WriteAllText("MyClass.cs", formatted.ToFullString());
 The system uses a **tiered indexing approach** optimized for different scenarios:
 
 **Full Semantic Mode** (Default for Production Operations):
-*   Full Roslyn AST, symbol graph, and cross-file resolution.
-*   Required for all mutation operations and capability inference.
-*   Ensures consistent, deterministic behavior for code changes.
+- Full Roslyn AST, symbol graph, and cross-file resolution.
+- Required for all mutation operations and capability inference.
+- Ensures consistent, deterministic behavior for code changes.
 
 **Lightweight Mode** (Initial Scans and Quick Lookups):
-*   Shallow metadata index for fast project overview.
-*   Used for initial project discovery and UI listings.
-*   Automatically upgraded to Full Semantic when mutations are needed.
-
-> **PRINCIPLE**: The system uses the appropriate analysis depth for the task. Lightweight indexing provides fast initial scans, while Full Semantic mode ensures accuracy for mutations. The system automatically escalates to Full Semantic when deeper analysis is required.
+- Shallow metadata index for fast project overview.
+- Used for initial project discovery and UI listings.
+- Automatically upgraded to Full Semantic when mutations are needed.
 
 ### Mutation Mode Enforcement (INVARIANT)
 
 > **CRITICAL**: All mutation operations MUST use Full Semantic Mode. Lightweight Mode is strictly FORBIDDEN for any operation that modifies code.
-
-#### Enforcement Rule
 
 ```csharp
 public class MutationModeEnforcer
@@ -114,74 +110,6 @@ public enum IndexingMode
 }
 ```
 
-#### Mode Transition Flow
-
-```
-MUTATION REQUEST RECEIVED
-         │
-         ▼
-┌────────────────────────────────┐
-│ CHECK: Current Indexing Mode   │
-└────────────────────────────────┘
-         │
-         ├── LIGHTWEIGHT ──────────────────────────┐
-         │                                         │
-         │                                         ▼
-         │                        ┌────────────────────────────────┐
-         │                        │ UPGRADE: To Full Semantic Mode │
-         │                        │ - Build Roslyn Compilation     │
-         │                        │ - Generate Symbol Graph        │
-         │                        │ - Index XAML Bindings          │
-         │                        └────────────────────────────────┘
-         │                                         │
-         │                                         ▼
-         │                        ┌────────────────────────────────┐
-         │                        │ PROCEED: With Mutation         │
-         │                        └────────────────────────────────┘
-         │
-         └── FULL_SEMANTIC ──────┐
-                                   │
-                                   ▼
-                  ┌────────────────────────────────┐
-                  │ PROCEED: With Mutation         │
-                  └────────────────────────────────┘
-```
-
-#### Why This Matters
-
-| Scenario | LIGHTWEIGHT Mode | FULL_SEMANTIC Mode |
-|----------|------------------|-------------------|
-| Project listing | ✅ Allowed | ✅ Allowed |
-| File tree view | ✅ Allowed | ✅ Allowed |
-| Quick symbol search | ✅ Allowed | ✅ Allowed |
-| **Code patch** | ❌ **FORBIDDEN** | ✅ Required |
-| **Method rename** | ❌ **FORBIDDEN** | ✅ Required |
-| **Class extraction** | ❌ **FORBIDDEN** | ✅ Required |
-| **Capability inference** | ❌ **FORBIDDEN** | ✅ Required |
-| **Impact analysis** | ❌ **FORBIDDEN** | ✅ Required |
-
-> **Rationale**: Lightweight Mode lacks the full AST and semantic model needed to safely apply mutations. Attempting mutations without full semantic context risks syntax corruption, broken references, and inconsistent state.
-
-### Enterprise Architecture Overview
-
-```
-Workspace Scanner
-   ↓
-Full Roslyn Compilation Model
-   ↓
-Semantic Model Builder
-   ↓
-Symbol Graph (Complete)
-   ↓
-Dependency Graph (Bidirectional)
-   ↓
-XAML Binding Graph
-   ↓
-Project Knowledge Graph
-   ↓
-AI Retrieval Layer
-```
-
 ### What Must Be Indexed
 
 - **Classes** — Name, namespace, base class, interfaces
@@ -197,37 +125,11 @@ AI Retrieval Layer
 
 ## 2.1 Lightweight Indexing
 
-    For smaller projects or initial scans, we use a "shallow" index.
-
-### File Level Index
-
-Captured during initial scan:
-
-```csharp
-public class FileLevelIndex
-{
-    public string FilePath { get; set; }
-    public string Hash { get; set; }
-    public FileType Type { get; set; } // Component, API, Model, Config
-    public List<string> Exports { get; set; } // Public classes/methods
-    public List<string> Imports { get; set; } // Using statements
-}
-```
+For smaller projects or initial scans, we use a "shallow" index.
 
 ### Symbol-Level Index (Shallow)
 
 Lightweight symbol extraction using regex — no full AST required.
-
-```sql
-CREATE TABLE symbols (
-    id TEXT PRIMARY KEY,
-    file_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-kind TEXT NOT NULL, -- 'class', 'method', 'property', 'view', 'viewmodel', 'service', 'repository'
-    exported BOOLEAN,
-    FOREIGN KEY (file_id) REFERENCES files(id)
-);
-```
 
 ```csharp
 public class SymbolExtractor
@@ -238,7 +140,6 @@ public class SymbolExtractor
         var symbols = new List<Symbol>();
 
         // Lightweight parsing (regex) - C# syntax patterns
-        // Note: Full Roslyn indexing is preferred for accuracy; this is a fallback for quick scans
         var classMatches = Regex.Matches(code, @"(?:public|internal|private|protected)?\s*(?:partial\s+)?class\s+(\w+)");
         foreach (Match match in classMatches)
         {
@@ -266,66 +167,11 @@ public class SymbolExtractor
 }
 ```
 
-### Dependency Mapping (Shallow)
-
-Stored in the `dependencies` table:
-
-| id  | from_symbol     | to_symbol           | type         |
-| :-- | :-------------- | :------------------ | :----------- |
-| 1   | `LoginPage`     | `LoginViewModel`    | `binding`    |
-| 2   | `TaskService`   | `TaskRepository`    | `dependency` |
-| 3   | `DashboardPage` | `NavigationService` | `navigation` |
-
-**Best For**: UI-heavy apps, <50 files, clear file-to-component mapping.
-
-## 2.2 Project Summary (AI Context)
-
-The "First Thing AI Sees" to understand the project stack.
-
-### Schema
-
-```sql
-CREATE TABLE project_summary (
-    id INTEGER PRIMARY KEY CHECK (id = 1), -- Singleton
-    framework TEXT NOT NULL,      -- 'WinUI', 'WPF' (Hardcoded to WinUI for now)
-    auth_type TEXT,               -- 'Windows', 'EntraID', 'None'
-    database_type TEXT,           -- 'SQLite' (Mandatory unique option)
-    entities TEXT,                -- JSON Array: ['User', 'Product']
-    navigation_paths TEXT,        -- JSON Array: ['/Login', '/Dashboard'] (View Routing)
-    api_endpoints TEXT,           -- JSON Array: ['UserService.GetAll']
-    user_controls TEXT,           -- JSON Array: ['LoginPage', 'DashboardPage']
-    last_updated DATETIME
-);
-```
-
-### JSON Example
-
-```json
-{
-  "framework": "WinUI 3 (.NET 8)",
-  "auth_type": "Windows Authentication",
-  "database_type": "SQLite",
-  "entities": ["Users", "Projects", "Tasks"],
-  "navigation_paths": ["/Login", "/Dashboard", "/Projects/{id}"],
-  "api_endpoints": ["UserService.GetAll", "TaskService.Create"],
-  "user_controls": ["LoginPage", "DashboardPage", "ProjectDetailPage"]
-}
-```
+---
 
 ## 3. Roslyn Compilation Model
 
 ### Full Compilation Builder
-
-#### Roslyn Integration Layer Responsibilities
-
-1.  **Parse C# files** into SyntaxTree with full fidelity.
-2.  **Build Symbol Graph** (Semantic Model) for cross-file resolution.
-3.  **Provide reference lookup** (Find All References).
-4.  **Apply structured patches** via Syntax Rewriters.
-5.  **Validate syntax** before writing to disk.
-6.  **Format code** after mutation (Whitespace/Indentation).
-7.  **Detect patch conflicts** (Hash mismatch, Signature mismatch).
-8.  **Index XAML bindings** using dual-pass (Regex + Semantic) strategy.
 
 ```csharp
 public class CompilationModelBuilder
@@ -349,77 +195,7 @@ public class CompilationModelBuilder
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
         );
 
-        // Build semantic model for each tree
-        foreach (var tree in syntaxTrees)
-        {
-            var semanticModel = compilation.GetSemanticModel(tree);
-            await IndexSemanticModelAsync(tree.FilePath, semanticModel);
-        }
-
         return compilation;
-    }
-
-    private async Task IndexSemanticModelAsync(string filePath, SemanticModel model)
-    {
-        var root = await model.SyntaxTree.GetRootAsync();
-        foreach (var classDecl in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
-        {
-            var symbol = model.GetDeclaredSymbol(classDecl);
-            if (symbol != null)
-            {
-                await _db.ExecuteAsync("INSERT INTO semantic_symbols ...", new { Name = symbol.Name });
-            }
-        }
-    }
-}
-```
-
-### 3.1 Incremental Workspace Reuse (Phase 2)
-
-> **Optimization**: Avoid full recompilation on every keystroke.
-
-1.  **Use AdhocWorkspace**: accurate in-memory representation.
-2.  **Reuse Compilation**: Create `CSharpCompilation` once, then use `compilation.ReplaceSyntaxTree(oldTree, newTree)`.
-3.  **Partial Recomputation**: Only affected semantic models are recomputed; symbol graph for unaffected trees is preserved.
-
-### Full Syntax Tree Index
-
-```csharp
-public class FullSyntaxTreeIndex
-{
-    private ConcurrentDictionary<string, SyntaxTree> _syntaxTrees = new();
-
-    public async Task IndexFileAsync(string filePath)
-    {
-        var code = await File.ReadAllTextAsync(filePath);
-        var tree = CSharpSyntaxTree.ParseText(code, path: filePath);
-
-        _syntaxTrees[filePath] = tree;
-
-        // Store all syntax nodes
-        var root = await tree.GetRootAsync();
-        await IndexSyntaxNodesAsync(filePath, root);
-    }
-
-    private async Task IndexSyntaxNodesAsync(string filePath, SyntaxNode node)
-    {
-        await _database.ExecuteAsync(@"
-            INSERT INTO syntax_nodes (id, file_path, kind, span_start, span_end, parent_id)
-            VALUES (@id, @filePath, @kind, @spanStart, @spanEnd, @parentId)",
-            new
-            {
-                id = Guid.NewGuid().ToString(),
-                filePath,
-                kind = node.Kind().ToString(),
-                spanStart = node.Span.Start,
-                spanEnd = node.Span.End,
-                parentId = node.Parent != null ? GetNodeId(node.Parent) : null
-            });
-
-        foreach (var child in node.ChildNodes())
-        {
-            await IndexSyntaxNodesAsync(filePath, child);
-        }
     }
 }
 ```
@@ -440,280 +216,27 @@ public interface ICodeIndexer
 }
 ```
 
-### CodeIndexer Implementation
-
-```csharp
-public class CodeIndexer : ICodeIndexer
-{
-    private readonly IDbConnection _db;
-    private readonly ILogger<CodeIndexer> _logger;
-
-    public async Task IndexFileAsync(string filePath)
-    {
-        var sourceText = await File.ReadAllTextAsync(filePath);
-        var tree = CSharpSyntaxTree.ParseText(sourceText);
-        var root = await tree.GetRootAsync();
-
-        var fileHash = ComputeFileHash(sourceText);
-        var fileId = await UpsertFileAsync(filePath, fileHash);
-
-        // Delete existing symbols for this file
-        await _db.ExecuteAsync(
-            "DELETE FROM Symbols WHERE FileId = @FileId",
-            new { FileId = fileId });
-
-        // Index classes, methods, properties
-        foreach (var classDecl in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
-            await IndexClassAsync(fileId, classDecl);
-
-        foreach (var methodDecl in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
-            await IndexMethodAsync(fileId, methodDecl);
-
-        foreach (var propertyDecl in root.DescendantNodes().OfType<PropertyDeclarationSyntax>())
-            await IndexPropertyAsync(fileId, propertyDecl);
-    }
-
-    private async Task IndexClassAsync(int fileId, ClassDeclarationSyntax classDecl)
-    {
-        var namespaceName = classDecl.Ancestors()
-            .OfType<NamespaceDeclarationSyntax>()
-            .FirstOrDefault()?.Name.ToString();
-
-        var fullyQualifiedName = $"{namespaceName}.{classDecl.Identifier.Text}";
-
-        await _db.ExecuteAsync(
-            @"INSERT INTO Symbols (FileId, SymbolType, Name, FullyQualifiedName, Namespace, LineNumber, Accessibility)
-              VALUES (@FileId, 'Class', @Name, @FQN, @Namespace, @Line, @Access)",
-            new
-            {
-                FileId = fileId,
-                Name = classDecl.Identifier.Text,
-                FQN = fullyQualifiedName,
-                Namespace = namespaceName,
-                Line = classDecl.GetLocation().GetLineSpan().StartLinePosition.Line,
-                Access = GetAccessibility(classDecl.Modifiers)
-            });
-    }
-
-    private async Task<int> UpsertFileAsync(string filePath, string fileHash)
-    {
-        // Use RETURNING Id for efficiency (SQLite 3.35+)
-        return await _db.ExecuteScalarAsync<int>(@"
-            INSERT INTO files (path, hash, last_modified_utc, language, snapshot_id)
-            VALUES (@Path, @Hash, @LastModified, 'cs', @SnapshotId)
-            ON CONFLICT(path) DO UPDATE SET
-                hash = excluded.hash,
-                last_modified_utc = excluded.last_modified_utc
-            RETURNING id;",
-            new
-            {
-                Path = filePath,
-                Hash = fileHash,
-                LastModified = File.GetLastWriteTimeUtc(filePath),
-                SnapshotId = 1 // Placeholder
-            });
-    }
-
-    private string ComputeFileHash(string content)
-    {
-        using var sha256 = System.Security.Cryptography.SHA256.Create();
-        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
-        var hash = sha256.ComputeHash(bytes);
-        return Convert.ToBase64String(hash);
-    }
-
-    private string GetAccessibility(SyntaxTokenList modifiers)
-    {
-        if (modifiers.Any(m => m.IsKind(SyntaxKind.PublicKeyword))) return "public";
-        if (modifiers.Any(m => m.IsKind(SyntaxKind.PrivateKeyword))) return "private";
-        if (modifiers.Any(m => m.IsKind(SyntaxKind.ProtectedKeyword))) return "protected";
-        if (modifiers.Any(m => m.IsKind(SyntaxKind.InternalKeyword))) return "internal";
-        return "internal"; // Default
-    }
-}
-```
-
-### Partial Class Strategy
-
-- **Merging**: Symbols with same `FullyQualifiedName` are merged.
-- **File Mapping**: `symbol_nodes` entry created for _each_ file contribution.
-- **Navigation**: "Go to Definition" lists all partial files.
-
-### Extension Method Strategy
-
-- **Indexing**: Indexed as static methods with `Extension` kind.
-- **Resolution**:
-  1. Match receiver type.
-  2. Check `this` parameter type.
-  3. Verify namespace availability in consuming file.
-
 ### Graph Update Algorithms
 
-We handle three distinct mutation scenarios to maintain graph consistency.
+Triggered by `FileSystemWatcher` or IDE event:
 
-#### Scenario A: On File Change (Single File Mutation)
-
-Triggered by `FileSystemWatcher` or IDE event.
-
-1.  **Create new snapshot ID** (e.g., `Snapshot_N+1`).
-2.  **Clear old records** for this file in _current_ snapshot context.
-3.  **Parse with Roslyn** to generate new `SyntaxTree`.
-4.  **Extract & Insert Syntax Nodes** (`syntax_nodes`).
-5.  **Runtime**: Live Preview, Fast Incremental Rebuild (Hot Reload equivalent), Full Compiled Launch.
-6.  **Insert Symbols** (`symbol_nodes`).
-7.  **Resolve & Insert Edges** (`symbol_edges`).
-8.  **Handle XAML** (if `.xaml` or `.cs` paired file).
-9.  **Commit transaction** (Atomic Switch).
-
-```csharp
-public async Task UpdateGraphForFileAsync(string filePath, string newContent)
-{
-    using var transaction = _connection.BeginTransaction();
-    try
-    {
-        var nextSnapshotId = await _snapshotService.CreateNextSnapshotAsync();
-        await ClearFileRecordsAsync(filePath, nextSnapshotId);
-
-        // ... (Parsing and Insertion Logic) ...
-
-        await _snapshotService.SetActiveSnapshotAsync(nextSnapshotId);
-        transaction.Commit();
-    }
-    catch { transaction.Rollback(); throw; }
-}
-```
-
-#### Scenario B: On Snapshot Restore (Time Travel)
-
-Triggered by User Timeline. **Zero re-indexing required.**
-
-1.  **Rollback file system** (IO operation).
-2.  **Set Active Snapshot ID** in Orchestrator (`CurrentSnapshotId = X`).
-3.  **DB remains untouched** (Historical data is preserved in `symbol_nodes`).
-4.  **Clear Caches** (Invalidate `Compilation` and RAM caches).
-
-#### Scenario C: Full Rebuild (Corruption Recovery)
-
-Triggered by `GraphIntegrityVerifier` failure.
-
-1.  **Delete all graph records** (`DELETE FROM files; DELETE FROM symbols...`).
-2.  **Iterate all files** in workspace.
-3.  **Batch insert files** (`files` table).
-4.  **Batch process** syntax and semantics (Parallelized).
-5.  **Rebuild indexes**.
-
-### Incremental Indexing Strategy
-
-**Hash-Based Detection** — skip unchanged files:
-
-```csharp
-var currentHash = ComputeSha256(fileContent);
-var storedHash = await _db.GetFileHashAsync(filePath);
-if (currentHash == storedHash) return; // SKIP
-```
-
-**Symbol Diff Strategy** — when a file is modified, only update:
-
-1. Symbols defined in **that file**
-2. Incoming edges **to** those symbols (re-validation)
-
-**Dependency Revalidation** — if `Symbol A` is removed:
-
-1. Query `symbol_edges` WHERE `to_symbol_id == A`
-2. Identify all dependents
-3. Mark files for semantic re-check
-4. Block mutation if breaking change detected
+1. Create new snapshot ID (e.g., `Snapshot_N+1`).
+2. Clear old records for this file in current snapshot context.
+3. Parse with Roslyn to generate new `SyntaxTree`.
+4. Extract & Insert Syntax Nodes (`syntax_nodes`).
+5. Insert Symbols (`symbol_nodes`).
+6. Resolve & Insert Edges (`symbol_edges`).
+7. Commit transaction (Atomic Switch).
 
 ---
 
 ## 5. Database Schema
 
-### Database Architecture
-
-SQLite for all local data. Each component has its own database file:
-
-```
-C:\Users\{User}\AppData\Local\SyncAIAppBuilder\
-├── application.db          # Settings, projects list
-├── Workspaces\
-│   └── {ProjectId}\
-│       └── .builder\
-│           ├── project_graph.db    # Symbol index, dependencies, Roslyn data
-│           ├── orchestrator.db     # State machine, event log, task history
-│           └── build_history.db    # Build results, error classifications
-```
-
-### Application Database (application.db)
-
-```sql
-CREATE TABLE Projects (
-    Id TEXT PRIMARY KEY,
-    Name TEXT NOT NULL,
-    Description TEXT,
-    WorkspacePath TEXT NOT NULL UNIQUE,
-    CreatedDate DATETIME NOT NULL,
-    ModifiedDate DATETIME NOT NULL,
-    LastOpenedDate DATETIME,
-    IsArchived INTEGER DEFAULT 0,
-    HealthStatus TEXT DEFAULT 'Unknown',
-    SdkVersion TEXT,
-    TargetFramework TEXT
-);
-CREATE INDEX idx_projects_modified ON Projects(ModifiedDate DESC);
-CREATE INDEX idx_projects_health ON Projects(HealthStatus);
-
-CREATE TABLE Settings (
-    Key TEXT PRIMARY KEY,
-    Value TEXT NOT NULL,
-    Category TEXT,
-    DataType TEXT NOT NULL,
-    ModifiedDate DATETIME NOT NULL
-);
-
--- Default settings (aligned with DATABASE_SPECIFICATION.md §2.1)
-INSERT INTO Settings (Key, Value, Category, DataType, ModifiedDate) VALUES
-    ('AI.ApiKey', '', 'AI', 'String', datetime('now')),
-    ('AI.Model', 'gpt-4', 'AI', 'String', datetime('now')),
-    ('Build.MaxRetries', '5', 'Build', 'Integer', datetime('now')),
-    ('Build.TimeoutSeconds', '60', 'Build', 'Integer', datetime('now')),
-    ('UI.Theme', 'System', 'UI', 'String', datetime('now')),
-    ('UI.ShowPreviewByDefault', '1', 'UI', 'Boolean', datetime('now'));
-
-CREATE TABLE RecentPrompts (
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    Prompt TEXT NOT NULL,
-    UsageCount INTEGER DEFAULT 1,
-    LastUsedDate DATETIME NOT NULL,
-    ProjectId TEXT,
-    FOREIGN KEY (ProjectId) REFERENCES Projects(Id) ON DELETE SET NULL
-);
-CREATE INDEX idx_recent_prompts_date ON RecentPrompts(LastUsedDate DESC);
-
-CREATE TABLE UserPreferences (
-    Id INTEGER PRIMARY KEY CHECK (Id = 1), -- Singleton
-    Theme TEXT DEFAULT 'Dark',
-    AutoSave INTEGER DEFAULT 1,
-    CopilotEnabled INTEGER DEFAULT 1,
-    LastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE ProjectMetadata (
-    Id TEXT PRIMARY KEY,
-    Name TEXT NOT NULL,
-    LastAccessed DATETIME,
-    FrameworkVersion TEXT,
-    FOREIGN KEY (Id) REFERENCES Projects(Id) ON DELETE CASCADE
-);
-
-
-
-```
-
 ### Project Graph Database (project_graph.db)
 
 Multi-layer graph model: File → Syntax → Symbol → Edge → XAML → Version.
 
-````sql
+```sql
 -- File layer
 CREATE TABLE files (
     id INTEGER PRIMARY KEY,
@@ -726,21 +249,6 @@ CREATE TABLE files (
 );
 CREATE INDEX idx_files_snapshot ON files(snapshot_id);
 CREATE INDEX idx_files_path ON files(path);
-
-CREATE TABLE syntax_trees (
-    id INTEGER PRIMARY KEY,
-    file_id INTEGER NOT NULL,
-    json_blob TEXT NOT NULL,
-    FOREIGN KEY(file_id) REFERENCES files(id)
-);
-
-CREATE TABLE semantic_symbols (
-    id INTEGER PRIMARY KEY,
-    symbol_id INTEGER NOT NULL,
-    embedding_vector BLOB,
-    documentation_xml TEXT,
-    FOREIGN KEY(symbol_id) REFERENCES symbol_nodes(id)
-);
 
 -- Syntax layer (Roslyn AST nodes)
 CREATE TABLE syntax_nodes (
@@ -784,28 +292,8 @@ CREATE TABLE symbol_edges (
     FOREIGN KEY(from_symbol_id) REFERENCES symbol_nodes(id),
     FOREIGN KEY(to_symbol_id) REFERENCES symbol_nodes(id)
 );
--- Invariant: For every forward edge, a reverse traversal path must exist (physically or logically).
 CREATE INDEX idx_symbol_edges_from ON symbol_edges(from_symbol_id);
 CREATE INDEX idx_symbol_edges_to ON symbol_edges(to_symbol_id);
-
--- Snapshot layer (Graph Versioning)
--- NOTE: DATABASE_SPECIFICATION.md §2.2 uses 'snapshots'; orchestrator.db uses 'Snapshots'/'TaskSnapshots'
-CREATE TABLE snapshots (
-    id INTEGER PRIMARY KEY,
-    parent_snapshot_id INTEGER,
-    created_utc TEXT NOT NULL,
-    reason TEXT NOT NULL,          -- 'Pre-Generation', 'Post-Patch', 'Manual'
-    FOREIGN KEY(parent_snapshot_id) REFERENCES snapshots(id)
-);
-
-CREATE TABLE graph_snapshots (
-    id INTEGER PRIMARY KEY,
-    snapshot_id INTEGER NOT NULL,
-    symbol_count INTEGER,
-    edge_count INTEGER,
-    FOREIGN KEY(snapshot_id) REFERENCES snapshots(id)
-);
-
 
 -- XAML binding layer
 CREATE TABLE xaml_bindings (
@@ -818,46 +306,18 @@ CREATE TABLE xaml_bindings (
     FOREIGN KEY(xaml_file_id) REFERENCES files(id),
     FOREIGN KEY(viewmodel_symbol_id) REFERENCES symbol_nodes(id)
 );
+CREATE INDEX idx_xaml_vm ON xaml_bindings(viewmodel_symbol_id);
 
--- Bidirectional File Graph (Enterprise)
-CREATE TABLE file_nodes (
+-- Snapshot layer (Graph Versioning)
+CREATE TABLE snapshots (
     id INTEGER PRIMARY KEY,
-    file_id INTEGER NOT NULL,
-    path TEXT NOT NULL,
-    FOREIGN KEY(file_id) REFERENCES files(id)
+    parent_snapshot_id INTEGER,
+    created_utc TEXT NOT NULL,
+    reason TEXT NOT NULL,          -- 'Pre-Generation', 'Post-Patch', 'Manual'
+    FOREIGN KEY(parent_snapshot_id) REFERENCES snapshots(id)
 );
-
-CREATE TABLE file_edges (
-    id INTEGER PRIMARY KEY,
-    from_file_id INTEGER NOT NULL,
-    to_file_id INTEGER NOT NULL,
-    edge_type TEXT NOT NULL, -- 'IMPORTS', 'DEFINES'
-    FOREIGN KEY(from_file_id) REFERENCES file_nodes(id),
-    FOREIGN KEY(to_file_id) REFERENCES file_nodes(id)
-);
-
--- XAML Node Layer (Enterprise XAML Binding Graph)
--- From: INDEXING_ARCHITECTURE_SPECIFICATION.md Part 2 §3
-CREATE TABLE xaml_nodes (
-    id TEXT PRIMARY KEY,
-    file_path TEXT NOT NULL,
-    element_type TEXT NOT NULL  -- 'Button', 'TextBox', 'ListView', etc.
-);
-CREATE INDEX idx_xaml_nodes_path ON xaml_nodes(file_path);
-
-CREATE TABLE binding_edges (
-    id TEXT PRIMARY KEY,
-    xaml_node_id TEXT NOT NULL,
-    viewmodel_symbol_id TEXT NOT NULL,
-    binding_type TEXT NOT NULL, -- 'property', 'command', 'event'
-    FOREIGN KEY(xaml_node_id) REFERENCES xaml_nodes(id),
-    FOREIGN KEY(viewmodel_symbol_id) REFERENCES symbol_nodes(id)
-);
-CREATE INDEX idx_binding_edges_xaml ON binding_edges(xaml_node_id);
-CREATE INDEX idx_binding_edges_vm ON binding_edges(viewmodel_symbol_id);
 
 -- Vector Embeddings Layer
--- From: INDEXING_ARCHITECTURE_SPECIFICATION.md Part 1 §6
 CREATE TABLE file_embeddings (
     id INTEGER PRIMARY KEY,
     file_id INTEGER NOT NULL,
@@ -867,64 +327,11 @@ CREATE TABLE file_embeddings (
     FOREIGN KEY(file_id) REFERENCES files(id)
 );
 CREATE INDEX idx_file_embeddings_file ON file_embeddings(file_id);
+```
 
--- Version Control (Enterprise)
-CREATE TABLE graph_deltas (
-    id INTEGER PRIMARY KEY,
-    snapshot_id INTEGER NOT NULL,
-    delta_type TEXT NOT NULL, -- 'SYMBOL_ADDED', 'SYMBOL_REMOVED', 'EDGE_ADDED'
-    entity_id INTEGER NOT NULL,
-    entity_table TEXT NOT NULL,
-    FOREIGN KEY(snapshot_id) REFERENCES snapshots(id)
-);
+### Snapshot Storage Optimization
 
--- Lightweight Dependency Graph
-CREATE TABLE dependencies (
-    id INTEGER PRIMARY KEY,
-    from_symbol_id INTEGER NOT NULL,
-    to_symbol_id INTEGER NOT NULL,
-    relation_type TEXT NOT NULL -- 'import', 'export', 'route', 'db'
-);
-CREATE INDEX idx_xaml_vm ON xaml_bindings(viewmodel_symbol_id);
-
--- NuGet packages
-CREATE TABLE NuGetPackages (
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    PackageId TEXT NOT NULL,
-    Version TEXT NOT NULL,
-    IsDirectDependency INTEGER DEFAULT 1,
-    AddedDate DATETIME NOT NULL,
-    UNIQUE(PackageId, Version)
-);
-CREATE INDEX idx_nuget_packages_id ON NuGetPackages(PackageId);
-
--- Snapshots & versions
-
-
-CREATE TABLE versions (
-    id INTEGER PRIMARY KEY,
-    snapshot_id INTEGER NOT NULL,
-    summary TEXT NOT NULL,
-    build_status TEXT NOT NULL,
-    created_utc TEXT NOT NULL,
-    FOREIGN KEY(snapshot_id) REFERENCES snapshots(id)
-);
-
-## 5.3 Snapshot Storage Optimization
-
-Snapshots must use:
-
-* Logical Graph Deltas + GZip File Snapshots
-
-Rules:
-
-* Store deltas, not full copies
-* Materialize files only on restore
-* Weekly vacuum + compaction
-
-Prevents disk explosion on large projects.
-
-### Snapshot Compression Strategy
+Snapshots must use Logical Graph Deltas + GZip File Snapshots to prevent disk explosion on large projects.
 
 ```csharp
 public class SnapshotCompressionStrategy
@@ -938,44 +345,6 @@ public class SnapshotCompressionStrategy
         return memoryStream.ToArray();
     }
 }
-```
-
----
-
-## 5. Knowledge Graph Structure
-
-### Vector Layer (project_graph.db)
-
-Manage semantic embeddings for symbols and files.
-
-```csharp
-public class VectorEmbedding
-{
-    public string Id { get; set; }
-    public string SymbolId { get; set; }
-    public float[] Values { get; set; }
-    public string Model { get; set; } // e.g., "text-embedding-3-small"
-    public DateTime Created { get; set; }
-    public int Dimensions { get; set; }
-}
-```
-
-### Versioned Knowledge Graph
-
-Track evolution of the project graph over time.
-
-```sql
-CREATE TABLE CommitSnapshots (
-    id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL,
-    commit_hash TEXT NOT NULL,
-    s3_path TEXT,
-    node_count INTEGER DEFAULT 0,
-    edge_count INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX idx_commit_snapshots_project ON CommitSnapshots(project_id);
-CREATE INDEX idx_commit_snapshots_commit ON CommitSnapshots(commit_hash);
 ```
 
 ---
@@ -1003,99 +372,6 @@ public enum PatchOperationType
 }
 ```
 
-### Patch Operation Structure
-
-```csharp
-public class PatchOperation
-{
-    public PatchOperationType OperationType { get; set; }
-    public string TargetFile { get; set; }
-    public object Payload { get; set; }
-    public string ExpectedFileHash { get; set; } // For conflict detection
-}
-
-public class PatchValidationResult
-{
-    public bool IsValid { get; set; }
-    public string ErrorMessage { get; set; }
-    public string ErrorCode { get; set; }
-}
-
-public class BatchPatchResult
-{
-    public bool Success { get; set; }
-    public List<PatchResult> Results { get; set; }
-    public string BatchId { get; set; }
-}
-
-public class MethodParameter
-{
-    public string Type { get; set; }
-    public string Name { get; set; }
-    public string DefaultValue { get; set; }
-    public bool IsParams { get; set; }
-}
-```
-
-### Patch Payloads
-
-```csharp
-public class AddClassPayload
-{
-    public string Namespace { get; set; }
-    public string ClassName { get; set; }
-    public string BaseClass { get; set; }
-    public string[] Interfaces { get; set; }
-    public string Modifiers { get; set; } = "public";
-    public string Accessibility { get; set; } = "public";
-    public bool IsStatic { get; set; }
-    public bool IsAbstract { get; set; }
-}
-
-public class AddMethodPayload
-{
-    public string TargetClass { get; set; }
-    public string MethodName { get; set; }
-    public string ReturnType { get; set; }
-    public MethodParameter[] Parameters { get; set; }
-    public string MethodBody { get; set; }
-    public string Modifiers { get; set; } = "public";
-    public string Accessibility { get; set; } = "public";
-    public bool IsStatic { get; set; }
-    public bool IsAsync { get; set; }
-}
-
-public class ModifyMethodBodyPayload
-{
-    public string TargetClass { get; set; }
-    public string MethodName { get; set; }
-    public string MethodSignature { get; set; } // For overload resolution
-    public string NewMethodBody { get; set; }
-}
-
-public class AddPropertyPayload
-{
-    public string TargetClass { get; set; }
-    public string PropertyName { get; set; }
-    public string PropertyType { get; set; }
-    public string Accessibility { get; set; } = "public";
-    public bool HasGetter { get; set; } = true;
-    public bool HasSetter { get; set; } = true;
-    public string InitialValue { get; set; }
-}
-```
-
-### IPatchEngine Interface
-
-```csharp
-public interface IPatchEngine
-{
-    Task<PatchResult> ApplyPatchAsync(PatchOperation patch);
-    Task<PatchValidationResult> ValidatePatchAsync(PatchOperation patch);
-    Task<BatchPatchResult> ApplyPatchBatchAsync(PatchOperation[] patches);
-}
-```
-
 ### PatchEngine Implementation
 
 ```csharp
@@ -1111,328 +387,31 @@ public class PatchEngine : IPatchEngine
         var validation = await ValidatePatchAsync(patch);
         if (!validation.IsValid) return PatchResult.Failed(validation.ErrorMessage);
 
-        // 2. Load file & check hash for conflicts
+        // 2. Parse to syntax tree
         var filePath = patch.TargetFile;
         var sourceText = await File.ReadAllTextAsync(filePath);
-        var currentHash = ComputeFileHash(sourceText);
-        if (patch.ExpectedFileHash != null && currentHash != patch.ExpectedFileHash)
-            return PatchResult.Failed("File has been modified since patch was created");
-
-        // 3. Parse to syntax tree
         var tree = CSharpSyntaxTree.ParseText(sourceText);
         var root = await tree.GetRootAsync();
 
-        // 4. Apply transformation based on operation type
+        // 3. Apply transformation based on operation type
         var newRoot = patch.OperationType switch
         {
             PatchOperationType.ADD_CLASS => ApplyAddClass(root, (AddClassPayload)patch.Payload),
             PatchOperationType.ADD_METHOD => ApplyAddMethod(root, (AddMethodPayload)patch.Payload),
-            PatchOperationType.MODIFY_METHOD_BODY => ApplyModifyMethodBody(root, (ModifyMethodBodyPayload)patch.Payload),
-            PatchOperationType.ADD_PROPERTY => ApplyAddProperty(root, (AddPropertyPayload)patch.Payload),
             _ => throw new NotSupportedException()
         };
 
-        // 5. Validate syntax
-        var diagnostics = newRoot.GetDiagnostics();
-        if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
-            return PatchResult.Failed("Syntax errors in patched code");
-
-        // 6. Format, write atomically, and re-index
+        // 4. Validate syntax & format
         var formatted = Formatter.Format(newRoot, _workspace);
         await File.WriteAllTextAsync(filePath, formatted.ToFullString());
         await _indexer.IndexFileAsync(filePath);
 
         return PatchResult.Success(ComputeFileHash(formatted.ToFullString()));
     }
-
-    private string ComputeFileHash(string content)
-    {
-        using var sha256 = System.Security.Cryptography.SHA256.Create();
-        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
-        var hash = sha256.ComputeHash(bytes);
-        return Convert.ToBase64String(hash);
-    }
-
-    public async Task<PatchValidationResult> ValidatePatchAsync(PatchOperation patch)
-    {
-        if (patch.Payload == null)
-            return new PatchValidationResult { IsValid = false, ErrorMessage = "Payload is null" };
-
-        if (string.IsNullOrEmpty(patch.TargetFile))
-            return new PatchValidationResult { IsValid = false, ErrorMessage = "Target file is required" };
-
-        // Operation-specific validation
-        return patch.OperationType switch
-        {
-            PatchOperationType.ADD_METHOD => ValidateAddMethod((AddMethodPayload)patch.Payload),
-            PatchOperationType.ADD_CLASS => ValidateAddClass((AddClassPayload)patch.Payload),
-            _ => new PatchValidationResult { IsValid = true }
-        };
-    }
-
-    private SyntaxNode ApplyAddClass(SyntaxNode root, AddClassPayload payload)
-    {
-        var namespaceDecl = root.DescendantNodes()
-            .OfType<NamespaceDeclarationSyntax>()
-            .FirstOrDefault(n => n.Name.ToString() == payload.Namespace);
-
-        if (namespaceDecl == null)
-        {
-            // Create namespace if missing
-            namespaceDecl = SyntaxFactory.NamespaceDeclaration(SyntaxFactory.ParseName(payload.Namespace));
-            // In a real scenario, we'd add this to a new CompilationUnit
-            // For now, assuming root is CompilationUnit
-            if (root is CompilationUnitSyntax cu)
-            {
-                 root = cu.AddMembers(namespaceDecl);
-                 // Re-fetch to get the node inside the new root
-                 namespaceDecl = root.DescendantNodes().OfType<NamespaceDeclarationSyntax>().Last();
-            }
-        }
-
-        var modifiers = ParseModifiers(payload.Modifiers); // e.g., "public partial"
-        var classDecl = SyntaxFactory.ClassDeclaration(payload.ClassName)
-            .WithModifiers(modifiers);
-
-        // Add Base Class
-        if (!string.IsNullOrEmpty(payload.BaseClass))
-        {
-             classDecl = classDecl.AddBaseListTypes(
-                SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName(payload.BaseClass)));
-        }
-
-        // Add Interfaces
-        if (payload.Interfaces != null && payload.Interfaces.Any())
-        {
-            var interfaceTypes = payload.Interfaces.Select(i =>
-                SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName(i))).ToArray();
-            classDecl = classDecl.AddBaseListTypes(interfaceTypes);
-        }
-
-        var newNamespace = namespaceDecl.AddMembers(classDecl);
-        return root.ReplaceNode(namespaceDecl, newNamespace);
-    }
-
-    private SyntaxNode ApplyAddMethod(SyntaxNode root, AddMethodPayload payload)
-    {
-        var classDecl = root.DescendantNodes()
-            .OfType<ClassDeclarationSyntax>()
-            .FirstOrDefault(c => c.Identifier.Text == payload.TargetClass);
-
-        if (classDecl == null) return root;
-
-        var modifiers = ParseModifiers(payload.Modifiers ?? "public");
-
-        var methodDecl = SyntaxFactory.MethodDeclaration(
-            SyntaxFactory.ParseTypeName(payload.ReturnType),
-            payload.MethodName)
-            .WithModifiers(modifiers);
-
-        // Add Parameters
-        if (payload.Parameters != null)
-        {
-            var parameters = payload.Parameters.Select(p =>
-                SyntaxFactory.Parameter(SyntaxFactory.Identifier(p.Name))
-                    .WithType(SyntaxFactory.ParseTypeName(p.Type)))
-                .ToArray();
-
-            methodDecl = methodDecl.WithParameterList(SyntaxFactory.ParameterList(SyntaxFactory.SeparatedList(parameters)));
-        }
-
-        // Add Body
-        methodDecl = methodDecl.WithBody(SyntaxFactory.Block(SyntaxFactory.ParseStatement(payload.MethodBody)));
-
-        var newClass = classDecl.AddMembers(methodDecl);
-        return root.ReplaceNode(classDecl, newClass);
-    }
-
-    private SyntaxTokenList ParseModifiers(string modifiers)
-    {
-        var list = new List<SyntaxToken>();
-        foreach (var mod in modifiers.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var kind = ParseAccessibility(mod);
-            if (kind != SyntaxKind.None) list.Add(SyntaxFactory.Token(kind));
-        }
-        return SyntaxTokenList.Create(list.ToArray());
-    }
-
-    private SyntaxKind ParseAccessibility(string modifier)
-    {
-        return modifier.ToLower() switch
-        {
-            "public" => SyntaxKind.PublicKeyword,
-            "private" => SyntaxKind.PrivateKeyword,
-            "protected" => SyntaxKind.ProtectedKeyword,
-            "internal" => SyntaxKind.InternalKeyword,
-            "static" => SyntaxKind.StaticKeyword,
-            "async" => SyntaxKind.AsyncKeyword,
-            "partial" => SyntaxKind.PartialKeyword,
-            _ => SyntaxKind.None
-        };
-    }
-
-    private SyntaxNode ApplyModifyMethodBody(SyntaxNode root, ModifyMethodBodyPayload payload)
-    {
-        var methodDecl = root.DescendantNodes()
-            .OfType<MethodDeclarationSyntax>()
-            .FirstOrDefault(m => m.Identifier.Text == payload.MethodName &&
-                                 m.Parent is ClassDeclarationSyntax c &&
-                                 c.Identifier.Text == payload.TargetClass);
-
-        if (methodDecl == null) return root;
-
-        var newBody = SyntaxFactory.Block(SyntaxFactory.ParseStatement(payload.NewMethodBody));
-        var newMethod = methodDecl.WithBody(newBody);
-        return root.ReplaceNode(methodDecl, newMethod);
-    }
-
-    private SyntaxNode ApplyAddProperty(SyntaxNode root, AddPropertyPayload payload)
-    {
-        var classDecl = root.DescendantNodes()
-            .OfType<ClassDeclarationSyntax>()
-            .FirstOrDefault(c => c.Identifier.Text == payload.TargetClass);
-
-        if (classDecl == null) return root;
-
-        var propertyDecl = SyntaxFactory.PropertyDeclaration(
-            SyntaxFactory.ParseTypeName(payload.PropertyType),
-            payload.PropertyName)
-            .WithModifiers(SyntaxTokenList.Create(SyntaxFactory.Token(SyntaxKind.PublicKeyword)))
-            .WithAccessorList(SyntaxFactory.AccessorList(SyntaxFactory.List(new[]
-            {
-                SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
-                    .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken)),
-                SyntaxFactory.AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
-                    .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken))
-            })));
-
-        var newClass = classDecl.AddMembers(propertyDecl);
-        return root.ReplaceNode(classDecl, newClass);
-    }
-
-    private PatchValidationResult ValidateAddMethod(AddMethodPayload payload)
-    {
-        if (string.IsNullOrEmpty(payload.TargetClass))
-            return new PatchValidationResult { IsValid = false, ErrorMessage = "Target class is required" };
-        if (string.IsNullOrEmpty(payload.MethodName))
-            return new PatchValidationResult { IsValid = false, ErrorMessage = "Method name is required" };
-        return new PatchValidationResult { IsValid = true };
-    }
-
-    private PatchValidationResult ValidateAddClass(AddClassPayload payload)
-    {
-        if (string.IsNullOrEmpty(payload.Namespace))
-            return new PatchValidationResult { IsValid = false, ErrorMessage = "Namespace is required" };
-        if (string.IsNullOrEmpty(payload.ClassName))
-            return new PatchValidationResult { IsValid = false, ErrorMessage = "Class name is required" };
-        return new PatchValidationResult { IsValid = true };
-    }
-}
-
----
-
-## 6. Mutation Safety Guards
-
-### 6.1 Patch Delta Ceiling
-
-To prevent catastrophic regeneration, the `MutationGuard` enforces a limit on the scale of transformation allowed per task.
-
-```csharp
-public class MutationGuard
-{
-    private readonly ICodeIndexer _indexer;
-
-    public async Task<bool> IsSafePatchAsync(
-        string filePath, 
-        SyntaxNode newRoot, 
-        AgentExecutionContext context)
-    {
-        var oldRoot = await _indexer.GetSyntaxRootAsync(filePath);
-        var diff = ComputeAstDiff(oldRoot, newRoot);
-
-        // Ceiling Enforcement
-        if (diff.NodesModified > context.MaxNodesModifiedPerTask)
-            throw new MutationLimitExceededException($"Mutation too large: {diff.NodesModified} nodes");
-            
-        if (diff.FilesTouched > context.MaxFilesTouchedPerTask)
-            throw new MutationLimitExceededException($"Too many files: {diff.FilesTouched} files");
-
-        return true;
-    }
 }
 ```
 
 ---
-
-## 7. Deterministic Pre-Commit Sandbox
-
-> **Invariant**: Snapshot ID is frozen before patch application. All symbol access must use this ID.
-
-1. Freeze graph state
-2. Apply patch in temp/sandbox directory
-3. Run `dotnet build` (or design-time build)
-4. Only commit if successful
-
-## 6.2 Testing Strategy
-
-Mandated unit tests for patch success, hash mismatch, breaking changes, rollback, and XAML binding breaks. No mutation engine without test coverage.
-
-### Unit Testing Patterns
-
-#### ApplyPatch_AddMethod_Success
-
-```csharp
-[Fact]
-public async Task ApplyPatch_AddMethod_Success()
-{
-    // Arrange
-    var code = "public class Foo {}";
-    var patch = new PatchOperation {
-        OperationType = PatchOperationType.ADD_METHOD,
-        TargetFile = "Foo.cs",
-        Payload = new AddMethodPayload {
-            TargetClass = "Foo",
-            MethodName = "Bar",
-            ReturnType = "void",
-            Modifiers = "public",
-            MethodBody = "Console.WriteLine();"
-        }
-    };
-
-    // Act
-    var result = await _patchEngine.ApplyPatchAsync(patch);
-
-    // Assert
-    Assert.True(result.Success);
-    Assert.Contains("public void Bar()", result.NewCode);
-    Assert.Contains("}", result.NewCode); // Class closed
-}
-```
-
-#### ApplyPatch_FileHashMismatch_Fails
-
-```csharp
-[Fact]
-public async Task ApplyPatch_FileHashMismatch_Fails()
-{
-    // Arrange
-    var originalHash = "abc123hash";
-    var patch = new PatchOperation {
-        TargetFile = "Foo.cs",
-        OperationType = PatchOperationType.MODIFY_METHOD_BODY,
-        Payload = new ModifyMethodBodyPayload(),
-        ExpectedFileHash = "old_hash_xyz" // Deliberately wrong
-    };
-
-    // Act
-    var result = await _patchEngine.ApplyPatchAsync(patch);
-
-    // Assert
-    Assert.False(result.Success);
-    Assert.Equal(PatchErrorType.FileHashMismatch, result.Error);
-}
-```
 
 ## 7. Conflict Detection
 
@@ -1469,15 +448,6 @@ public enum PatchErrorType
 }
 ```
 
-### Patch Verification
-
-```csharp
-public interface IPatchVerifier
-{
-    Task<PatchValidationResult> VerifyAsync(PatchOperation patch, MutationScope scope);
-}
-```
-
 ---
 
 ## 8. XAML Binding Index
@@ -1490,16 +460,6 @@ Special layer for WinUI 3:
 - Commands (`{x:Bind ViewModel.SaveCommand}`)
 - Dependency properties
 - Resource dictionary references
-
-**Without this, WinUI refactors break.**
-
-### Regex Strategy (Fallback)
-
-Used when XML parsing fails or for fast scanning:
-
-- **x:Bind**: `\{x:Bind\s+(?<path>[^,}]+)`
-- **Binding**: `\{Binding\s+(?<path>[^,}]+)`
-- **Method**: `\{x:Bind\s+(?<method>\w+)\(`
 
 ```csharp
 public class XamlBindingIndexer
@@ -1516,8 +476,8 @@ public class XamlBindingIndexer
         var regexBindings = XBindRegex.Matches(xaml).Concat(BindingRegex.Matches(xaml));
         foreach (Match match in regexBindings)
         {
-             var path = match.Groups["path"].Value;
-             await IndexBindingAsync(xamlPath, path, "Regex");
+            var path = match.Groups["path"].Value;
+            await IndexBindingAsync(xamlPath, path, "Regex");
         }
 
         // 2. Try precise XML parsing (for depth)
@@ -1531,19 +491,7 @@ public class XamlBindingIndexer
 
             foreach (var binding in xmlBindings)
             {
-                 // Upsert with higher confidence
-                 await IndexBindingAsync(xamlPath, binding.Path, "XML");
-            }
-
-            // Extract x:Name for code-behind linking
-            var namedElements = doc.Descendants()
-                .Where(e => e.Attribute(XName.Get("Name", "http://schemas.microsoft.com/winfx/2006/xaml")) != null);
-
-            foreach (var element in namedElements)
-            {
-                var name = element.Attribute(
-                    XName.Get("Name", "http://schemas.microsoft.com/winfx/2006/xaml")).Value;
-                await StoreXamlBindingAsync(xamlPath, name, element);
+                await IndexBindingAsync(xamlPath, binding.Path, "XML");
             }
         }
         catch (XmlException)
@@ -1551,168 +499,44 @@ public class XamlBindingIndexer
             // Fallback to regex-only results if XML is broken
         }
     }
-
-    // Extracts the binding path from a XAML binding expression.
-    // Handles both {Binding PropertyName} and {Binding Path=PropertyName} forms.
-    private string ExtractBindingPath(string bindingExpression)
-    {
-        var match = Regex.Match(bindingExpression, @"\{Binding\s+(?:Path=)?([^,}]+)");
-        return match.Success ? match.Groups[1].Value.Trim() : null;
-    }
 }
 ```
 
 ---
 
-## 9. Intent Classification
+## 9. Mutation Safety Guards
 
-Analyze user prompts to determine the required operation.
+### Patch Delta Ceiling
+
+To prevent catastrophic regeneration, the `MutationGuard` enforces a limit on the scale of transformation allowed per task.
 
 ```csharp
-public enum UserIntent
+public class MutationGuard
 {
-    GeneralQuestion,
-    CodeExplanation,
-    Refactoring,
-    BugFix,
-    FeatureAddition,
-    TestGeneration
-}
+    private readonly ICodeIndexer _indexer;
 
-public class IntentClassifier
-{
-    public async Task<UserIntent> ClassifyAsync(string prompt)
+    public async Task<bool> IsSafePatchAsync(string filePath, SyntaxNode newRoot, AgentExecutionContext context)
     {
-        // ... Implementation using lightweight LLM or keyword analysis
-        return UserIntent.FeatureAddition;
+        var oldRoot = await _indexer.GetSyntaxRootAsync(filePath);
+        var diff = ComputeAstDiff(oldRoot, newRoot);
+
+        // Ceiling Enforcement
+        if (diff.NodesModified > context.MaxNodesModifiedPerTask)
+            throw new MutationLimitExceededException($"Mutation too large: {diff.NodesModified} nodes");
+
+        if (diff.FilesTouched > context.MaxFilesTouchedPerTask)
+            throw new MutationLimitExceededException($"Too many files: {diff.FilesTouched} files");
+
+        return true;
     }
 }
 ```
-
----
-
-## 10. Mutation Safety Guards
-
-The guard sits between the AI's proposal and the Patch Engine:
-
-```
-AI Construction Engine → [Mutation Safety Guard (Runtime Safety Kernel)] → Patch Engine
-```
-
-### AI-Primary Ownership of Mutations
-
-> **The AI Construction Engine proposes mutations, the Runtime Safety Kernel validates and applies them.**
-
-| Mutation Stage | Owner | Description |
-|----------------|-------|-------------|
-| Proposal generation | AI Construction Engine | Agent decides what changes to make |
-| Target validation | Runtime Safety Kernel | Hard rejection if target doesn't exist |
-| Impact analysis | Runtime Safety Kernel | Determines affected symbols |
-| Breaking change detection | Runtime Safety Kernel | Blocks unsafe mutations |
-| AST simulation | Runtime Safety Kernel | Dry run before commit |
-| Error recovery | AI Construction Engine | Agent decides how to fix failures |
-
-### Layer 1: Target Existence Validation
-
-- Does the target symbol actually exist?
-- Does the snapshot ID match the active snapshot?
-- Does the file hash match the expected state?
-
-**Action**: If any check fails → **REJECT** immediately (Stale Context).
-
-### Layer 2: Impact Radius Calculation
-
-1. Query `symbol_edges` for the target symbol
-2. Traverse **Outgoing** edges (depth=2)
-3. Traverse **Incoming** edges (depth=1)
-4. Identify all affected symbols, files, and XAML bindings
-
-**Output**: `MutationScope` object.
-
-### Impact Analysis SQL (Recursive CTE)
-
-```sql
-WITH RECURSIVE SymbolGenerations AS (
-    -- Generation 0: The target symbol
-    SELECT id, file_id, 0 AS generation
-    FROM symbol_nodes
-    WHERE fully_qualified_name = @TargetSymbol
-
-    UNION ALL
-
-    -- Recursively find dependents (who calls me?)
-    SELECT e.from_symbol_id, s.file_id, g.generation + 1
-    FROM symbol_edges e
-    JOIN SymbolGenerations g ON e.to_symbol_id = g.id
-    JOIN symbol_nodes s ON e.from_symbol_id = s.id
-    WHERE g.generation < 2 -- Limit depth
-)
-SELECT DISTINCT file_id FROM SymbolGenerations;
-```
-
-### Layer 3: Breaking Change Detection
-
-If the patch modifies public contracts (method signatures, interface definitions, constructor parameters, ViewModel properties bound in XAML):
-
-**Action**: Simulate resolution of dependent symbols. If any become unresolved → **BLOCK**.
-
-### Layer 4: AST Simulation (Dry Run)
-
-1. Clone the SyntaxTree in memory
-2. Apply the patch transformation
-3. Build a temporary compilation context
-4. Validate type resolution, symbol references, binding validity
-
-**Action**: If compilation errors appear → **REJECT**.
-
-## 10.1 Concurrency & Execution Ordering Guarantees
-
-**Principle**: Single-Writer, Multi-Reader.
-
-### Thread Roles
-
-- **Indexing Writer**: 1 Thread (Exclusive)
-- **Patch Writer**: 1 Thread (Exclusive)
-- **Build Runner**: 1 Thread (Exclusive)
-- **Readers (UI/AI)**: Concurrent allowed
-
-### Locking Strategy
-
-1.  **Workspace Lock**:
-    - Mutex: `Global\Workspace_{ProjectId}`
-    - Ensures only one ExecutionSession (Orchestrator) active per project.
-
-2.  **Graph Write Lock**:
-    - SQLite: `BEGIN IMMEDIATE TRANSACTION`
-    - Blocks other writers, allows readers (WAL mode).
-
-3.  **File Locking**:
-    - Patch Engine locks target file during read-modify-write cycle.
-    - Prevents external edits (e.g., VS Code) from colliding.
-
-### Execution Ordering Rule (Strict)
-
-```
-PATCH → INDEX → BUILD → COMMIT
-```
-
-**Forbidden States**:
-
-- ❌ Indexing while Patching
-- ❌ Building while Patching
-- ❌ Patching during Restore
-
-## 10.2 Guard Failure Escalation Policy
-
-The AI does NOT get infinite retries:
-
-1. **Attempt 1 (Soft Rejection)** — Return tailored error (e.g., "Symbol Foo not found")
-2. **Attempt 2 (Hard Rejection)** — Return "Breaking Change Detected" with impact path
-3. **Attempt 3 (Barrier Failure)** — **STOP AUTOMATION**. Transition to `INTERVENTION_REQUIRED`. Prompt user: "Should I: (A) Force apply? (B) Revert? (C) Create new file instead?"
 
 ---
 
 ## 10. Impact Analysis Engine
+
+Determines affected symbols before a patch is committed.
 
 ```csharp
 public class ImpactAnalyzer
@@ -1720,54 +544,22 @@ public class ImpactAnalyzer
     public async Task<ImpactAnalysis> AnalyzeChangeAsync(string symbolName, ChangeType changeType)
     {
         var analysis = new ImpactAnalysis();
+        analysis.AffectedSymbols = await GetAffectedSymbolsAsync(symbolName);
 
-        // 1. Determine affected symbols via recursive graph traversal
-        var affectedSymbols = await GetAffectedSymbolsAsync(symbolName);
-        analysis.AffectedSymbols = affectedSymbols;
-
-        // 2. Determine dependent files
-        analysis.DependentFiles = await GetDependentFilesAsync(symbolName);
-
-        // 3. Determine cascade effect
-        var cascadeEffect = await CalculateCascadeEffectAsync(symbolName, changeType);
-        analysis.CascadeEffect = cascadeEffect;
-
-        // 4. Block unsafe mutation
-        if (cascadeEffect.ImpactLevel > ImpactLevel.Medium)
+        // Block unsafe mutation
+        if (analysis.AffectedSymbols.Count > 50)
         {
             analysis.IsSafe = false;
             analysis.Reason = "Change affects too many symbols. Manual review required.";
         }
-
         return analysis;
-    }
-
-    private async Task<List<string>> GetAffectedSymbolsAsync(string symbolName)
-    {
-        // Recursive CTE for graph traversal
-        var results = await _database.QueryAsync<string>(@"
-            WITH RECURSIVE affected AS (
-                SELECT to_symbol_id FROM symbol_edges WHERE from_symbol_id = @symbolId AND snapshot_id = @snapshotId
-                UNION
-                SELECT e.to_symbol_id FROM symbol_edges e
-                INNER JOIN affected a ON e.from_symbol_id = a.to_symbol_id
-            )
-            SELECT DISTINCT s.name FROM affected a
-            INNER JOIN symbol_nodes s ON a.to_symbol_id = s.id",
-            new { symbolId = GetSymbolId(symbolName) });
-
-        return results.ToList();
     }
 }
 ```
 
 ---
 
-## 11. AI Retrieval System
-
-### 11.1 Retrieval Pipeline (Context Assembly)
-
-Optimized for **token efficiency** and **relevance**.
+## 11. AI Retrieval Pipeline
 
 ### Context Assembly (Prioritized Order)
 
@@ -1776,152 +568,8 @@ Optimized for **token efficiency** and **relevance**.
 3. **Target Symbol Definition** — Full code of target
 4. **Direct Dependencies** — Interfaces, services used
 5. **XAML Bindings** — Corresponding XAML file
-6. **Error Context** — If in fix mode
 
 > **PRINCIPLE**: Context is assembled based on relevance, not arbitrary token limits. The AI model manages its own context window constraints. All relevant symbols and files are included to ensure complete understanding.
-
-> **Note**: While no artificial limits are imposed, the system monitors context size and will prioritize the most relevant symbols when the combined context approaches model limits. This ensures complete understanding without overwhelming the AI. The relevance scoring algorithm ensures that:
-> - Files directly related to the current task are always included first
-> - Symbol dependencies are followed to ensure context completeness
-> - Less relevant files are only included if capacity permits
-> - The AI model handles its own context window management
-
-### Deterministic Context Builder
-
-````csharp
-public async Task<string> PrepareEnterpriseAIContextAsync(string prompt, string projectId)
-{
-    var context = new StringBuilder();
-
-    // 1. Project knowledge graph
-    var knowledgeGraph = await _database.GetProjectKnowledgeGraphAsync(projectId);
-    context.AppendLine($"Project Graph: {JsonSerializer.Serialize(knowledgeGraph)}");
-
-    // 2. Impact analysis
-    var impactAnalysis = await _impactAnalyzer.AnalyzePromptAsync(prompt);
-    context.AppendLine($"Impact: {JsonSerializer.Serialize(impactAnalysis)}");
-
-    // 3. Relevant semantic model subset
-    var relevantSymbols = await _semanticRetriever.GetRelevantSymbolsAsync(prompt);
-    foreach (var symbol in relevantSymbols)
-    {
-        var semanticInfo = await _compilation.GetSemanticInfoAsync(symbol);
-        context.AppendLine($"Symbol: {JsonSerializer.Serialize(semanticInfo)}");
-    }
-
-    // 4. Return complete context (no artificial token limits)
-    return context.ToString();
-}
-
-### Hybrid Retrieval Model (Lovable vs Enterprise)
-
-**Lovable-Level (Lightweight)**:
-- Shallow metadata index
-- Regex-based symbol extraction
-- Retrieval-friendly JSON summaries
-
-```csharp
-public async Task<string> PrepareAIContextAsync(string prompt, string projectId)
-{
-    var context = new StringBuilder();
-
-    // 1. Inject system constraints
-    context.AppendLine("System: React + Supabase builder");
-    context.AppendLine("Constraints: Use functional components, TypeScript, Tailwind CSS");
-
-    // 2. Inject project_summary
-    var summary = await _database.GetProjectSummaryAsync(projectId);
-    context.AppendLine($"Project: {JsonSerializer.Serialize(summary)}");
-
-    // 3. Retrieve relevant symbols
-    var relevantSymbols = await _retriever.GetRelevantSymbolsAsync(prompt);
-    foreach (var symbol in relevantSymbols)
-    {
-        context.AppendLine($"Symbol: {symbol.Name} ({symbol.Kind})");
-    }
-
-    // 4. Retrieve relevant files
-    var relevantFiles = await _retriever.GetRelevantFilesAsync(prompt);
-    foreach (var file in relevantFiles)
-    {
-        var content = await File.ReadAllTextAsync(file.Path);
-        context.AppendLine($"File: {file.Path}");
-        context.AppendLine(content);
-    }
-
-    // 5. Send minimal context (DO NOT send full project)
-    return context.ToString();
-}
-````
-
-**Enterprise-Level (Sync AI)**: Deep semantic + deterministic + local execution
-
-### Project Summary Builder
-
-```csharp
-public class ProjectSummaryBuilder
-{
-    public async Task<ProjectSummary> BuildSummaryAsync(string projectPath)
-    {
-        return new ProjectSummary
-        {
-            Framework = DetectFramework(projectPath),
-            AuthType = DetectAuthType(projectPath),
-            DatabaseType = DetectDatabaseType(projectPath),
-            Entities = await ExtractEntitiesAsync(projectPath),
-            Routes = await ExtractRoutesAsync(projectPath),
-            ApiEndpoints = await ExtractApiEndpointsAsync(projectPath),
-            UiPages = await ExtractUiPagesAsync(projectPath)
-        };
-    }
-}
-```
-
----
-
-### Project Summary Example
-
-```json
-{
-  "framework": "WinUI 3",
-  "authType": "EntraID",
-  "databaseType": "SQLite",
-  "entities": ["Customer", "Order", "Product"],
-  "routes": ["/home", "/settings", "/dashboard"],
-  "apiEndpoints": ["GET /api/orders", "POST /api/login"]
-}
-```
-
----
-
-
-### 11.2 Vector Index (Embeddings)
-
-We generate embeddings for:
-
-1.  **File Summaries** (High-level intent)
-2.  **Symbol Signatures** (API surface)
-3.  **Documentation Comments** (Semantic meaning)
-
-```csharp
-public class VectorIndex
-{
-    public async Task IndexFileEmbeddingAsync(string filePath, string content)
-    {
-        var embedding = await _embeddingService.GenerateAsync(content);
-        await _db.ExecuteAsync(
-            "INSERT INTO file_embeddings (file_id, vector) VALUES (@Id, @Vector)",
-            new { Id = GetFileId(filePath), Vector = embedding });
-    }
-
-    public async Task<List<string>> SemanticSearchAsync(string query, int topK = 5)
-    {
-        var queryVector = await _embeddingService.GenerateAsync(query);
-        // Cosine similarity search (using SQLite-vss or manual math)
-        return await _db.SearchAsync(queryVector, topK);
-    }
-}
-```
 
 ---
 
@@ -1951,283 +599,8 @@ public class DapperRepository<T> : IRepository<T> where T : class
         return await _connection.QuerySingleOrDefaultAsync<T>(
             $"SELECT * FROM {tableName} WHERE Id = @Id", new { Id = id });
     }
-
-    public async Task<IEnumerable<T>> GetAllAsync()
-    {
-        var tableName = typeof(T).Name + "s";
-        return await _connection.QueryAsync<T>($"SELECT * FROM {tableName}");
-    }
-
-    public async Task<T> AddAsync(T entity)
-    {
-        await _connection.InsertAsync(entity);
-        return entity;
-    }
-
-    public async Task UpdateAsync(T entity)
-    {
-        await _connection.UpdateAsync(entity);
-    }
-
-    public async Task DeleteAsync(object id)
-    {
-        var tableName = typeof(T).Name + "s";
-        await _connection.ExecuteAsync($"DELETE FROM {tableName} WHERE Id = @Id", new { Id = id });
-    }
 }
 ```
-
-### Specialized Repositories
-
-```csharp
-public interface IProjectRepository : IRepository<Project>
-{
-    Task<IEnumerable<Project>> GetRecentProjectsAsync(int count);
-    Task<Project> GetByWorkspacePathAsync(string path);
-    Task UpdateHealthStatusAsync(string projectId, string healthStatus);
-}
-
-public class ProjectRepository : DapperRepository<Project>, IProjectRepository
-{
-    public ProjectRepository(IDbConnection connection) : base(connection) { }
-
-    public async Task<IEnumerable<Project>> GetRecentProjectsAsync(int count)
-    {
-        return await _connection.QueryAsync<Project>(@"
-            SELECT * FROM Projects
-            WHERE IsArchived = 0
-            ORDER BY LastOpenedDate DESC
-            LIMIT @Count", new { Count = count });
-    }
-
-    public async Task<Project> GetByWorkspacePathAsync(string path)
-    {
-        return await _connection.QuerySingleOrDefaultAsync<Project>(
-            "SELECT * FROM Projects WHERE WorkspacePath = @Path", new { Path = path });
-    }
-
-    public async Task UpdateHealthStatusAsync(string projectId, string healthStatus)
-    {
-        await _connection.ExecuteAsync(@"
-            UPDATE Projects SET HealthStatus = @HealthStatus, ModifiedDate = @Now WHERE Id = @ProjectId",
-            new { ProjectId = projectId, HealthStatus = healthStatus, Now = DateTime.UtcNow });
-    }
-}
-
-public interface ISymbolRepository : IRepository<Symbol>
-{
-    Task<IEnumerable<Symbol>> GetByFileAsync(long fileId);
-}
-
-public class SymbolRepository : DapperRepository<Symbol>, ISymbolRepository
-{
-    public SymbolRepository(IDbConnection connection) : base(connection) { }
-
-    public async Task<IEnumerable<Symbol>> GetByFileAsync(long fileId)
-    {
-        return await _connection.QueryAsync<Symbol>(
-            "SELECT * FROM symbol_nodes WHERE file_id = @FileId", new { FileId = fileId });
-    }
-}
-
-public interface ITaskRepository : IRepository<TaskItem> { }
-
-public class TaskRepository : DapperRepository<TaskItem>, ITaskRepository
-{
-    public TaskRepository(IDbConnection connection) : base(connection) { }
-}
-```
-
-### Unit of Work Pattern
-
-```csharp
-public interface IUnitOfWork : IDisposable
-{
-    IProjectRepository Projects { get; }
-    ISymbolRepository Symbols { get; }
-    ITaskRepository Tasks { get; }
-
-    Task<int> SaveChangesAsync();
-    Task BeginTransactionAsync();
-    Task CommitAsync();
-    Task RollbackAsync();
-}
-
-public class UnitOfWork : IUnitOfWork
-{
-    private readonly IDbConnection _connection;
-    private IDbTransaction _transaction;
-
-    public IProjectRepository Projects { get; }
-    public ISymbolRepository Symbols { get; }
-    public ITaskRepository Tasks { get; }
-
-    public UnitOfWork(IDbConnection connection)
-    {
-        _connection = connection;
-        Projects = new ProjectRepository(connection);
-        Symbols = new SymbolRepository(connection);
-        Tasks = new TaskRepository(connection);
-    }
-
-    public async Task BeginTransactionAsync()
-    {
-        _transaction = _connection.BeginTransaction();
-    }
-
-    public async Task CommitAsync()
-    {
-        _transaction?.Commit();
-        _transaction?.Dispose();
-        _transaction = null;
-    }
-
-    public async Task RollbackAsync()
-    {
-        _transaction?.Rollback();
-        _transaction?.Dispose();
-        _transaction = null;
-    }
-
-    public async Task<int> SaveChangesAsync() => await Task.FromResult(0);
-
-    public void Dispose() => _transaction?.Dispose();
-}
-```
-
-### Migration Framework
-
-```csharp
-public interface IMigration
-{
-    int Version { get; }
-    string Description { get; }
-    Task UpAsync(IDbConnection connection);
-    Task DownAsync(IDbConnection connection);
-}
-
-public class MigrationRunner
-{
-    public async Task MigrateAsync()
-    {
-        await EnsureMigrationsTableAsync();
-        var currentVersion = await GetCurrentVersionAsync();
-
-        var migrations = GetAllMigrations()
-            .Where(m => m.Version > currentVersion)
-            .OrderBy(m => m.Version);
-
-        foreach (var migration in migrations)
-        {
-            using var transaction = _connection.BeginTransaction();
-            try
-            {
-                await migration.UpAsync(_connection);
-                await RecordMigrationAsync(migration.Version, migration.Description);
-                transaction.Commit();
-            }
-            catch
-            {
-                transaction.Rollback();
-                throw;
-            }
-        }
-    }
-
-    private async Task EnsureMigrationsTableAsync()
-    {
-        await _connection.ExecuteAsync(@"
-            CREATE TABLE IF NOT EXISTS Migrations (
-                Version INTEGER PRIMARY KEY,
-                Description TEXT,
-                AppliedDate DATETIME DEFAULT CURRENT_TIMESTAMP
-            );");
-    }
-
-    private async Task<int> GetCurrentVersionAsync()
-    {
-        return await _connection.QuerySingleAsync<int>(
-            "SELECT COALESCE(MAX(Version), 0) FROM Migrations");
-    }
-
-    private async Task RecordMigrationAsync(int version, string description)
-    {
-        await _connection.ExecuteAsync(
-            "INSERT INTO Migrations (Version, Description) VALUES (@Version, @Description)",
-            new { Version = version, Description = description });
-    }
-}
-```
-
-### Backup & Recovery
-
-````csharp
-public class DatabaseBackupService
-{
-    public async Task CreateBackupAsync(string databasePath, string backupPath)
-    {
-        using var connection = new SqliteConnection($"Data Source={databasePath}");
-        await connection.OpenAsync();
-        var command = connection.CreateCommand();
-        command.CommandText = $"VACUUM INTO '{backupPath}'";
-        await command.ExecuteNonQueryAsync();
-    }
-
-    public async Task RestoreBackupAsync(string backupPath, string databasePath)
-    {
-        // Simple file copy strategy for SQLite
-        await using var source = File.OpenRead(backupPath);
-        await using var dest = File.Create(databasePath);
-        await source.CopyToAsync(dest);
-    }
-
-    /// <summary>
-    /// Creates automatic backups of both project_graph.db and orchestrator.db.
-    /// From: DATABASE_SPECIFICATION.md §9.1
-    /// </summary>
-    public async Task CreateAutoBackupAsync(string projectId)
-    {
-        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        var backupDir = Path.Combine(GetProjectPath(projectId), ".builder", "backups");
-        Directory.CreateDirectory(backupDir);
-
-        // Backup project graph database
-        await CreateBackupAsync(
-            GetDatabasePath(projectId, "project_graph.db"),
-            Path.Combine(backupDir, $"project_graph_{timestamp}.db"));
-
-        // Backup orchestrator database
-        await CreateBackupAsync(
-            GetDatabasePath(projectId, "orchestrator.db"),
-            Path.Combine(backupDir, $"orchestrator_{timestamp}.db"));
-    }
-}
-
-### Connection Pooling Model
-
-```csharp
-public class DatabaseConnectionFactory
-{
-    private readonly ConcurrentDictionary<string, SqliteConnection> _connections = new();
-
-    public SqliteConnection GetConnection(string databasePath)
-    {
-        return _connections.GetOrAdd(databasePath, path =>
-        {
-            var connectionString = new SqliteConnectionStringBuilder
-            {
-                DataSource = path,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Cache = SqliteCacheMode.Shared,
-                Pooling = true
-            }.ToString();
-            return new SqliteConnection(connectionString);
-        });
-    }
-}
-```
-
-
 
 ---
 
@@ -2238,50 +611,15 @@ public class DatabaseConnectionFactory
 - **Don't** create new `CSharpCompilation` for every patch
 - **Do** replace only the changed `SyntaxTree` in existing `Compilation`
 
-### Lazy Graph Traversal
-
-- **Limit** traversal depth (max 2-3 levels)
-- **Limit** symbol count per retrieval
-- Only load semantic models for files in the `MutationScope`
-
 ### SQLite Optimization
-
-```sql
-CREATE INDEX idx_edges_composite ON symbol_edges(from_symbol_id, edge_type, snapshot_id);
-````
 
 - **WAL Mode** — Write-Ahead Logging for concurrency
 - **Weekly Vacuum** — Auto-maintenance task
+- **Indexes** — Composite indexes on frequently queried columns
 
-### Symbol Caching Layer (RAM)
-
-- Cache frequently accessed symbols (e.g., `MainViewModel`, `App.xaml.cs`)
-- Cache hot dependency edges
-- Invalidate cache entries on file modification
-
-### Query Optimization Patterns
-
-From: `DATABASE_SPECIFICATION.md` §10.3
-
-```csharp
-// ✅ Use parameterized queries — prevents SQL injection & enables query plan caching
-var sql = "SELECT * FROM symbol_nodes WHERE file_id = @FileId";
-var symbols = await connection.QueryAsync<Symbol>(sql, new { FileId = fileId });
-
-// ✅ Use LIMIT for large result sets — prevents memory exhaustion
-var sql = "SELECT * FROM BuildResults ORDER BY StartTime DESC LIMIT 100";
-
-// ✅ Use EXISTS instead of COUNT for existence checks — stops at first match
-var sql = "SELECT EXISTS(SELECT 1 FROM Projects WHERE Id = @Id)";
-var exists = await connection.QuerySingleAsync<bool>(sql, new { Id = projectId });
+```sql
+CREATE INDEX idx_edges_composite ON symbol_edges(from_symbol_id, edge_type, snapshot_id);
 ```
-
-### Caching Strategies
-
-- **Cache SyntaxTrees** — Avoid re-parsing unchanged files
-- **Incremental indexing** — Only re-index modified files
-- **Lazy symbol resolution** — Load symbols on-demand
-- **Batch patch operations** — Apply multiple patches in single transaction
 
 ---
 
@@ -2306,19 +644,6 @@ If corruption detected:
 4. Perform **Full Re-index** from disk
 5. Validate Integrity
 6. Resume operation
-
-**User Feedback**: "Restoring project integrity..." (Non-blocking toast)
-
-### Scenario B: On Snapshot Restore
-
-When the user reverts to a previous Snapshot (via Timeline):
-
-1.  **Stop** all indexing/patching.
-2.  **Close** existing SQLite connections.
-3.  **Replace** `project_graph.db` with the snapshot version.
-4.  **Clear** in-memory `Compilation` cache.
-5.  **Restart** Orchestrator in `Idle` state.
-6.  **Trigger** background consistency check.
 
 ---
 
@@ -2348,100 +673,9 @@ public interface IPatchEngine
 
 ---
 
-## Why This Architecture?
-
-1. **Roslyn-Backed** — Relies on compiler truth, not regex
-2. **Deterministic** — Same input always yields same graph state
-3. **Snapshot-Safe** — DB state aligns perfectly with file system snapshots
-4. **Token-Efficient** — Graph traversal prevents dumping entire codebases into LLM
-5. **WinUI-Specific** — First-class handling of XAML bindings prevents MVVM drift
-
----
-
-## 16. Windows API Usage & Capability Mapping Index
-
-### Overview
-
-To ensure the generated manifest is accurate, the system maintains a dedicated index of API calls that require specific capabilities.
-
-### New Table Schema
-
-```sql
-CREATE TABLE api_usage (
-    id TEXT PRIMARY KEY,
-    file_path TEXT NOT NULL,
-    namespace TEXT NOT NULL,
-    type_name TEXT,
-    member_name TEXT,
-    detected_at DATETIME NOT NULL
-);
-```
-
-### Capability Mapping Dictionary
-
-Hardcoded mapping of namespaces/classes to capability strings.
-
-```csharp
-private static readonly Dictionary<string, string> CapabilityMap = new()
-{
-    { "Windows.Storage", "broadFileSystemAccess" },
-    { "Windows.Devices.Geolocation", "location" },
-    { "Windows.Media.Capture", "webcam" },
-    { "Windows.Networking.Sockets", "internetClient" },
-    { "Windows.Devices.Bluetooth", "bluetooth" },
-    { "Windows.System.UserProfile", "userAccountInformation" }
-};
-```
-
-### Inference Algorithm
-
-1.  **Semantic Scanning**: During Roslyn indexing, the `CapabilityAnalyzer` visits all `InvocationExpressionSyntax` nodes.
-2.  **Namespace Resolution**: It resolves the symbol to its full namespace (e.g., `Windows.Media.Capture.MediaCapture`).
-3.  **Map Lookup**: Checks if the namespace prefix exists in `CapabilityMap`.
-4.  **Registration**:
-    - If match found, adds entry to `api_usage` table.
-    - Adds capability to `ProjectMetadata.RequiredCapabilities`.
-5.  **Manifest Injection**: The Manifest Engine consumes this list to generate `<Capabilities>` tags.
-
----
-
-## 17. System Maturity Level
-
-By implementing these systems, we move beyond "template generators" to a **Deterministic Windows-Native Construction Kernel**.
-
-| Feature            | Hobby/Web Builder        | Sync AI (Production)    |
-| :----------------- | :----------------------- | :---------------------- |
-| **Mutation Check** | Regex/LLM Validation     | 5-Layer Semantic Guard  |
-| **Concurrency**    | Race Conditions Probable | Single-Writer Mutex     |
-| **Scaling**        | Fails > 10K LOC          | Optimized for 100K+ LOC |
-| **Reliability**    | "It works often"         | Automated Self-Healing  |
-
-### Characteristics Comparison
-
-| Feature             | Lovable-Level (Lightweight) | Enterprise-Level (Sync AI)     |
-| :------------------ | :-------------------------- | :----------------------------- |
-| **AST Depth**       | Regex / Shallow Parse       | Full Roslyn Syntax Tree        |
-| **Index Speed**     | < 1s                        | 5-10s (Initial), < 100ms (Inc) |
-| **Refactor Safety** | Low (Text Replacements)     | High (Semantic Awareness)      |
-| **Storage**         | ~2MB JSON                   | ~50MB SQLite Graph             |
-| **Determinism**     | Probabilistic (LLM)         | Deterministic (Compiler)       |
-
-### When Works Best
-
-- **Lovable Model**: UI Prototyping, Single-File Edits, "Make it look pretty" tasks.
-- **Sync AI Model**: Complex Refactoring, API Integration, "Rename this method everywhere" tasks, >100K LOC Repos.
-
----
-
 ## References
 
 - [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 7-layer overview, deployment model
 - [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) — State machine, build system, retry logic
-- [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) — UI components, visual state machine
-- [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) — Preview rendering
-
-```
-
-```
-
----
+- [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — AI Construction Engine vs Runtime Safety Kernel
+- [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) — Sandbox, MSBuild, filesystem isolation
