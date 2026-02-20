@@ -2,11 +2,25 @@
 
 > **Layer 2.5: The Packaging & Manifest Subsystem**
 >
-> _Governs the transition from "Compile" to "Distribute". Automates Identity, Capabilities, and Signing._
+> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
+>
+> _Governs the transition from "Compile" to "Distribute". Automates Identity, Capabilities, and Signing. The Packaging Pipeline is owned by the Runtime Safety Kernel._
 
 ---
 
 ## 1. Core Responsibilities
+
+### AI-Primary Ownership of Packaging
+
+> **The AI Construction Engine proposes capabilities, the Runtime Safety Kernel enforces packaging rules.**
+
+| Packaging Stage | Owner | Description |
+|-----------------|-------|-------------|
+| Capability inference | AI Construction Engine | Code analysis determines needs |
+| Manifest generation | Runtime Safety Kernel | Enforces correct structure |
+| Certificate management | Runtime Safety Kernel | Hard enforcement of signing |
+| MSIX creation | Runtime Safety Kernel | Deterministic packaging |
+| Error recovery | AI Construction Engine | Agent decides how to adapt |
 
 This subsystem bridges the gap between raw binaries and deployable Windows apps. It ensures that every app built by Sync AI is:
 
