@@ -1,8 +1,10 @@
 # AI AGENTS AND PLANNING
 
-> **The Intelligence Layer: Intent Parsing, DAG Planning, Multi-Agent Specifications & Execution Contracts**
+> **The AI Construction Engine: Intent Parsing, DAG Planning, Multi-Agent Specifications & Execution Contracts**
 >
-> _Governs how user prompts become structured plans and how agents collaborate to generate code._
+> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
+>
+> _The AI Construction Engine is the primary intelligence that drives all construction operations. The Runtime Safety Kernel validates and enforces safety boundaries._
 
 ---
 
@@ -628,7 +630,22 @@ public class Customer
 
 ## 6. Agent Orchestration Pattern
 
-### 6.1 Orchestration Logic
+### 6.1 AI-Primary Ownership Model
+
+> **The AI Construction Engine owns the construction strategy. The Runtime Safety Kernel enforces hard boundaries.**
+
+The Agent Orchestration follows the AI-Primary model defined in [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md):
+
+| Responsibility | Owner | Description |
+|----------------|-------|-------------|
+| Task planning | AI Construction Engine | Agents create, modify, and adapt plans |
+| Code generation | AI Construction Engine | Agents generate all code and patches |
+| Retry strategy (1-9) | AI Construction Engine | Agents decide how to fix errors |
+| Mutation ceilings | Runtime Safety Kernel | Hard limits on files/nodes modified |
+| Retry ceiling (10+) | Runtime Safety Kernel | Hard abort with rollback |
+| Operation whitelist | Runtime Safety Kernel | Only approved operations allowed |
+
+### 6.2 Orchestration Logic
 
 ```python
 # Conceptual Orchestration Logic
