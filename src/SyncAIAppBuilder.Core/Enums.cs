@@ -1,0 +1,53 @@
+namespace SyncAIAppBuilder.Core;
+
+public enum BuilderState
+{
+    IDLE = 0,
+    SPEC_PARSING = 1,
+    SPEC_PARSED = 2,
+    TASK_GRAPH_BUILDING = 3,
+    TASK_GRAPH_BUILT = 4,
+    MUTATION_GUARD = 5,
+    PATCHING = 6,
+    INDEXING = 7,
+    BUILDING = 8,
+    VALIDATING = 9,
+    RETRYING = 10,
+    EXECUTING_TASK = 11,
+    BUILD_SUCCEEDED = 12,
+    FAILED = 13,
+    PACKAGING = 14,
+    PACKAGING_SUCCEEDED = 15,
+    PACKAGING_FAILED = 16,
+    CAPABILITY_CHECK = 17,
+    MANIFEST_UPDATING = 18,
+    REBUILD_REQUIRED = 19,
+    SIGNING = 20,
+    SIGNATURE_VALIDATION = 21,
+    ENVIRONMENT_RECOVERY = 22
+}
+
+public enum AgentRole
+{
+    ARCHITECT,
+    SCHEMA,
+    FRONTEND,
+    BACKEND,
+    INTEGRATION,
+    FIXER
+}
+
+public enum MemoryScope
+{
+    GLOBAL_READONLY,
+    TASK_SCOPED,
+    AGENT_SCOPED
+}
+
+public enum RetryStage
+{
+    FIX_LEVEL,
+    INTEGRATION_LEVEL,
+    ARCHITECTURE_LEVEL,
+    ABORT
+}

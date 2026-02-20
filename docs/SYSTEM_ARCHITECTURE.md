@@ -79,17 +79,22 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 │  ─ Prompt input, real-time preview, version timeline         │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 6.5: AI Construction Engine (PRIMARY INTELLIGENCE)   │
-│  ─ Intent understanding, architecture design, code generation│
-│  ─ Owns retry strategy (cycles 1-9), adaptive planning       │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ Blueprint Designer    → Adaptive architecture design    ││
+│  │ Multi-Agent System    → Specialized code generation     ││
+│  │ Planning Engine       → Task graph construction         ││
+│  │ Retry Controller      → Error recovery strategy (1-9)   ││
+│  └─────────────────────────────────────────────────────────┘│
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 6: Runtime Safety Kernel                              │
-│  ─ Mutation validation, snapshot management, abort authority │
-│  ─ Enforces deterministic execution, hard ceilings (cycle 10)│
+│  Layer 6: Runtime Safety Kernel (ENFORCEMENT LAYER)         │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ Mutation Guard       → Validate before apply            ││
+│  │ Snapshot Manager     → Restore points                   ││
+│  │ Retry Governor       → Hard ceiling (10+)               ││
+│  │ Operation Whitelist  → Only approved operations         ││
+│  └─────────────────────────────────────────────────────────┘│
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 5: AI Agent Layer                                     │
-│  ─ Multi-agent code generation, prompt engineering           │
-├─────────────────────────────────────────────────────────────┤
-│  Layer 4: Code Intelligence (Roslyn)                         │
+│  Layer 5: Code Intelligence (Roslyn)                         │
 │  ─ AST parsing, symbol indexing, impact analysis             │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 3: Patch Engine                                       │
@@ -139,8 +144,9 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 | **Layer 2.5** | Manifest, capabilities, signing | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
 | **Layer 3** | AST patches, conflict detection | [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) |
 | **Layer 4** | Roslyn indexing, symbol graph | [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) |
-| **Layer 5** | Agent coordination, code generation | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) |
-| **Layer 6** | State machine, task lifecycle, retry | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) |
+| **Layer 5** | (merged into Layer 6.5) | - |
+| **Layer 6** | Runtime Safety Kernel - enforcement, abort authority | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) |
+| **Layer 6.5** | AI Construction Engine - intelligence, generation | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) |
 | **Layer 7** | WinUI 3 shell, user interaction | [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) |
 
 ---
