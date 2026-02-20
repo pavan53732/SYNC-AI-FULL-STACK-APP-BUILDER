@@ -238,7 +238,8 @@ public enum BuilderState
     MANIFEST_UPDATING = 18,
     REBUILD_REQUIRED = 19,
     SIGNING = 20,
-    SIGNATURE_VALIDATION = 21
+    SIGNATURE_VALIDATION = 21,
+    ENVIRONMENT_RECOVERY = 22     // Suspension of mutations to recover environment
 }
 ```
 
@@ -694,13 +695,26 @@ public class ErrorPattern
 
 ---
 
-## 7. Retry Controller
+## 7. Retry Controller & Escalation Strategy
+
+### 7.1 Retry Stages
+
+To prevent infinite mutation loops, the system enforces a strict escalation policy.
 
 ```csharp
+public enum RetryStage
+{
+    FIX_LEVEL,          // Stage 1: Try local token repairs
+    INTEGRATION_LEVEL,  // Stage 2: Check DI and wiring
+    ARCHITECTURE_LEVEL, // Stage 3: Re-evaluate high-level plan
+    ABORT               // Stage 4: Rollback and Fail
+}
+
 public class RetryPolicy
 {
     public TimeSpan InitialDelay { get; set; } = TimeSpan.FromSeconds(1);
     public double BackoffMultiplier { get; set; } = 2.0;
+    public int MaxRetriesPerStage { get; set; } = 3;
 
     public TimeSpan GetDelay(int retryCount)
     {
@@ -708,79 +722,97 @@ public class RetryPolicy
         return TimeSpan.FromMilliseconds(delay);
     }
 }
+```
 
+### 7.2 Safety Snapshots
+
+Before any mutation phase, the system captures a **Semantic Snapshot**. This allows a clean rollback if the retry escalation fails.
+
+```csharp
+public class BuilderContext
+{
+    // ... existing properties ...
+    public string SemanticSnapshotHash { get; set; }     // Hash of state BEFORE current task
+    public string LastStableSnapshotHash { get; set; }   // Hash of last successfully verified build
+
+    // Safety Ceilings (Injected from AgentExecutionContext)
+    public int MaxFilesTouchedPerTask { get; set; }
+    public int MaxNodesModifiedPerTask { get; set; }
+}
+```
+
+### 7.3 Retry Controller Logic
+
+```csharp
 public class RetryController
 {
-    /// <summary>
-    /// Autonomous Infinite Refinement: System retries until success or user cancellation.
-    /// The only stopping condition is identical patch detection (no progress made).
-    /// </summary>
-    public static bool ShouldRetry(Task task, string? newPatchHash) =>
-        !IsIdenticalPatch(task, newPatchHash);
-
-    /// <summary>
-    /// Patch Hash Deduplication: Detects when the same patch is applied 
-    /// repeatedly without improvement, indicating a stuck state.
-    /// </summary>
-    private static bool IsIdenticalPatch(Task task, string? newPatchHash)
-    {
-        if (string.IsNullOrEmpty(newPatchHash) || task.LastPatchHash == null)
-            return false;
-
-        return task.LastPatchHash == newPatchHash;
-    }
-
     public static BuilderContext ExecuteRetry(
         BuilderContext context,
         Task failedTask,
-        ErrorClassification errorClassification,
-        string? newPatchHash = null)
+        ErrorClassification error)
     {
-        // Increment retry counter (informational only)
         failedTask.RetryCount++;
-        
-        // Store patch hash for deduplication
-        if (!string.IsNullOrEmpty(newPatchHash))
+
+        // 1. Post-Failure Graph Integrity Check
+        if (!GraphIntegrityVerifier.Verify(context.ProjectId))
         {
-            failedTask.LastPatchHash = newPatchHash;
+            return AbortAndRollback(context, failedTask, "Graph integrity compromised during mutation.");
         }
 
-        // Emit retry event
+        // 2. Determine Stage based on RetryCount
+        var stage = DetermineStage(failedTask.RetryCount);
+
+        // 2. Check for ABORT condition
+        if (stage == RetryStage.ABORT)
+        {
+            // Assuming an AbortAndRollback method exists elsewhere or needs to be defined.
+            // For this change, we'll just transition to a FAILED state and log.
+            // In a real system, this would trigger a rollback to LastStableSnapshotHash.
+            var abortEvent = new BuildFailedEvent
+            {
+                TaskId = failedTask.Id,
+                Reason = "Max retries exceeded across all stages. Aborting task.",
+                Error = error
+            };
+            return context with
+            {
+                State = BuilderState.FAILED,
+                EventLog = [..context.EventLog, abortEvent]
+            };
+        }
+
+        // 3. Emit detailed event
         var retryEvent = new RetryStartedEvent
         {
             TaskId = failedTask.Id,
             CurrentRetry = failedTask.RetryCount,
-            PreviousError = errorClassification.Type
+            Stage = stage,
+            PreviousError = error.Type
         };
 
-        // Always return to RETRYING state - system retries indefinitely
+        // 4. Return to RETRYING state
         return context with
         {
             State = BuilderState.RETRYING,
             EventLog = [..context.EventLog, retryEvent]
         };
     }
+
+    private static RetryStage DetermineStage(int retryCount) => retryCount switch
+    {
+        <= 3 => RetryStage.FIX_LEVEL,
+        <= 6 => RetryStage.INTEGRATION_LEVEL,
+        <= 9 => RetryStage.ARCHITECTURE_LEVEL,
+        _ => RetryStage.ABORT
+    };
 }
 ```
 
-### Retry Decision Matrix
-
-| Error Type          | Retry? | Strategy                          |
-| ------------------- | ------ | --------------------------------- |
-| **Build Errors**    | ✅ Always | AI analysis + auto-patch        |
-| **XAML Errors**     | ✅ Always | XAML syntax fix + retry         |
-| **NuGet Errors**    | ✅ Always | Package resolution + retry      |
-| **Network Errors**  | ✅ Always | Exponential backoff + retry     |
-| **API Rate Limit**  | ✅ Always | Fixed delay (60s) + retry       |
-| **Build Timeout**   | ✅ Always | Increase timeout + retry        |
-| **SDK Not Found**   | ✅ Always | Prompt user + wait + retry      |
-| **API Key Invalid** | ✅ Always | Prompt user + wait + retry      |
-| **Disk Full**       | ✅ Always | Prompt user + wait + retry      |
-
-**Key Principle**: The system NEVER gives up. It continues retrying until:
-1. **Success** - The task completes successfully
-2. **User Cancellation** - User explicitly cancels the operation
-3. **Identical Patch Detection** - Same patch applied twice with no progress (requires user intervention)
+**Escalation Rules**:
+*   **Fix Level (1-3)**: The `FixAgent` attempts to repair the specific file causing the error.
+*   **Integration Level (4-6)**: The `IntegrationAgent` reviews `Program.cs` and DI registration.
+*   **Architecture Level (7-9)**: The `ArchitectAgent` reviews the task plan itself.
+*   **Abort (10+)**: The system explicitly stops, rolls back to `LastStableSnapshotHash`, and asks the user for help.
 
 ### Packaging Retry Policy
 
@@ -792,11 +824,344 @@ public class RetryController
 | **PKG004** | Sign Failed | Prompt user for certificate + retry |
 | **PKG005** | Identity Mismatch | Update manifest to match certificate + retry |
 
-**All packaging errors trigger infinite retry with user notification.** The system always attempts automatic recovery first, then prompts the user if intervention is needed, and continues retrying.
 
 ---
 
-## 8. Concurrency Rules
+## 8. Execution Lifecycle
+
+### 8.1 Phase 0 — Pre-Execution Guard
+
+The Pre-Execution Guard runs **before** any AI planning or code generation begins. It ensures the system is in a valid state and prevents concurrent execution conflicts.
+
+```csharp
+// When user clicks Generate
+public async Task SubmitGenerateRequestAsync(string prompt)
+{
+    // 1. Validate state
+    if (_currentState != OrchestratorState.IDLE)
+        throw new InvalidOperationException("Orchestrator busy");
+
+    // 2. Lock workspace (mutex)
+    await _workspaceLock.WaitAsync();
+
+    // 3. Create ExecutionSession
+    var session = new ExecutionSession
+    {
+        Id = Guid.NewGuid(),
+        Prompt = prompt,
+        StartTime = DateTime.UtcNow,
+        CancellationToken = new CancellationTokenSource()
+    };
+
+    // 4. Transition state
+    _currentState = OrchestratorState.AI_PLANNING;
+
+    // 5. Queue for execution
+    await _executionQueue.EnqueueAsync(session);
+}
+```
+
+**ExecutionSession fields:**
+
+- `SessionId`: Guid
+- `ProjectPath`: string
+- `Prompt`: string
+- `RetryBudget`: int (default: 3 — maximum retry attempts per task node)
+
+**OrchestratorLoop (governing lifecycle pattern):**
+
+```csharp
+// Orchestrator thread — ThreadPriority.AboveNormal
+private readonly BlockingCollection<ExecutionSession> _sessionQueue = new();
+
+void OrchestratorLoop()
+{
+    foreach (var session in _sessionQueue.GetConsumingEnumerable())
+    {
+        ProcessSessionAsync(session).GetAwaiter().GetResult();
+    }
+}
+```
+
+Thread priority set to `ThreadPriority.AboveNormal` to ensure responsive session dispatch.
+
+### 8.2 Named Thread Types
+
+The system uses a carefully designed threading model with 6 distinct thread types, each with specific responsibilities and constraints:
+
+| Thread                               | Color  | Purpose                                        | Concurrency        |
+| ------------------------------------ | ------ | ---------------------------------------------- | ------------------ |
+| 🟢 **UI Thread**                     | Green  | Rendering, user input, never blocks            | Single (main)      |
+| 🔵 **Orchestrator Thread**           | Blue   | Single background thread, sequential execution | Single             |
+| 🟣 **AI Worker Thread Pool**         | Purple | AI code generation tasks                       | Max 2 concurrent   |
+| 🟡 **Patch Worker Thread**           | Yellow | File mutations, requires exclusive file lock   | Single-threaded    |
+| 🔴 **Build Worker Thread**           | Red    | MSBuild compilation, isolated and killable     | Single (per build) |
+| ⚪ **Background Maintenance Thread** | White  | Low priority cleanup, runs only when idle      | Single             |
+
+**Threading Rules:**
+
+- UI Thread never performs blocking I/O
+- Only Patch Worker modifies files
+- Build Worker can be forcefully terminated
+- Background Thread yields to all other threads
+
+### 8.3 Thread Communication Model
+
+All inter-thread communication follows strict patterns to prevent race conditions and deadlocks:
+
+- **Channels or BlockingCollection** - All communication uses producer/consumer queues
+- **Immutable command objects** - All messages are records (immutable by default)
+- **Event-driven architecture** - No polling, only reactive event handling
+- **CancellationToken everywhere** - All async operations support cancellation
+- **Never share mutable state** - State changes only through message passing
+
+```csharp
+// Example: Thread-safe command passing
+public record ExecuteTaskCommand(
+    Guid TaskId,
+    string Operation,
+    Dictionary<string, object> Parameters,
+    CancellationToken CancellationToken
+);
+
+// Channel-based communication
+private readonly Channel<ExecuteTaskCommand> _orchestratorChannel =
+    Channel.CreateUnbounded<ExecuteTaskCommand>();
+```
+
+### 8.4 Phase Flow
+
+**Phase 1 — Spec Parsing (Orchestrator Thread)**
+
+The GenerateCommand record is deserialized and validated. The AI model produces a structured JSON task graph. On schema validation failure, `CorrectTaskGraphAsync()` is invoked for one corrective round-trip before aborting.
+
+**Phase 2 — Task Graph Construction (Orchestrator Thread)**
+
+The validated JSON is materialized into a `TaskGraph` object. Dependency edges are resolved. State transitions: `SPEC_PARSED → TASK_GRAPH_READY`.
+
+**Phase 3 — Task Execution Loop (Patch Worker + AI Worker Pool)**
+
+Each task node is executed sequentially:
+
+1. AI Worker generates patch via `GeneratePatchAsync()`
+2. Patch Worker applies patch via `IPatchTransaction`
+3. Roslyn performs `IncrementalIndexFileAsync()` (mandatory between patch and build)
+4. Build Worker executes `BuildAsync()`
+5. On build failure: `ParseBuildExceptions(buildResult.Exception)` → retry or abort
+6. On retry: state transitions `TASK_EXECUTING → RETRYING → TASK_EXECUTING`
+
+**Phase 4 — Validation (Build Worker)**
+
+Full project build is executed. Output is validated against the original spec. State: `VALIDATING`.
+
+**Phase 5 — Snapshot & Rollback (Orchestrator Thread)**
+
+On success: `SnapshotService.CreateSnapshotAsync()` with `TriggerReason` recorded.
+On failure after retry budget exhausted: `SnapshotService.RollbackAsync()` → full Roslyn `IndexProjectAsync()` re-index required after rollback. State transitions to `FAILED`.
+
+**Phase 6 — Finalization (Orchestrator Thread)**
+
+1. `ProjectVersion` entity written to database (Id, ProjectId, SnapshotId, Description, Timestamp)
+2. `EventAggregator.PublishAsync(new PreviewRefreshEvent { ProjectPath = session.ProjectPath })` triggers Preview Service refresh
+3. Session marked `COMPLETED`
+4. Workspace lock (`_workspaceLock`) released — **Step 4 of finalization**
+
+**Phase 7 — Packaging & Signing (Mandatory)**
+
+This phase is mandatory for every successful generation, ensuring a deployable artifact.
+
+```text
+PATCH
+↓
+INDEX
+↓
+BUILD
+↓
+VALIDATE
+↓
+CAPABILITY_SCAN (MANDATORY)
+↓
+MANIFEST_UPDATE
+↓
+REBUILD_IF_REQUIRED
+↓
+PACKAGE
+↓
+SIGN
+↓
+VERIFY_SIGNATURE
+↓
+PACKAGING_SUCCEEDED
+```
+
+> Capability inference is mandatory for every build. Packaging is not optional.
+
+### 8.5 Boot Sequence Stages
+
+The application follows a strict 6-stage boot sequence to ensure all dependencies are properly initialized:
+
+1. **Stage 1: App Startup**
+   - `OnLaunched` event fires
+   - Display splash screen
+   - Initialize logging
+
+2. **Stage 2: Environment Validation**
+   - Verify .NET SDK installation
+   - Check MSBuild availability via MSBuildLocator
+   - Validate disk space (minimum 2GB free)
+
+3. **Stage 3: Load Project Registry**
+   - Read SQLite metadata
+   - Validate snapshot integrity
+   - Load recent projects list
+
+4. **Stage 4: Initialize Services**
+   - Orchestrator Engine
+   - Roslyn Code Intelligence
+   - Patch Engine
+   - Build Kernel
+   - AI Engine connection
+
+5. **Stage 5: Warm-Up Index**
+   - Pre-load last opened project symbols
+   - Initialize semantic cache
+   - Pre-warm embeddings
+
+6. **Stage 6: UI Ready**
+   - Fade out splash screen
+   - Show MainPage
+   - Enable user input
+
+### 8.6 Safety Controls During Boot
+
+Before completing boot, the system performs critical safety checks:
+
+```csharp
+await KillOrphanBuildProcessesAsync();
+CleanLockFiles();
+await TerminateStaleSessionsAsync();
+// Check for incomplete session from crash
+var incomplete = await _database.GetIncompleteSessionAsync();
+if (incomplete != null)
+    await HandleCrashRecoveryAsync(incomplete);
+```
+
+**Safety Operations:**
+
+- Kill any orphaned build processes from previous crashes
+- Clean stale lock files in workspace directories
+- Terminate incomplete execution sessions
+- Detect and recover from previous crash
+
+### 8.7 Crash Recovery Flow
+
+When an incomplete session is detected from a previous crash:
+
+```csharp
+private async Task HandleCrashRecoveryAsync(ExecutionSession incomplete)
+{
+    // 1. Detect incomplete ExecutionSession
+    _logger.LogWarning("Detected incomplete session: {SessionId}", incomplete.Id);
+
+    // 2. Rollback to last stable snapshot
+    var lastStable = await _database.GetLastStableSnapshotAsync(incomplete.ProjectId);
+    await _snapshotManager.RollbackAsync(lastStable.Id);
+
+    // 3. Mark previous version as failed
+    await _database.MarkVersionAsFailedAsync(incomplete.Id);
+
+    // 4. Notify user gently
+    await ShowToastAsync("We restored your project to a stable version.",
+        severity: InfoBarSeverity.Informational);
+}
+```
+
+**Recovery Steps:**
+
+1. Log the detection of incomplete session
+2. Automatically rollback to last stable snapshot
+3. Mark the crashed version as failed in history
+4. Show gentle notification to user (no technical details)
+
+---
+
+## 9. Background Systems
+
+### 9.1 9 Lettered Hidden Systems (A-I)
+
+The architecture includes 9 critical background systems that operate invisibly:
+
+| Letter | System                            | Responsibility                                     |
+| ------ | --------------------------------- | -------------------------------------------------- |
+| **A**  | Deterministic Orchestrator Engine | State machine, task scheduling, retry logic        |
+| **B**  | Roslyn Indexing Engine            | Real-time AST parsing, symbol graph maintenance    |
+| **C**  | Structured Patch Engine           | Transactional code mutations, conflict detection   |
+| **D**  | Snapshot & Rollback System        | Version control, differential backups, restore     |
+| **E**  | Build Kernel Supervisor           | MSBuild orchestration, error classification        |
+| **F**  | Silent Retry Loop                 | Automatic error recovery without user visibility   |
+| **G**  | Memory Layer (SQLite)             | Persistent storage for decisions, patterns, errors |
+| **H**  | Workspace Sandbox Manager         | File isolation, path validation, security          |
+| **I**  | Resource Monitor                  | Disk space, memory, CPU throttling                 |
+
+### 9.2 5 Background Processes
+
+Continuous background processes ensure system health and performance:
+
+| Process                       | Trigger                  | Purpose                                   |
+| ----------------------------- | ------------------------ | ----------------------------------------- |
+| **A. Project Graph Sync**     | FileSystemWatcher events | Keep symbol index synchronized with files |
+| **B. Incremental Indexing**   | File change events       | Update embeddings for modified code       |
+| **C. Snapshot Pruning**       | Scheduled (daily)        | Remove old snapshots to free disk space   |
+| **D. AI Context Preparation** | Predictive loading       | Pre-fetch likely needed context           |
+| **E. Environment Validation** | Periodic checks          | Verify SDK health, clear corrupted caches |
+
+**ProjectGraphSync — File System Watcher:**
+
+```csharp
+public class ProjectGraphSync
+{
+    private readonly FileSystemWatcher _watcher;
+
+    public ProjectGraphSync(string projectPath)
+    {
+        _watcher = new FileSystemWatcher(projectPath, "*.cs")
+        {
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
+            IncludeSubdirectories = true,
+            EnableRaisingEvents = true
+        };
+        _watcher.Changed += OnFileChanged;
+        _watcher.Created += OnFileCreated;
+        _watcher.Deleted += OnFileDeleted;
+    }
+
+    private async void OnFileChanged(object sender, FileSystemEventArgs e)
+    {
+        await _graphDb.UpdateFileMetadataAsync(e.FullPath);
+        await _roslynService.IncrementalIndexFileAsync(e.FullPath);
+    }
+    // OnFileCreated and OnFileDeleted follow same dual-call pattern
+}
+```
+
+Monitors `*.cs` files only. `IncludeSubdirectories = true`. Each change triggers both `UpdateFileMetadataAsync` AND `IncrementalIndexFileAsync`.
+
+### 9.3 What User SHOULD NEVER See
+
+The following internal details are always hidden from users:
+
+- ❌ Task graph structure
+- ❌ Patch operations and diffs
+- ❌ Roslyn AST tree
+- ❌ MSBuild raw output
+- ❌ NuGet package resolution logs
+- ❌ Snapshot IDs and versions
+- ❌ Retry counts and attempts
+- ❌ File diffs (by default, available in advanced mode only)
+
+---
+
+## 10. Concurrency Rules
 
 ### Strict Serialization
 

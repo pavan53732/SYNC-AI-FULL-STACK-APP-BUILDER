@@ -1371,11 +1371,43 @@ public class PatchEngine : IPatchEngine
         return new PatchValidationResult { IsValid = true };
     }
 }
+
+---
+
+## 6. Mutation Safety Guards
+
+### 6.1 Patch Delta Ceiling
+
+To prevent catastrophic regeneration, the `MutationGuard` enforces a limit on the scale of transformation allowed per task.
+
+```csharp
+public class MutationGuard
+{
+    private readonly ICodeIndexer _indexer;
+
+    public async Task<bool> IsSafePatchAsync(
+        string filePath, 
+        SyntaxNode newRoot, 
+        AgentExecutionContext context)
+    {
+        var oldRoot = await _indexer.GetSyntaxRootAsync(filePath);
+        var diff = ComputeAstDiff(oldRoot, newRoot);
+
+        // Ceiling Enforcement
+        if (diff.NodesModified > context.MaxNodesModifiedPerTask)
+            throw new MutationLimitExceededException($"Mutation too large: {diff.NodesModified} nodes");
+            
+        if (diff.FilesTouched > context.MaxFilesTouchedPerTask)
+            throw new MutationLimitExceededException($"Too many files: {diff.FilesTouched} files");
+
+        return true;
+    }
+}
 ```
 
 ---
 
-## 6.1 Deterministic Pre-Commit Sandbox
+## 7. Deterministic Pre-Commit Sandbox
 
 > **Invariant**: Snapshot ID is frozen before patch application. All symbol access must use this ID.
 
