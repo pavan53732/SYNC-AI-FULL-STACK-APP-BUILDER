@@ -2,7 +2,9 @@
 
 > **The Infrastructure Layer: Sandbox, MSBuild, Job Objects, ACL Enforcement & Machine Variability**
 >
-> _Governs isolated execution, build infrastructure, security boundaries, and environment resilience._
+> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
+>
+> _The Execution Environment is managed by the Runtime Safety Kernel. It enforces boundaries for AI-generated code execution._
 
 ---
 
@@ -576,9 +578,22 @@ public class FileSystemAclJail
 }
 ```
 
-### 5.3 AI Trust Boundary & Validation
+### 5.3 AI-Primary Ownership of Security
 
-The Orchestrator enforces a strict **Zero-Trust** policy on all AI-generated code.
+> **The AI Construction Engine proposes code, the Runtime Safety Kernel enforces security boundaries.**
+
+| Security Stage | Owner | Description |
+|----------------|-------|-------------|
+| Code generation | AI Construction Engine | Agent generates code changes |
+| Path validation | Runtime Safety Kernel | Hard rejection if path outside sandbox |
+| Schema validation | Runtime Safety Kernel | Hard rejection if JSON invalid |
+| Symbol validation | Runtime Safety Kernel | Hard rejection if symbol missing |
+| Process isolation | Runtime Safety Kernel | Job Objects enforce limits |
+| Error recovery | AI Construction Engine | Agent decides how to fix |
+
+### 5.4 AI Trust Boundary & Validation
+
+The Runtime Safety Kernel enforces a strict **Zero-Trust** policy on all AI-generated code.
 
 #### Mandatory Validation Gates
 
