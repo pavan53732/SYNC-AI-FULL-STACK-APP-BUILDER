@@ -824,6 +824,321 @@ public class RetryController
 | **PKG004** | Sign Failed | Prompt user for certificate + retry |
 | **PKG005** | Identity Mismatch | Update manifest to match certificate + retry |
 
+### 7.4 Snapshot Rollback Policy (Wired to Retry)
+
+The snapshot system is explicitly tied to the retry escalation ladder:
+
+```csharp
+public class SnapshotRollbackPolicy
+{
+    /// <summary>
+    /// Determines rollback action based on retry stage.
+    /// Called by RetryController.ExecuteRetry() before any retry attempt.
+    /// </summary>
+    public async Task<RollbackDecision> EvaluateRollbackNeedAsync(
+        RetryStage stage,
+        BuilderContext context,
+        Task failedTask)
+    {
+        return stage switch
+        {
+            RetryStage.FIX_LEVEL => RollbackDecision.Continue(), // No rollback - local fix
+            
+            RetryStage.INTEGRATION_LEVEL => RollbackDecision.Continue(), // No rollback - wiring fix
+            
+            RetryStage.ARCHITECTURE_LEVEL => await CreateCheckpointSnapshotAsync(context),
+            
+            RetryStage.ABORT => await RollbackToLastStableAsync(context),
+            
+            _ => RollbackDecision.Continue()
+        };
+    }
+    
+    private async Task<RollbackDecision> CreateCheckpointSnapshotAsync(BuilderContext context)
+    {
+        // Before architectural changes, create safety checkpoint
+        var snapshotId = await _snapshotService.CreateSnapshotAsync(
+            context.ProjectPath,
+            reason: "Pre-Architecture-Retry"
+        );
+        
+        return RollbackDecision.CheckpointCreated(snapshotId);
+    }
+    
+    private async Task<RollbackDecision> RollbackToLastStableAsync(BuilderContext context)
+    {
+        var lastStable = context.LastStableSnapshotHash;
+        
+        if (string.IsNullOrEmpty(lastStable))
+        {
+            // No stable snapshot - catastrophic failure
+            return RollbackDecision.CatastrophicFailure("No stable snapshot available for rollback");
+        }
+        
+        await _snapshotService.RollbackAsync(lastStable);
+        await _roslynIndexer.ReindexProjectAsync(context.ProjectPath); // Re-index after rollback
+        
+        return RollbackDecision.RolledBack(lastStable);
+    }
+}
+
+public record RollbackDecision
+{
+    public bool ShouldRollback { get; init; }
+    public string SnapshotId { get; init; }
+    public string Reason { get; init; }
+    
+    public static RollbackDecision Continue() => new() { ShouldRollback = false };
+    public static RollbackDecision CheckpointCreated(string snapshotId) => new() { ShouldRollback = false, SnapshotId = snapshotId };
+    public static RollbackDecision RolledBack(string snapshotId) => new() { ShouldRollback = true, SnapshotId = snapshotId };
+    public static RollbackDecision CatastrophicFailure(string reason) => new() { ShouldRollback = true, Reason = reason };
+}
+```
+
+**Rollback Trigger Points:**
+
+| Trigger | Action | Snapshot Used |
+|---------|--------|---------------|
+| FIX_LEVEL retry | None | Continue with current state |
+| INTEGRATION_LEVEL retry | None | Continue with current state |
+| ARCHITECTURE_LEVEL retry | Create checkpoint | New checkpoint created |
+| ABORT | Full rollback | `LastStableSnapshotHash` |
+| Graph integrity failure | Immediate rollback | `LastStableSnapshotHash` |
+| User cancellation | No rollback | State preserved for resume |
+
+### 7.5 Mutation Ceiling Enforcement
+
+The `AgentExecutionContext` defines safety ceilings that MUST be enforced BEFORE any patch is committed:
+
+```csharp
+public class MutationCeilingEnforcer
+{
+    private readonly ICodeIndexer _indexer;
+    
+    /// <summary>
+    /// Called by PatchEngine BEFORE applying any patch.
+    /// Returns ValidationResult indicating if mutation is within bounds.
+    /// </summary>
+    public async Task<MutationValidationResult> ValidateMutationCeilingAsync(
+        PatchOperation patch,
+        AgentExecutionContext context)
+    {
+        var analysis = await AnalyzePatchImpactAsync(patch);
+        
+        // Check 1: Files touched ceiling
+        if (analysis.FilesTouched.Count > context.MaxFilesTouchedPerTask)
+        {
+            return MutationValidationResult.ExceedsCeiling(
+                $"Patch touches {analysis.FilesTouched.Count} files, " +
+                $"exceeds limit of {context.MaxFilesTouchedPerTask}",
+                ceilingType: "MaxFilesTouchedPerTask"
+            );
+        }
+        
+        // Check 2: Nodes modified ceiling
+        if (analysis.NodesModified > context.MaxNodesModifiedPerTask)
+        {
+            return MutationValidationResult.ExceedsCeiling(
+                $"Patch modifies {analysis.NodesModified} AST nodes, " +
+                $"exceeds limit of {context.MaxNodesModifiedPerTask}",
+                ceilingType: "MaxNodesModifiedPerTask"
+            );
+        }
+        
+        // Check 3: Breaking change detection
+        if (analysis.HasBreakingChanges)
+        {
+            return MutationValidationResult.BreakingChangeDetected(
+                analysis.BreakingChangeDescription
+            );
+        }
+        
+        return MutationValidationResult.WithinBounds(analysis);
+    }
+    
+    private async Task<PatchImpactAnalysis> AnalyzePatchImpactAsync(PatchOperation patch)
+    {
+        // Use Roslyn to analyze the patch before applying
+        var targetFile = await _indexer.GetSyntaxTreeAsync(patch.TargetFile);
+        var simulatedPatch = SimulatePatch(targetFile, patch);
+        
+        return new PatchImpactAnalysis
+        {
+            FilesTouched = new List<string> { patch.TargetFile },
+            NodesModified = CountModifiedNodes(targetFile, simulatedPatch),
+            HasBreakingChanges = DetectBreakingChanges(targetFile, simulatedPatch),
+            BreakingChangeDescription = DescribeBreakingChanges(targetFile, simulatedPatch)
+        };
+    }
+}
+
+public record MutationValidationResult
+{
+    public bool IsWithinBounds { get; init; }
+    public string RejectionReason { get; init; }
+    public string CeilingType { get; init; }
+    public PatchImpactAnalysis Analysis { get; init; }
+    
+    public static MutationValidationResult WithinBounds(PatchImpactAnalysis analysis) => new() 
+    { 
+        IsWithinBounds = true, 
+        Analysis = analysis 
+    };
+    
+    public static MutationValidationResult ExceedsCeiling(string reason, string ceilingType) => new() 
+    { 
+        IsWithinBounds = false, 
+        RejectionReason = reason,
+        CeilingType = ceilingType
+    };
+    
+    public static MutationValidationResult BreakingChangeDetected(string description) => new() 
+    { 
+        IsWithinBounds = false, 
+        RejectionReason = description,
+        CeilingType = "BreakingChange"
+    };
+}
+
+public record PatchImpactAnalysis
+{
+    public List<string> FilesTouched { get; init; }
+    public int NodesModified { get; init; }
+    public bool HasBreakingChanges { get; init; }
+    public string BreakingChangeDescription { get; init; }
+}
+```
+
+**Integration Point:**
+
+```csharp
+// In PatchEngine.ApplyPatchAsync()
+public async Task<PatchResult> ApplyPatchAsync(PatchOperation patch)
+{
+    // 1. ENFORCE MUTATION CEILING (before any work)
+    var ceilingCheck = await _mutationCeilingEnforcer.ValidateMutationCeilingAsync(
+        patch, 
+        _agentExecutionContext
+    );
+    
+    if (!ceilingCheck.IsWithinBounds)
+    {
+        _logger.LogWarning("Mutation ceiling exceeded: {Reason}", ceilingCheck.RejectionReason);
+        return PatchResult.Rejected(ceilingCheck.RejectionReason);
+    }
+    
+    // 2. Apply patch (existing logic)...
+}
+```
+
+### 7.6 Memory Lifecycle Enforcement
+
+Memory scopes must be disposed at specific lifecycle points to prevent leaks:
+
+```csharp
+public enum MemoryScope
+{
+    GLOBAL,      // Lives for app lifetime - never disposed
+    PROJECT,     // Lives for project session - disposed on project close
+    AGENT,       // Lives for agent execution - disposed when agent completes
+    TASK,        // Lives for single task - disposed on task completion/failure
+    RETRY        // Lives for single retry attempt - disposed after each retry
+}
+
+public class MemoryLifecycleManager
+{
+    private readonly ConcurrentDictionary<MemoryScope, Dictionary<string, object>> _scopes = new();
+    
+    /// <summary>
+    /// Called by Orchestrator at specific lifecycle points.
+    /// </summary>
+    public void DisposeScope(MemoryScope scope, string projectId)
+    {
+        var scopeKey = $"{scope}:{projectId}";
+        
+        if (_scopes.TryRemove(scopeKey, out var scopeData))
+        {
+            // Dispose any IDisposable resources
+            foreach (var item in scopeData.Values)
+            {
+                if (item is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
+            }
+            
+            _logger.LogDebug("Disposed memory scope: {Scope} for project: {ProjectId}", scope, projectId);
+        }
+    }
+    
+    /// <summary>
+    /// Called after each retry attempt to isolate retry memory.
+    /// </summary>
+    public void ClearRetryMemory(string projectId)
+    {
+        DisposeScope(MemoryScope.RETRY, projectId);
+    }
+    
+    /// <summary>
+    /// Called when task completes (success or failure).
+    /// </summary>
+    public void ClearTaskMemory(string projectId)
+    {
+        DisposeScope(MemoryScope.TASK, projectId);
+        DisposeScope(MemoryScope.RETRY, projectId); // Also clear retry scope
+    }
+    
+    /// <summary>
+    /// Called when agent execution completes.
+    /// </summary>
+    public void ClearAgentMemory(string projectId)
+    {
+        DisposeScope(MemoryScope.AGENT, projectId);
+        DisposeScope(MemoryScope.TASK, projectId);
+        DisposeScope(MemoryScope.RETRY, projectId);
+    }
+}
+```
+
+**Integration Points:**
+
+```csharp
+// In Orchestrator - after task completion
+private async Task FinalizeTaskAsync(Task task, BuilderContext context)
+{
+    // ... existing finalization logic ...
+    
+    // Clear task-scoped memory
+    _memoryLifecycleManager.ClearTaskMemory(context.ProjectId);
+}
+
+// In RetryController - after each retry
+private async Task PrepareRetryAsync(Task task, BuilderContext context)
+{
+    // Clear retry-scoped memory before new attempt
+    _memoryLifecycleManager.ClearRetryMemory(context.ProjectId);
+}
+
+// In Orchestrator - on ABORT stage
+private async Task HandleAbortAsync(Task task, BuilderContext context)
+{
+    // Clear all execution-scoped memory
+    _memoryLifecycleManager.ClearAgentMemory(context.ProjectId);
+    
+    // ... rollback logic ...
+}
+```
+
+**Memory Isolation Guarantee:**
+
+| Scope | Disposed When | Purpose |
+|-------|---------------|---------|
+| GLOBAL | Never | App-wide caches, settings |
+| PROJECT | Project close | Project-specific caches |
+| AGENT | Agent completes | Agent context, generated plans |
+| TASK | Task completes | Task-specific data, patches |
+| RETRY | After each retry | Isolates retry attempts |
+
 
 ---
 
