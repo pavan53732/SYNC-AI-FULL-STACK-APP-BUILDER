@@ -2,6 +2,9 @@
 
 > **The Presentation Layer: Design Philosophy, WinUI 3 Components, Visual State Machine & Error Feedback**
 >
+> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
+>
+> _The UI layer reflects the AI-Primary model: users interact with the AI Construction Engine, while the Runtime Safety Kernel handles enforcement silently._
 
 ## Table of Contents
 
