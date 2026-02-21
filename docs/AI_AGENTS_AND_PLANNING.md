@@ -265,12 +265,14 @@ async def fix_agent(error):
    b. Rolls back to PreMutationSnapshotId
 ```
 
-### Retry Governance Contract
+### Retry Governance Contract (Infinite Silent Retry)
 
 | Retry Range | Owner | Description |
 |-------------|-------|-------------|
 | 1-9 | AI Construction Engine | AI adapts strategy |
-| 10+ | Runtime Safety Kernel | Hard abort + rollback |
+| 10+ | Runtime Safety Kernel | System Reset (Rollback + Amnesia + Retry) |
+
+> **INVARIANT**: There is NO abort. The system NEVER stops on its own. Only user cancellation ends execution.
 
 ---
 

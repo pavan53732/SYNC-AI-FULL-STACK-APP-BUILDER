@@ -40,10 +40,10 @@ The Runtime Safety Kernel (Orchestrator) is the **enforcement layer** that valid
 ✓ No implicit transitions
 ✓ No uncontrolled parallel mutation
 ✓ One active task at a time (strict serialization for mutation execution)
-✓ Bounded autonomous refinement (max 10 retries with staged escalation)
+✓ Continuous autonomous refinement (Infinite silent retries with staged escalation)
 ✓ Immutable state transitions (functional programming)
 ✓ Full event log for replay/debug (deterministic replay)
-✓ Deterministic termination (FAILED state with rollback on exhaustion)
+✓ Deterministic resets (SYSTEM_RESET state with rollback on stuck loops, but never terminal failure)
 ✓ Snapshot BEFORE mutation (MANDATORY - enables rollback)
 ```
 
@@ -77,7 +77,7 @@ public enum TaskType
 
 public enum TaskStatus
 {
-    PENDING, RUNNING, VALIDATING, RETRYING, COMPLETED, FAILED
+    PENDING, RUNNING, VALIDATING, RETRYING, COMPLETED, CANCELLED
 }
 ```
 
@@ -132,12 +132,12 @@ public enum BuilderState
     EXECUTION_PLAN_BUILT = 4,
     
     // === TASK EXECUTION PIPELINE (FIXED ORDER) ===
-    AI_GENERATING = 5,           // NEW: AI generates code
-    CREATING_SNAPSHOT = 6,       // NEW: Snapshot BEFORE mutation (MANDATORY)
+    AI_GENERATING = 5,           // AI generates code
+    CREATING_SNAPSHOT = 6,       // Snapshot BEFORE mutation (MANDATORY)
     MUTATION_GUARD = 7,          // Validate mutation safety
     PATCHING = 8,                // Apply AST transformation
     INDEXING = 9,                // Update semantic graph
-    CAPABILITY_SCAN = 10,        // NEW: Capability inference BEFORE build (for Release)
+    CAPABILITY_SCAN = 10,        // Capability inference BEFORE build (for Release)
     BUILDING = 11,               // MSBuild compilation
     VALIDATING = 12,             // Final integrity check
     
@@ -145,21 +145,22 @@ public enum BuilderState
     RETRYING = 13,
     EXECUTING_TASK = 14,
     BUILD_SUCCEEDED = 15,
-    FAILED = 16,                 // Terminal failure state
+    CANCELLED = 16,              // Terminal state ONLY via user cancellation
+    SYSTEM_RESET = 17,           // Reset with rollback + memory wipe
     
     // === PACKAGING PHASE ===
-    PACKAGING = 17,
-    PACKAGING_SUCCEEDED = 18,
-    PACKAGING_FAILED = 19,
-    MANIFEST_UPDATING = 20,
-    REBUILD_REQUIRED = 21,
-    SIGNING = 22,
-    SIGNATURE_VALIDATION = 23,
-    ENVIRONMENT_RECOVERY = 24
+    PACKAGING = 18,
+    PACKAGING_SUCCEEDED = 19,
+    PACKAGING_FAILED = 20,
+    MANIFEST_UPDATING = 21,
+    REBUILD_REQUIRED = 22,
+    SIGNING = 23,
+    SIGNATURE_VALIDATION = 24,
+    ENVIRONMENT_RECOVERY = 25
 }
 ```
 
-### State Diagram (FIXED - Addresses Contradictions 1, 3, 7)
+### State Diagram (Infinite Silent Retry Model)
 
 ```
 IDLE
@@ -205,11 +206,23 @@ EXECUTION_PLAN_BUILT
                               │
                               ├──(retry < 10)──→ EXECUTING_TASK ──→ AI_GENERATING
                               │
-                              └──(retry >= 10)──→ FAILED
+                              └──(retry >= 10)──→ SYSTEM_RESET
                                          │
-                                         ↓
-                                    ROLLBACK TO SNAPSHOT
-                                    (Created at CREATING_SNAPSHOT state)
+                                         ├──→ ROLLBACK TO SNAPSHOT
+                                         │
+                                         └──→ (Clear AI Memory)
+                                                    │
+                                                    └──→ AI_GENERATING
+                                                        (Fresh attempt with new approach)
+
+  ╔═══════════════════════════════════════════════════════════════╗
+  ║  USER CANCELLATION (Only way to stop)                        ║
+  ╠═══════════════════════════════════════════════════════════════╣
+  ║  Any State ──→ User Clicks Cancel ──→ CANCELLED              ║
+  ║                                                               ║
+  ║  User sees: "Build cancelled"                                ║
+  ║  System state: Rolled back to last stable snapshot           ║
+  ╚═══════════════════════════════════════════════════════════════╝
 ```
 
 ### Terminal States
@@ -217,8 +230,9 @@ EXECUTION_PLAN_BUILT
 | State | Type | Description | Recovery |
 |-------|------|-------------|----------|
 | `PACKAGING_SUCCEEDED` | Success | Application built, packaged, and ready | None needed |
-| `FAILED` | Failure | Max retries exceeded, rollback complete | User must modify spec or environment |
-| `PACKAGING_FAILED` | Failure | Packaging failed after retries | User must check signing config |
+| `CANCELLED` | Terminal | User explicitly cancelled | User must restart build |
+
+**NOTE**: There is NO `FAILED` state. The system never stops on its own - only user cancellation stops the build.
 
 ---
 
@@ -231,7 +245,7 @@ public class BuilderContext
 {
     public BuilderState State { get; set; }
 
-    // Task execution - SINGLE TASK AT A TIME (Fixes Contradiction 6)
+    // Task execution - SINGLE TASK AT A TIME
     public List<Task> AllTasks { get; } = new();
     public string? CurrentTaskId { get; set; }
     public Dictionary<string, Task> TaskMap { get; } = new();
@@ -251,12 +265,19 @@ public class BuilderContext
     public int MaxFilesTouchedPerTask => ActiveAgentContext?.MaxFilesTouchedPerTask ?? 5;
     public int MaxNodesModifiedPerTask => ActiveAgentContext?.MaxNodesModifiedPerTask ?? 100;
 
-    // Snapshot tracking for rollback (Fixes Contradiction 1)
+    // Snapshot tracking for rollback
     public string? PreMutationSnapshotId { get; set; }      // Snapshot created BEFORE current task
     public string? LastStableSnapshotHash { get; set; }     // Hash of last verified build
 
     // Build mode (affects capability inference timing)
     public BuildMode CurrentBuildMode { get; set; } = BuildMode.DEBUG;
+
+    // System Reset tracking
+    public int SystemResetCount { get; set; } = 0;          // Number of times we've done a full reset
+    public List<string> AttemptedApproaches { get; } = new(); // Track what's been tried
+
+    // Cancellation
+    public bool UserCancelled { get; set; } = false;
 
     // Debug info
     public List<string> DebugLog { get; } = new();
@@ -289,7 +310,7 @@ public abstract record BuilderEvent
     public int EventSequence { get; init; }
 }
 
-// Snapshot Events (Fixes Contradiction 1)
+// Snapshot Events
 public record SnapshotCreatedEvent : BuilderEvent
 {
     public string SnapshotId { get; init; }
@@ -331,7 +352,7 @@ public record TaskFailedEvent : BuilderEvent
     public int CurrentRetry { get; init; }
 }
 
-// Retry events (Fixes Contradiction 4 - All retries logged)
+// Retry events
 public record RetryStartedEvent : BuilderEvent
 {
     public string TaskId { get; init; }
@@ -340,17 +361,22 @@ public record RetryStartedEvent : BuilderEvent
     public RetryStage Stage { get; init; }
 }
 
-// Terminal failure events
-public record BuildFailedEvent : BuilderEvent
+// System Reset events
+public record SystemResetEvent : BuilderEvent
 {
     public string TaskId { get; init; }
-    public string Reason { get; init; }
-    public ErrorClassification Error { get; init; }
-    public int TotalRetries { get; init; }
-    public string? RollbackSnapshotId { get; init; }
+    public string RollbackSnapshotId { get; init; }
+    public string PreviousApproach { get; init; }
+    public int ResetCount { get; init; }
 }
 
-// Capability scan events (Fixes Contradiction 7)
+// User cancellation events
+public record UserCancelledEvent : BuilderEvent
+{
+    public string Reason { get; init; } = "User requested cancellation";
+}
+
+// Capability scan events
 public record CapabilityScanCompletedEvent : BuilderEvent
 {
     public string TaskId { get; init; }
@@ -371,16 +397,26 @@ public class BuilderReducer
 {
     public static BuilderContext Reduce(BuilderContext context, BuilderEvent @event)
     {
+        // Check for user cancellation first
+        if (context.UserCancelled && @event is not UserCancelledEvent)
+        {
+            return context with { State = BuilderState.CANCELLED };
+        }
+
         return (context.State, @event) switch
         {
-            // === AI GENERATION (Fixes Contradiction 3) ===
+            // === USER CANCELLATION (Only terminal state) ===
+            (_, UserCancelledEvent e) =>
+                context with { State = BuilderState.CANCELLED, UserCancelled = true },
+
+            // === AI GENERATION ===
             (BuilderState.EXECUTION_PLAN_BUILT, TaskStartedEvent e) =>
                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.AI_GENERATING, @event),
 
             (BuilderState.AI_GENERATING, AIGenerationCompletedEvent e) =>
                 context with { State = BuilderState.CREATING_SNAPSHOT, EventLog = [..context.EventLog, @event] },
 
-            // === SNAPSHOT CREATION (Fixes Contradiction 1) ===
+            // === SNAPSHOT CREATION ===
             (BuilderState.CREATING_SNAPSHOT, SnapshotCreatedEvent e) =>
                 context with 
                 { 
@@ -399,7 +435,7 @@ public class BuilderReducer
             (BuilderState.INDEXING, TaskIndexedEvent e) =>
                 context with { State = BuilderState.CAPABILITY_SCAN, EventLog = [..context.EventLog, @event] },
 
-            // === CAPABILITY SCAN (Fixes Contradiction 7) ===
+            // === CAPABILITY SCAN ===
             (BuilderState.CAPABILITY_SCAN, CapabilityScanCompletedEvent e) =>
                 context with { State = BuilderState.BUILDING, EventLog = [..context.EventLog, @event] },
 
@@ -410,16 +446,24 @@ public class BuilderReducer
             (BuilderState.VALIDATING, TaskCompletedEvent e) =>
                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.EXECUTION_PLAN_BUILT, @event),
 
-            // === FAILURE & RETRY PATH (Fixes Contradiction 4 - All logged) ===
+            // === FAILURE & RETRY PATH ===
             (BuilderState.VALIDATING, TaskFailedEvent e) =>
                 context with { State = BuilderState.RETRYING, EventLog = [..context.EventLog, @event] },
 
             (BuilderState.RETRYING, TaskStartedEvent e) =>
                 context with { State = BuilderState.EXECUTING_TASK, EventLog = [..context.EventLog, @event] },
 
-            // === ABORT (Uses PreMutationSnapshotId for rollback) ===
+            // === SYSTEM RESET (Never terminal - always retries) ===
             (BuilderState.RETRYING, BuildFailedEvent e) when e.TotalRetries >= 10 =>
-                HandleAbortWithRollback(context, e),
+                HandleSystemResetWithRollback(context, e),
+
+            (BuilderState.SYSTEM_RESET, SystemResetEvent e) =>
+                context with 
+                { 
+                    State = BuilderState.AI_GENERATING,
+                    SystemResetCount = e.ResetCount,
+                    EventLog = [..context.EventLog, @event] 
+                },
 
             // === COMPLETION ===
             (BuilderState.EXECUTION_PLAN_BUILT, BuildCompletedEvent e) =>
@@ -430,14 +474,34 @@ public class BuilderReducer
         };
     }
 
-    private static BuilderContext HandleAbortWithRollback(BuilderContext context, BuildFailedEvent @event)
+    private static BuilderContext HandleSystemResetWithRollback(BuilderContext context, BuildFailedEvent @event)
     {
-        // Rollback to the snapshot created BEFORE mutation
-        // This is possible because we MANDATE CREATING_SNAPSHOT state before PATCHING
+        // SYSTEM RESET - Never terminal, always retry with fresh context
+        // 1. Rollback to pre-mutation snapshot
+        // 2. Clear AI memory (forced amnesia)
+        // 3. Track the failed approach
+        // 4. Retry with completely new strategy
+
+        var failedApproach = context.TaskMap[@event.TaskId]?.Description ?? "Unknown approach";
+        
+        var newAttemptedApproaches = new List<string>(context.AttemptedApproaches) { failedApproach };
+        
+        var resetEvent = new SystemResetEvent
+        {
+            TaskId = @event.TaskId,
+            RollbackSnapshotId = context.PreMutationSnapshotId ?? "none",
+            PreviousApproach = failedApproach,
+            ResetCount = context.SystemResetCount + 1
+        };
+
+        // Transition to SYSTEM_RESET state, then immediately back to AI_GENERATING
+        // The AI will generate a completely new approach
         return context with
         {
-            State = BuilderState.FAILED,
-            EventLog = [..context.EventLog, @event]
+            State = BuilderState.SYSTEM_RESET,
+            SystemResetCount = context.SystemResetCount + 1,
+            AttemptedApproaches = newAttemptedApproaches,
+            EventLog = [..context.EventLog, @event, resetEvent]
         };
     }
 
@@ -454,6 +518,7 @@ public class BuilderReducer
                 BuilderState.EXECUTING_TASK => TaskStatus.RUNNING,
                 BuilderState.VALIDATING => TaskStatus.VALIDATING,
                 BuilderState.EXECUTION_PLAN_BUILT => TaskStatus.COMPLETED,
+                BuilderState.CANCELLED => TaskStatus.CANCELLED,
                 _ => task.Status
             };
         }
@@ -482,7 +547,7 @@ public record ErrorClassification
     public string FilePath { get; init; }
     public int? LineNumber { get; init; }
     public string AutoFixStrategy { get; init; }
-    public bool IsRetryable { get; init; }
+    public bool IsRetryable { get; init; } = true; // Always retryable in infinite retry model
 }
 ```
 
@@ -510,11 +575,11 @@ public enum ErrorType
 
 ## 7. Retry Controller
 
-### Retry Ownership (Fixes Contradiction 4)
+### Retry Ownership
 
 > **INVARIANT**: The Orchestrator is the ONLY component that manages retry loops. Agents MUST NOT have internal retry loops. Agents attempt a fix ONCE and return. The Orchestrator decides whether to retry.
 
-### Retry Stages
+### Retry Stages (Continuous - Never Abort)
 
 ```csharp
 public enum RetryStage
@@ -522,7 +587,7 @@ public enum RetryStage
     FIX_LEVEL,          // Stage 1: Try local token repairs (retries 1-3)
     INTEGRATION_LEVEL,  // Stage 2: Check DI and wiring (retries 4-6)
     ARCHITECTURE_LEVEL, // Stage 3: Re-evaluate high-level plan (retries 7-9)
-    ABORT               // Stage 4: Rollback and Fail (retry 10+)
+    SYSTEM_RESET        // Stage 4: Rollback, Wipe AI Memory, Try New Approach (retry 10+)
 }
 ```
 
@@ -532,8 +597,8 @@ public enum RetryStage
 public class RetryController
 {
     /// <summary>
-    /// Orchestrator-managed retry. All attempts are logged to EventLog.
-    /// Agents do NOT manage their own retries.
+    /// Orchestrator-managed retry. Never stops - always retries.
+    /// At cycle 10+, performs SYSTEM_RESET with forced amnesia.
     /// </summary>
     public static BuilderContext ExecuteRetry(BuilderContext context, Task failedTask, ErrorClassification error)
     {
@@ -541,20 +606,27 @@ public class RetryController
 
         var stage = DetermineStage(failedTask.RetryCount);
 
-        if (stage == RetryStage.ABORT)
+        // Stage 4: SYSTEM_RESET - Not terminal, just a fresh start
+        if (stage == RetryStage.SYSTEM_RESET)
         {
-            var abortEvent = new BuildFailedEvent
+            var resetEvent = new SystemResetEvent
             {
                 TaskId = failedTask.Id,
-                Reason = "Max retries exceeded. Rolling back to pre-mutation snapshot.",
-                Error = error,
-                TotalRetries = failedTask.RetryCount,
-                RollbackSnapshotId = context.PreMutationSnapshotId
+                RollbackSnapshotId = context.PreMutationSnapshotId ?? "none",
+                PreviousApproach = failedTask.Description,
+                ResetCount = context.SystemResetCount + 1
             };
-            return context with { State = BuilderState.FAILED, EventLog = [..context.EventLog, abortEvent] };
+            
+            // Emit SystemResetEvent - the system continues, never stops
+            return context with 
+            { 
+                State = BuilderState.SYSTEM_RESET,
+                SystemResetCount = context.SystemResetCount + 1,
+                EventLog = [..context.EventLog, resetEvent] 
+            };
         }
 
-        // Log every retry attempt (Fixes Contradiction 4)
+        // Log every retry attempt
         var retryEvent = new RetryStartedEvent
         {
             TaskId = failedTask.Id,
@@ -571,7 +643,7 @@ public class RetryController
         <= 3 => RetryStage.FIX_LEVEL,
         <= 6 => RetryStage.INTEGRATION_LEVEL,
         <= 9 => RetryStage.ARCHITECTURE_LEVEL,
-        _ => RetryStage.ABORT
+        _ => RetryStage.SYSTEM_RESET  // Never ABORT - always reset and retry
     };
 }
 ```
@@ -581,7 +653,7 @@ public class RetryController
 | Retry Range | Owner | Enforcement | Behavior |
 |-------------|-------|-------------|----------|
 | 1-9 | AI Construction Engine | Strategy flexible | AI adapts, learns, retries |
-| 10+ | Runtime Safety Kernel | Hard abort + rollback | System stops, user notified |
+| 10+ | Runtime Safety Kernel | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
 
 ---
 
@@ -604,7 +676,7 @@ public class RetryController
 
 **Phase 2 — Task Graph Construction (Orchestrator Thread)**
 
-**Phase 3 — Task Execution Loop (SERIALIZED - Fixes Contradiction 6)**
+**Phase 3 — Task Execution Loop (SERIALIZED)**
 1. AI_GENERATING - AI generates code
 2. CREATING_SNAPSHOT - Snapshot BEFORE mutation
 3. MUTATION_GUARD - Validate safety
@@ -618,7 +690,7 @@ public class RetryController
 
 **Phase 5 — Packaging & Signing (Mandatory)**
 
-### DAG Execution Clarification (Fixes Contradiction 6)
+### DAG Execution Clarification
 
 > **The DAG shows PLANNING dependencies, not EXECUTION parallelism.**
 >
@@ -649,19 +721,15 @@ public class SequentialExecutionStrategy
 
 ## 9. Concurrency Rules
 
-### Concurrency Matrix (Fixes Contradiction 5)
+### Concurrency Matrix
 
 | Operation | Can Run With | Cannot Run With | Lock Type |
 |-----------|--------------|-----------------|-----------|
 | **Patching (Mutation)** | Nothing | All other operations | Exclusive Write Lock |
-| **Indexing** | Read queries | Mutation, Build | **Exclusive Write Lock** (FIXED) |
+| **Indexing** | Read queries | Mutation, Build | Exclusive Write Lock |
 | **Building** | Nothing | All other operations | Exclusive Build Lock |
 | **Read Queries** | All read operations | Mutation | Shared Read Lock |
 | **AI Generation** | Other AI Generation | Mutation, Build | None (stateless) |
-
-### Why Indexing Requires Exclusive Write Lock
-
-> Indexing WRITES to `project_graph.db`. SQLite requires exclusive access during writes. The previous "Shared Read Lock" was incorrect and would cause database corruption.
 
 ```csharp
 public class ConcurrencyPolicy
@@ -669,7 +737,7 @@ public class ConcurrencyPolicy
     public static LockType GetRequiredLock(OperationType operation) => operation switch
     {
         OperationType.Mutation => LockType.ExclusiveWrite,
-        OperationType.Indexing => LockType.ExclusiveWrite,  // FIXED: Was SharedRead
+        OperationType.Indexing => LockType.ExclusiveWrite,
         OperationType.Build => LockType.ExclusiveBuild,
         OperationType.ReadQuery => LockType.SharedRead,
         OperationType.AIGeneration => LockType.None,
@@ -682,7 +750,7 @@ public class ConcurrencyPolicy
 
 ## 10. Snapshot Authority
 
-### Snapshot Timing Invariant (Fixes Contradiction 1)
+### Snapshot Timing Invariant
 
 > **INVARIANT**: A snapshot MUST be created BEFORE any mutation. This is enforced by the `CREATING_SNAPSHOT` state in the state machine.
 
@@ -690,7 +758,7 @@ public class ConcurrencyPolicy
 
 | Trigger | State | Purpose |
 |---------|-------|---------|
-| Before PATCHING | `CREATING_SNAPSHOT` | Enable rollback on failure |
+| Before PATCHING | `CREATING_SNAPSHOT` | Enable rollback on failure or system reset |
 | Before PACKAGING | `CREATING_SNAPSHOT` | Enable rollback on packaging failure |
 | Manual user request | Any non-mutation state | User-initiated checkpoint |
 
@@ -703,9 +771,10 @@ public class ConcurrencyPolicy
 4. SnapshotCreatedEvent emitted with snapshot ID
 5. PreMutationSnapshotId stored in BuilderContext
 6. State transitions to MUTATION_GUARD
-7. If PATCHING fails and retries exhausted:
+7. If PATCHING fails and system reset triggered:
    - Rollback to PreMutationSnapshotId
-   - Guaranteed rollback capability
+   - Clear AI memory (forced amnesia)
+   - Retry with completely new approach
 ```
 
 ---
@@ -720,6 +789,7 @@ public interface IOrchestrator
     Task<BuilderState> DispatchAsync(BuilderEvent @event);
     Task<TaskResult> ExecuteTaskAsync(TaskDefinition task);
     BuilderContext GetCurrentContext();
+    void RequestCancellation();  // Only way to stop execution
 }
 ```
 
@@ -737,11 +807,9 @@ public interface IOrchestrator
 
 ## Change Log
 
-| Date | Change | Contradiction Fixed |
-|------|--------|---------------------|
-| 2026-02-21 | Added AI_GENERATING state | #3 - AI Code Generation Missing |
-| 2026-02-21 | Added CREATING_SNAPSHOT state before PATCHING | #1 - Snapshot Timing Paradox |
-| 2026-02-21 | Added CAPABILITY_SCAN state before BUILDING | #7 - Capability Inference Timing |
-| 2026-02-21 | Fixed Indexing lock type to Exclusive Write | #5 - Concurrency Lock Deadlock |
-| 2026-02-21 | Added DAG sequential execution clarification | #6 - DAG Parallelism vs Serialization |
-| 2026-02-21 | Added retry ownership invariant | #4 - Infinite Loop Trap |
+| Date | Change |
+|------|--------|
+| 2026-02-21 | Converted to Infinite Silent Retry model - removed FAILED state, added SYSTEM_RESET |
+| 2026-02-21 | Added CANCELLED state as only terminal state (user-initiated only) |
+| 2026-02-21 | Added SystemResetEvent and AttemptedApproaches tracking |
+| 2026-02-21 | Fixed all architectural contradictions (1-7) |

@@ -13,7 +13,7 @@
 3. [Runtime Safety Kernel](#3-runtime-safety-kernel)
 4. [Mutation Execution Boundary](#4-mutation-execution-boundary)
 5. [Retry Ownership](#5-retry-ownership)
-6. [Abort Authority](#6-abort-authority)
+6. [Cancellation Authority](#6-cancellation-authority)
 7. [Snapshot Authority](#7-snapshot-authority)
 8. [Control Flow Diagram](#8-control-flow-diagram)
 
@@ -47,8 +47,8 @@ Sync AI is a **Local AI Full-Stack Windows Native App Builder** that autonomousl
 │   • Validates all mutations                                  │
 │   • Enforces deterministic execution                         │
 │   • Manages snapshots and rollback                           │
-│   • Enforces hard ceilings (max 10 cycles)                  │
-│   • Owns abort authority                                     │
+│   • Enforces state recovery (Rollbacks on stuck loops)      │
+│   • Owns system resets                                       │
 │   • Guarantees system integrity                              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -190,7 +190,7 @@ The AI Construction Engine has full creative freedom within these constraints:
 | **Mutation Validation** | Verifies all patches before application |
 | **Deterministic Execution** | Ensures reproducible results |
 | **Snapshot Management** | Creates/restores file system states |
-| **Abort Authority** | Hard stop at cycle 10+ |
+| **System Resets** | Rollbacks with forced amnesia at cycle 10+ |
 | **Resource Enforcement** | Memory, disk, time limits |
 | **Security Enforcement** | Sandbox boundaries, path validation |
 
@@ -212,7 +212,7 @@ These are the differentiation moat — they never change:
 
 1. **AST-Only Mutation** — No raw file writes
 2. **Snapshot Rollback** — Every mutation is reversible
-3. **10 Retry Hard Ceiling** — System stops, not loops forever
+3. **Continuous Resilience** — System resets context and rolls back on stuck loops, but never stops until user cancels
 4. **Manifest Pre-Build Inference** — Capabilities known before release build
 5. **Sandbox Enforcement** — No escape from workspace
 6. **Certificate Validation** — All packages signed
@@ -277,10 +277,10 @@ The retry process is split between AI and Kernel:
 │                                                              │
 │  Cycle 10+: RUNTIME SAFETY KERNEL                            │
 │  ─────────────────────────────────                            │
-│  • Hard abort enforced                                       │
-│  • Automatic rollback to last stable snapshot               │
-│  • User notification                                         │
-│  • Non-negotiable, deterministic, final                      │
+│  • System Reset enforced                                     │
+│  • Automatic rollback to pre-mutation snapshot               │
+│  • AI Agent memory & context completely wiped                │
+│  • Task restarted from scratch (Infinite continuous loop)    │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -290,7 +290,7 @@ The retry process is split between AI and Kernel:
 | Range | Owner | Enforcement | Behavior |
 |-------|-------|-------------|----------|
 | 1-9 | AI Construction Engine | Strategy flexible | AI adapts, learns, retries |
-| 10+ | Runtime Kernel | Hard abort + rollback | System stops, user notified |
+| 10+ | Runtime Kernel | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
 
 ### AI Retry Strategy (Cycles 1-9)
 
@@ -303,36 +303,36 @@ The AI Construction Engine may:
 ### Kernel Enforcement (Cycle 10+)
 
 The Runtime Kernel:
-- Stops all mutations immediately
-- Rolls back to `LastStableSnapshotHash`
-- Emits `BuildFailedEvent`
-- Clears task-scoped memory
-- Awaits user intervention
+- Rolls back to `PreMutationSnapshotId`
+- Clears all task-scoped memory (Forced AI Amnesia)
+- Emits `SystemResetEvent`
+- Forces AI to attempt an entirely new architecture path
+- **Never stops** - always retries with fresh context
 
 ---
 
-## 6. Abort Authority
+## 6. Cancellation Authority
 
-### Who Can Abort?
+### Who Can Stop Execution?
 
 | Trigger | Authority | Action |
 |---------|-----------|--------|
-| AI gives up (cycle 9) | AI Engine | Requests abort |
-| Hard ceiling (cycle 10) | Kernel | Forced abort |
-| User cancellation | User | Immediate abort |
-| Safety violation | Kernel | Immediate abort |
-| Resource exhaustion | Kernel | Immediate abort |
+| User clicks cancel | User | Immediate cancellation, transition to CANCELLED |
+| Hard loop detected (10+) | Kernel | System Reset (Rollback + Wipe Memory + Retry) |
+| Safety violation | Kernel | System Reset (Rollback + Try new approach) |
 
-### Abort Sequence
+> **INVARIANT**: There is NO terminal FAILED state. The only way to stop execution is user cancellation.
+
+### Cancellation Sequence
 
 ```
-1. Kernel receives abort trigger
-2. Stop all AI operations
-3. Rollback to LastStableSnapshotHash
-4. Clear task-scoped memory
-5. Emit BuildFailedEvent
-6. Transition to FAILED state
-7. Notify user with actionable message
+1. User clicks "Cancel" button
+2. Kernel receives UserCancelledEvent
+3. Stop all AI operations immediately
+4. Rollback to LastStableSnapshotHash
+5. Clear task-scoped memory
+6. Transition to CANCELLED state
+7. User sees "Build cancelled"
 ```
 
 ---
@@ -344,7 +344,7 @@ The Runtime Kernel:
 | Operation | Authority | Reason |
 |-----------|-----------|--------|
 | Create snapshot | Kernel | Before every mutation |
-| Restore snapshot | Kernel | On rollback/abort |
+| Restore snapshot | Kernel | On rollback/system reset |
 | Delete snapshot | Kernel | On pruning/archival |
 | List snapshots | UI (read-only) | User time-travel |
 
@@ -369,11 +369,11 @@ Kernel Validates Mutation                  │
         │   Yes              No            │
         │    │                │            │
         │    ▼                ▼            │
-        │ Commit          Rollback ────────┘
-        │ Snapshot        to Previous
-        │
-        ▼
-   Continue
+        │ Commit          System Reset ────┘
+        │ Snapshot        (Rollback + Clear Memory)
+        │                       │
+        ▼                       ▼
+   Continue               Retry with New Approach
 ```
 
 ### Snapshot Invariants
@@ -387,7 +387,7 @@ Kernel Validates Mutation                  │
 
 ## 8. Control Flow Diagram
 
-### Complete Flow
+### Complete Flow (Infinite Silent Retry Model)
 
 ```
 User Prompt
@@ -448,11 +448,23 @@ User Prompt
           │                         │        No          Yes
           │                         │         │           │
           │                         │         ▼           ▼
-          │                         │    Return to    ABORT
+          │                         │    Return to    SYSTEM RESET
           │                         │       AI     + Rollback
-          ▼                         ▼
-    AI Adapts                  User Sees
-    Strategy                  Working App
+          │                         │              + Clear Memory
+          ▼                         ▼              │
+    AI Adapts                  User Sees          ▼
+    Strategy                  Working App    Retry with
+                                             New Approach
+                                                   │
+                                                   └──► (Infinite Loop
+                                                        until success or
+                                                        user cancellation)
+
+  ╔═══════════════════════════════════════════════════════════════╗
+  ║  USER CANCELLATION (Only way to stop)                        ║
+  ╠═══════════════════════════════════════════════════════════════╣
+  ║  Any State ──→ User Clicks Cancel ──→ CANCELLED              ║
+  ╚═══════════════════════════════════════════════════════════════╝
 ```
 
 ---
@@ -466,13 +478,14 @@ User Prompt
 
 ### Runtime Safety Kernel (Enforcement Layer)
 - Validates, enforces, guarantees
-- Owns abort authority (10+)
-- Deterministic, strict, protective
+- Owns system resets (10+)
+- Deterministic, resilient, protective
 
 ### The Contract
 > AI proposes, Kernel validates.
 > AI adapts, Kernel enforces.
 > AI creates, Kernel guarantees.
+> **System never stops - only user cancellation ends execution.**
 
 ---
 
@@ -482,3 +495,14 @@ User Prompt
 - [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) — State machine
 - [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) — Agent coordination
 - [AGENT_EXECUTION_CONTRACT.md](./AGENT_EXECUTION_CONTRACT.md) — Sandbox constraints
+
+---
+
+## Change Log
+
+| Date | Change |
+|------|--------|
+| 2026-02-21 | Converted to Infinite Silent Retry model |
+| 2026-02-21 | Replaced "Hard Abort" with "System Reset + Forced Amnesia" |
+| 2026-02-21 | Added Cancellation Authority section (only way to stop) |
+| 2026-02-21 | Removed FAILED state from all diagrams |

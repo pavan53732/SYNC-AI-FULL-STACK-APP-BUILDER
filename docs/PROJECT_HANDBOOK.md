@@ -276,9 +276,10 @@ The user should only see:
 │                      INTERNAL REALITY                           │
 │   Orchestrator manages:                                         │
 │   - State transitions (all logged)                              │
-│   - Retry loops (bounded to 10)                                 │
+│   - Retry loops (infinite, continuous)                          │
 │   - Snapshots (before every mutation)                           │
 │   - Capability inference (proactive for Release)                │
+│   - System resets (at cycle 10+ with forced amnesia)            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

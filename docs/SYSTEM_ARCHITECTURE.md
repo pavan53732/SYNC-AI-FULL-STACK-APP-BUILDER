@@ -90,7 +90,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │ Mutation Guard       → Validate before apply            ││
 │  │ Snapshot Manager     → Restore points                   ││
-│  │ Retry Governor       → Hard ceiling (10+)               ││
+│  │ Reset Governor       → Forced Amnesia/Rollback (10+)   ││
 │  │ Operation Whitelist  → Only approved operations         ││
 │  └─────────────────────────────────────────────────────────┘│
 ├─────────────────────────────────────────────────────────────┤
@@ -128,8 +128,8 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 │                RUNTIME SAFETY KERNEL                         │
 │                  (Enforcement Layer)                         │
 │                                                              │
-│   Kernel enforces safety: validates, snapshots, aborts       │
-│   Owns abort authority at cycle 10+                          │
+│   Kernel enforces safety: validates, snapshots, resets       │
+│   Owns system resets at cycle 10+                            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -444,18 +444,18 @@ All version references MUST derive from this value:
 
 ## 8. Retry Governance
 
-### 8.1 Retry Philosophy
+### 8.1 Retry Philosophy (Infinite Silent Retry)
 
-> **AI owns the retry strategy. The Kernel enforces hard ceilings.**
+> **AI owns the retry strategy. The Kernel enforces system resets.**
 
-The AI Construction Engine has full flexibility to adapt, retry, and escalate during cycles 1-9. The Runtime Safety Kernel enforces a hard abort at cycle 10+.
+The AI Construction Engine has full flexibility to adapt, retry, and escalate during cycles 1-9. The Runtime Safety Kernel initiates a System Reset at cycle 10+ - rolling back, clearing memory, and retrying with a fresh approach.
 
 ### 8.2 Retry Ownership
 
 | Range | Owner | Enforcement | Behavior |
 |-------|-------|-------------|----------|
 | 1-9 | AI Construction Engine | Strategy flexible | AI adapts, learns, retries |
-| 10+ | Runtime Safety Kernel | Hard abort + rollback | System stops, user notified |
+| 10+ | Runtime Safety Kernel | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
 
 ### 8.3 AI Retry Strategy (Cycles 1-9)
 
@@ -468,21 +468,20 @@ AI selects which agent handles the fix and adapts approach based on errors.
 
 ### 8.4 Kernel Enforcement (Cycle 10+)
 
-The Runtime Safety Kernel:
-- Stops all mutations immediately
-- Rolls back to `LastStableSnapshotHash`
-- Emits `BuildFailedEvent`
-- Clears task-scoped memory
-- Awaits user intervention
+The Runtime Safety Kernel initiates a SYSTEM RESET:
+- Rolls back to `PreMutationSnapshotId`
+- Clears all task-scoped memory (Forced AI Amnesia)
+- Emits `SystemResetEvent`
+- Forces AI to attempt an entirely new architecture path
 
-### 8.5 Stopping Conditions
+### 8.5 Stopping Conditions (User Cancellation Only)
 
 The system ONLY stops when:
 
 1. **Success** — Build passes, packaging completes
 2. **User Cancellation** — Explicit cancel request
-3. **Hard Ceiling (Cycle 10)** — Kernel-enforced abort
-4. **Identical Patch Detected** — No progress (same patch hash as previous attempt)
+
+> **INVARIANT**: There is NO hard ceiling abort. The system retries infinitely until success or user cancellation.
 
 **Detailed Retry Logic:** See [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §7 and [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) §5
 

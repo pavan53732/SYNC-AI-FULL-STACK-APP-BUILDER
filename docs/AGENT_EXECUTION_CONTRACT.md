@@ -126,14 +126,14 @@ To prevent state leakage, memory is cleared according to the following determini
 
 ### 4.2 Retry Cycle Memory Rules (CRITICAL)
 
-> **INVARIANT**: Memory lifecycle during retries is strictly defined to prevent state leakage across retry attempts.
+> **INVARIANT**: Memory lifecycle during retries is strictly defined to prevent state leakage across retry attempts. The system uses **Infinite Silent Retry** - there is NO ABORT state, only SYSTEM_RESET which clears memory and retries with a fresh approach.
 
 | Retry Stage | AGENT_SCOPED | TASK_SCOPED | RETRY_SCOPED |
 |-------------|--------------|-------------|--------------|
 | FIX_LEVEL (1-3) | Cleared after each attempt | **Retained** | Cleared after each attempt |
 | INTEGRATION_LEVEL (4-6) | Cleared after each attempt | **Retained** | Cleared after each attempt |
 | ARCHITECTURE_LEVEL (7-9) | Cleared after each attempt | **Retained** | Cleared after each attempt |
-| ABORT (10+) | Cleared | **Cleared** | Cleared |
+| SYSTEM_RESET (10+) | Cleared | **Cleared** | Cleared (Forced Amnesia) |
 
 ### Memory Clearing Sequence
 
@@ -146,14 +146,17 @@ RETRY ATTEMPT (1-9):
 │ 4. Execute retry with fresh agent state │
 └─────────────────────────────────────────┘
 
-ABORT (Cycle 10+):
+SYSTEM RESET (Cycle 10+):
 ┌─────────────────────────────────────────┐
 │ 1. Clear RETRY_SCOPED memory            │
 │ 2. Clear AGENT_SCOPED memory            │
-│ 3. Clear TASK_SCOPED memory             │
-│ 4. Rollback to LastStableSnapshotHash   │
-│ 5. Emit BuildFailedEvent                │
+│ 3. Clear TASK_SCOPED memory (Amnesia)   │
+│ 4. Rollback to PreMutationSnapshotId    │
+│ 5. Restart task with entirely new plan  │
 └─────────────────────────────────────────┘
+
+NOTE: There is NO ABORT. The system ALWAYS retries with a fresh approach.
+Only user cancellation stops execution.
 ```
 
 ### Implementation
@@ -170,8 +173,8 @@ public class RetryMemoryPolicy
         _memoryLifecycleManager.DisposeScope(MemoryScope.RETRY, projectId);
         _memoryLifecycleManager.DisposeScope(MemoryScope.AGENT, projectId);
 
-        // Only clear TASK scope on ABORT
-        if (stage == RetryStage.ABORT)
+        // On SYSTEM_RESET, clear TASK scope (Forced Amnesia)
+        if (stage == RetryStage.SYSTEM_RESET)
         {
             _memoryLifecycleManager.DisposeScope(MemoryScope.TASK, projectId);
         }
@@ -186,7 +189,7 @@ public class RetryMemoryPolicy
 |--------------|----------------------|--------|
 | RETRY_SCOPED | Always cleared | Isolates each retry attempt; prevents error cascade |
 | AGENT_SCOPED | Always cleared | Agent gets fresh context each attempt; prevents reasoning contamination |
-| TASK_SCOPED | Retained until ABORT | Preserves task plan and context for adaptive retry; cleared on abort to prevent corrupt state persistence |
+| TASK_SCOPED | Retained until SYSTEM_RESET | Preserves task plan for adaptive retry; cleared on SYSTEM_RESET to force entirely new approach |
 
 ---
 
