@@ -34,6 +34,28 @@ The AI Construction Engine transforms unstructured user prompts into adaptive ar
 5. **Code Generation**: Produce syntactically correct C#/XAML code
 6. **Self-Correction**: AI learns from errors and adapts strategy
 
+### AI-Primary Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  AI CONSTRUCTION ENGINE (Primary Brain)                     │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ Blueprint Designer    → Adaptive architecture design    ││
+│  │ Multi-Agent System    → Specialized code generation     ││
+│  │ Planning Engine       → Task graph construction         ││
+│  │ Retry Controller      → Error recovery strategy (1-9)   ││
+│  └─────────────────────────────────────────────────────────┘│
+├─────────────────────────────────────────────────────────────┤
+│  RUNTIME SAFETY KERNEL (Enforcement Layer)                  │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ Mutation Guard       → Validate before apply            ││
+│  │ Snapshot Manager     → Restore points                   ││
+│  │ Reset Governor       → Forced Amnesia/Rollback (10+)    ││
+│  │ Operation Whitelist  → Only approved operations         ││
+│  └─────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## 2. AI Architecture Blueprint Model

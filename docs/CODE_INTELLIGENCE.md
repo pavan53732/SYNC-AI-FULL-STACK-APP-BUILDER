@@ -19,12 +19,13 @@
 7. [Conflict Detection](#7-conflict-detection)
 8. [XAML Binding Index](#8-xaml-binding-index)
 9. [Mutation Safety Guards](#9-mutation-safety-guards)
-10. [Impact Analysis Engine](#10-impact-analysis-engine)
-11. [AI Retrieval Pipeline](#11-ai-retrieval-pipeline)
-12. [Database Access Layer](#12-database-access-layer)
-13. [Performance Optimizations](#13-performance-optimizations)
-14. [Graph Integrity Verifier](#14-graph-integrity-verifier)
-15. [Service Contracts](#15-service-contracts)
+10. [Concurrency & Guard Failure Policy](#10-concurrency--guard-failure-policy)
+11. [Impact Analysis Engine](#11-impact-analysis-engine)
+12. [AI Retrieval Pipeline](#12-ai-retrieval-pipeline)
+13. [Database Access Layer](#13-database-access-layer)
+14. [Performance Optimizations](#14-performance-optimizations)
+15. [Graph Integrity Verifier](#15-graph-integrity-verifier)
+16. [Service Contracts](#16-service-contracts)
 
 ---
 
@@ -534,7 +535,37 @@ public class MutationGuard
 
 ---
 
-## 10. Impact Analysis Engine
+## 10. Concurrency & Guard Failure Policy
+
+### 10.1 Concurrency & Execution Ordering Guarantees
+
+**Principle**: Single-Writer, Multi-Reader.
+
+**Thread Roles**
+- **Indexing Writer**: 1 Thread (Exclusive)
+- **Patch Writer**: 1 Thread (Exclusive)
+- **Build Runner**: 1 Thread (Exclusive)
+- **Readers (UI/AI)**: Concurrent allowed
+
+**Locking Strategy**
+1. **Workspace Lock**: Mutex `Global\Workspace_{ProjectId}` ensures only one ExecutionSession active per project.
+2. **Graph Write Lock**: SQLite `BEGIN IMMEDIATE TRANSACTION` blocks other writers, allows readers (WAL mode).
+3. **File Locking**: Patch Engine locks target file during read-modify-write cycle.
+
+**Execution Ordering Rule (Strict)**
+`PATCH → INDEX → BUILD → COMMIT`
+
+### 10.2 Guard Failure Escalation Policy
+
+The system uses an Infinite Silent Retry model. If a mutation repeatedly fails the safety guard:
+
+1. **Attempt 1-3 (Soft Rejection)** — Return tailored error (e.g., "Symbol Foo not found") to the Agent.
+2. **Attempt 4-9 (Hard Rejection)** — Return "Breaking Change Detected" with impact path. Agent attempts architectural pivot.
+3. **Attempt 10+ (Barrier Failure / System Reset)** — **SYSTEM RESET**. The kernel triggers an automatic rollback to the pre-mutation snapshot, clears the AI context (forced amnesia), and forces the Architect agent to generate an entirely different file strategy. The user only ever sees "Optimizing build..."
+
+---
+
+## 11. Impact Analysis Engine
 
 Determines affected symbols before a patch is committed.
 
@@ -557,9 +588,10 @@ public class ImpactAnalyzer
 }
 ```
 
+
 ---
 
-## 11. AI Retrieval Pipeline
+## 12. AI Retrieval Pipeline
 
 ### Context Assembly (Prioritized Order)
 
@@ -571,9 +603,10 @@ public class ImpactAnalyzer
 
 > **PRINCIPLE**: Context is assembled based on relevance, not arbitrary token limits. The AI model manages its own context window constraints. All relevant symbols and files are included to ensure complete understanding.
 
+
 ---
 
-## 12. Database Access Layer
+## 13. Database Access Layer
 
 ### Repository Pattern
 
@@ -602,9 +635,10 @@ public class DapperRepository<T> : IRepository<T> where T : class
 }
 ```
 
+
 ---
 
-## 13. Performance Optimizations
+## 14. Performance Optimizations
 
 ### Compilation Model Reuse
 
@@ -621,9 +655,10 @@ public class DapperRepository<T> : IRepository<T> where T : class
 CREATE INDEX idx_edges_composite ON symbol_edges(from_symbol_id, edge_type, snapshot_id);
 ```
 
+
 ---
 
-## 14. Graph Integrity Verifier
+## 15. Graph Integrity Verifier
 
 **Run triggers**: Boot, Post-Restore, Post-Crash, Weekly.
 
@@ -645,9 +680,10 @@ If corruption detected:
 5. Validate Integrity
 6. Resume operation
 
+
 ---
 
-## 15. Service Contracts
+## 16. Service Contracts
 
 ### Code Intelligence Service (`IRoslynService`)
 
