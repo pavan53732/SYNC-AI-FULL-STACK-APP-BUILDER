@@ -22,7 +22,7 @@
 8. [Complete Implementation](#8-complete-implementation)
 9. [Integration Points](#9-integration-points)
 10. [Fallback Strategy When Inference Fails](#10-fallback-strategy-when-inference-fails)
-11. [Asset Determinism and Caching](#11-asset-determinism-and-caching)
+11. [Deterministic Image Generation](#11-deterministic-image-generation)
 
 ---
 
@@ -1509,27 +1509,178 @@ public class BrandingInferenceService
 
 ---
 
-## 11. Asset Determinism and Caching
+## 11. Deterministic Image Generation
 
-**Generated binary assets are cached by IntentHash. Once generated, assets are never regenerated unless IntentHash changes.**
+### Core Principle: IntentHash → Seed
 
-This converts model determinism into artifact determinism:
+> **INVARIANT**: Brand assets are **cached by IntentHash** and are **NOT regenerated** once created.
+>
+> **Same IntentHash = Same Seed = Same Image**
+>
+> This ensures deterministic, reproducible brand assets across rebuilds.
 
-| Concept | Description |
-|---------|-------------|
-| **IntentHash** | A deterministic hash computed from the user's branding intent (colors, style preferences, domain, icon preferences) |
-| **Cache Key** | `IntentHash` serves as the unique identifier for all generated assets |
-| **Cache Lookup** | Before generation, system checks if assets exist for the current IntentHash |
-| **Regeneration Trigger** | Assets are regenerated ONLY when IntentHash changes (indicating intent change) |
+### IntentHash Computation
 
-### Production Safety Guarantee
+The IntentHash is computed from the complete branding context:
 
-This caching mechanism ensures:
+```csharp
+public static class IntentHash
+{
+    /// <summary>
+    /// Computes a deterministic hash from branding context.
+    /// Same input = same hash = same generated images.
+    /// </summary>
+    public static string Compute(
+        string appName,
+        string domain,
+        string primaryColor,
+        string styleMood,
+        string iconStyle,
+        int width,
+        int height)
+    {
+        // Normalize inputs
+        var normalizedInput = $"{appName}|{domain}|{primaryColor}|{styleMood}|{iconStyle}|{width}x{height}";
+        
+        // Compute SHA256 hash
+        using var sha256 = SHA256.Create();
+        var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(normalizedInput));
+        
+        // Return as hex string (first 16 characters for readability)
+        return Convert.ToHexString(hashBytes).Substring(0, 16);
+    }
+    
+    /// <summary>
+    /// Converts IntentHash to a deterministic seed for image generation.
+    /// This ensures reproducible images for the same intent.
+    /// </summary>
+    public static int ToSeed(string intentHash)
+    {
+        // Convert first 8 hex characters to integer
+        return int.Parse(intentHash.Substring(0, 8), NumberStyles.HexNumber);
+    }
+}
+```
 
-1. **Cost efficiency**: No redundant AI API calls for identical intents
-2. **Consistency**: Same intent always produces identical artifacts
-3. **Auditability**: Asset provenance is traceable to specific intent states
-4. **Performance**: Cached assets are served immediately without generation delay
+### Generated Assets Cache Table
+
+```sql
+-- Cache of generated brand assets by IntentHash
+CREATE TABLE generated_assets (
+    intent_hash TEXT PRIMARY KEY,       -- Hash of branding context
+    asset_id TEXT NOT NULL,             -- Unique asset identifier
+    asset_category TEXT NOT NULL,       -- 'icon', 'tile_logo', 'splash_screen'
+    file_path TEXT NOT NULL,            -- Path to generated image
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    prompt TEXT NOT NULL,               -- Full prompt used for generation
+    seed INTEGER NOT NULL,              -- Seed used for deterministic generation
+    generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    file_hash TEXT NOT NULL             -- SHA256 of the image file
+);
+
+-- Index for quick lookups
+CREATE INDEX idx_generated_assets_category ON generated_assets(asset_category);
+```
+
+### Deterministic Generation Flow
+
+```
+ASSET GENERATION REQUEST
+        │
+        ▼
+┌────────────────────────────────┐
+│ 1. COMPUTE INTENT HASH         │
+│    IntentHash = Hash(          │
+│      appName,                  │
+│      domain,                   │
+│      primaryColor,             │
+│      styleMood,                │
+│      iconStyle,                │
+│      width, height)            │
+└────────────────────────────────┘
+        │
+        ▼
+┌────────────────────────────────┐
+│ 2. CHECK CACHE                 │
+│    SELECT * FROM generated_assets│
+│    WHERE intent_hash = ?       │
+└────────────────────────────────┘
+        │
+        ├── FOUND ──────────────────────────→ Return cached asset
+        │
+        └── NOT FOUND ───────────────────────┐
+                                             │
+                                             ▼
+                              ┌────────────────────────────────┐
+                              │ 3. GENERATE NEW ASSET          │
+                              │ seed = IntentHash.ToSeed(hash) │
+                              │ POST /api/generate-image       │
+                              │   { prompt, seed, size }       │
+                              └────────────────────────────────┘
+                                             │
+                                             ▼
+                              ┌────────────────────────────────┐
+                              │ 4. CACHE THE ASSET             │
+                              │ INSERT INTO generated_assets   │
+                              │   (intent_hash, asset_id, ...) │
+                              └────────────────────────────────┘
+                                             │
+                                             ▼
+                                       Return new asset
+```
+
+### Integration with AI Mini Service
+
+The AI Mini Service accepts a `seed` parameter for deterministic image generation:
+
+```typescript
+// routes/image.ts - Deterministic image generation
+interface ImageRequest {
+  prompt: string;
+  size?: "1024x1024" | "768x1344" | "1344x768" | "1440x720";
+  seed?: number;  // NEW: Optional seed for deterministic generation
+  deterministic?: boolean;  // NEW: Flag to enable seed-based generation
+}
+
+export async function handleGenerateImage(request: Request): Promise<Response> {
+  const body: ImageRequest = await request.json();
+  
+  // If seed is provided, use deterministic generation
+  const imageBuffer = await generateImageFromPrompt(body.prompt, {
+    size: body.size,
+    seed: body.seed,
+    deterministic: body.deterministic ?? (body.seed !== undefined)
+  });
+  
+  return new Response(imageBuffer, {
+    status: 200,
+    headers: {
+      "Content-Type": "image/png",
+      "X-Generation-Seed": body.seed?.toString() || "random",
+      "Cache-Control": "public, max-age=31536000"  // Cache for 1 year
+    }
+  });
+}
+```
+
+### Cache Invalidation
+
+> **INVARIANT**: Cached assets are **NEVER** automatically regenerated. Cache invalidation only occurs via explicit user action.
+
+| Trigger | Action |
+|---------|--------|
+| User changes branding settings | New IntentHash → Generate new assets |
+| User requests regeneration | Delete old entry → Generate with same hash (but new timestamp) |
+| Project deletion | Delete all assets for project |
+
+### Benefits of Deterministic Generation
+
+1. **Consistency**: Same app intent always produces same visual identity
+2. **Performance**: No redundant API calls for unchanged branding
+3. **Reproducibility**: Rebuilds produce identical results
+4. **Cost Efficiency**: Reduced image generation API usage
+5. **Version Control**: Brand assets can be tracked by IntentHash
 
 ---
 
@@ -1547,5 +1698,5 @@ This caching mechanism ensures:
 
 | Date | Change |
 |------|--------|
-| 2026-02-23 | Added Section 11: Asset Determinism and Caching |
+| 2026-02-25 | **Added Section 11: Deterministic Image Generation** - IntentHash → Seed mechanism, generated_assets cache table, cache invalidation rules |
 | 2026-02-23 | Added Section 10: Fallback Strategy When Inference Fails |

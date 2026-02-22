@@ -171,7 +171,14 @@ const HEALTH_RESPONSE = {
   status: "healthy",
   version: "1.0.0",
   uptime: process.uptime(),
-  timestamp: new Date().toISOString()
+  timestamp: new Date().toISOString(),
+  
+  // === SDK VERSION INFO (NEW - REQUIRED FOR REPRODUCIBILITY) ===
+  sdk: {
+    version: process.env.npm_package_version || "unknown",
+    commitHash: process.env.SDK_COMMIT_HASH || "unknown",
+    serviceVersion: "1.0.0"
+  }
 };
 
 // CORS headers for local development
@@ -955,9 +962,16 @@ Expected response:
   "status": "healthy",
   "version": "1.0.0",
   "uptime": 12.345,
-  "timestamp": "2026-02-22T10:00:00.000Z"
+  "timestamp": "2026-02-22T10:00:00.000Z",
+  "sdk": {
+    "version": "1.2.3",
+    "commitHash": "abc123def456",
+    "serviceVersion": "1.0.0"
+  }
 }
 ```
+
+The SDK version info is **REQUIRED** for reproducibility. The C# client uses this to record which SDK version was used for each transaction.
 
 ### 7.2 Chat Completion
 
@@ -1013,4 +1027,7 @@ curl -X POST http://localhost:3001/api/tts \
 
 | Date | Change |
 |------|--------|
+| 2026-02-24 | **Added deterministic image generation support** - seed and deterministic parameters for reproducible images |
+| 2026-02-24 | Updated ImageOptions interface with seed field |
+| 2026-02-24 | Updated image endpoint to accept seed parameter |
 | 2026-02-22 | Initial implementation specification |

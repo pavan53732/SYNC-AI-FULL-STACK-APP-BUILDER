@@ -1027,23 +1027,25 @@ CREATE INDEX idx_generated_assets_requirement ON generated_assets(requirement_id
 
 ### 6.3 Update to State Machine
 
-> **CANONICAL SOURCE**: ORCHESTRATION_ENGINE.md defines the authoritative state numbers. This section must match exactly.
+> **CANONICAL SOURCE**: [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) defines the authoritative state numbers. This section must reference that document.
+>
+> **DO NOT duplicate state definitions here.** Always refer to ORCHESTRATION_ENGINE.md for the complete `BuilderState` enum.
+
+### State Transitions for Asset Generation
 
 ```csharp
-// Add to BuilderState enum (CANONICAL - matches ORCHESTRATION_ENGINE.md)
-public enum BuilderState
-{
-    // ... existing states (0-25) ...
-    
-    // === PLATFORM REQUIREMENTS & ASSET GENERATION (26-29) ===
-    REQUIREMENT_EVALUATION = 26, // Evaluate platform requirements (NO TEMPLATES)
-    BRANDING_INFERENCE = 27,     // Derive brand identity from intent
-    ASSET_GENERATING = 28,       // Generate icons, logos, splash screens via AI
-    ASSETS_READY = 29,           // All assets generated successfully
-    ASSET_GENERATION_FAILED = 30 // Asset generation failed (triggers retry)
-}
+// These transitions are defined in ORCHESTRATION_ENGINE.md Section 5 (State Reducer)
+// States 26-30 are reserved for Platform Requirements & Asset Generation:
+// - REQUIREMENT_EVALUATION = 26
+// - BRANDING_INFERENCE = 27
+// - ASSET_GENERATING = 28
+// - ASSETS_READY = 29
+// - ASSET_GENERATION_FAILED = 30
+//
+// States 31-32 are reserved for AI Service Failure:
+// - AI_SERVICE_UNAVAILABLE = 31
+// - AI_SERVICE_DEGRADED = 32
 
-// State transitions (CANONICAL - matches ORCHESTRATION_ENGINE.md)
 // For NEW APPS: Requirements evaluated BEFORE generation
 (BuilderState.BLUEPRINT_READY, BlueprintReadyEvent e) =>
     context with { State = BuilderState.REQUIREMENT_EVALUATION },
@@ -1070,7 +1072,16 @@ public enum BuilderState
 
 (BuilderState.BRANDING_INFERENCE, BrandingInferenceFailedEvent e) =>
     context with { State = BuilderState.RETRYING, EventLog = [..context.EventLog, @event] },
+
+(BuilderState.REQUIREMENT_EVALUATION, RequirementEvaluationFailedEvent e) =>
+    context with { State = BuilderState.RETRYING, EventLog = [..context.EventLog, @event] },
 ```
+
+> **See ORCHESTRATION_ENGINE.md for:**
+> - Complete `BuilderState` enum with all state numbers
+> - Error types including AI_SERVICE_UNAVAILABLE, AI_SERVICE_TIMEOUT
+> - State transition logic for AI service failures
+> - Retry governance for asset generation failures
 
 ### 6.4 Timing Clarification
 
