@@ -518,6 +518,11 @@ The AI can add ANY additional capability based on the user's idea:
 - Task lifecycle management
 - Error classification and retry decisions
 - Thread coordination
+- **AIConfigState** - Canonical ownership (see §3.Y)
+  - Persisted in BuilderContext (in-memory only)
+  - NOT persisted to disk
+  - Part of event log (immutable events)
+  - Transitions triggered by: User settings change, service health, validation results
 
 **Does NOT Own:**
 - Code generation (Layer 6.5)
