@@ -655,6 +655,58 @@ See [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) for
 
 ## 12. Deterministic Configuration Lifecycle (MANDATORY)
 
+### 12.1 Health Check Constants
+
+> **INVARIANT**: All health check thresholds MUST be defined as constants for consistent monitoring across the application.
+
+```csharp
+public static class AIServiceHealthConstants
+{
+    /// <summary>
+    /// Health check timeout values (in milliseconds).
+    /// </summary>
+    public static class Timeouts
+    {
+        public const int HealthCheckMs = 5000;              // 5 seconds - health endpoint timeout
+        public const int StartupWaitMs = 30000;            // 30 seconds - wait for service startup
+        public const int RecoveryWaitMs = 60000;            // 60 seconds - wait between recovery attempts
+        public const int GracefulShutdownMs = 5000;          // 5 seconds - graceful shutdown timeout
+    }
+
+    /// <summary>
+    /// Retry configuration for AI service operations.
+    /// </summary>
+    public static class Retry
+    {
+        public const int MaxRetries = 3;                    // Maximum retry attempts
+        public const int InitialDelayMs = 1000;             // 1 second - initial retry delay
+        public const int MaxDelayMs = 10000;                // 10 seconds - maximum retry delay
+        public const double BackoffMultiplier = 2.0;        // Exponential backoff multiplier
+    }
+
+    /// <summary>
+    /// Health status thresholds for degradation detection.
+    /// </summary>
+    public static class Thresholds
+    {
+        public const int DegradedHealthFailures = 3;        // consecutive failures to mark degraded
+        public const int UnavailableHealthFailures = 5;     // consecutive failures to mark unavailable
+        public const int RateLimitThreshold = 10;           // consecutive 429 responses before degradation
+        public const int TimeoutThreshold = 3;              // consecutive timeouts before degradation
+    }
+
+    /// <summary>
+    /// Protocol version for compatibility verification.
+    /// </summary>
+    public static class Protocol
+    {
+        public const string ExpectedVersion = "sync-ai-ai-bridge-v1";
+        public const int MajorVersion = 1;
+        public const int MinorVersion = 0;
+    }
+}
+```
+
 ### AIConfigState
 
 The system defines a global AI configuration state:

@@ -504,14 +504,85 @@ catch (Win32Exception ex)
 
 ### AI Service Failure Handling
 
-If AI_SERVICE_DEGRADED:
-• Retry asset generation with exponential backoff.
-• Do not block preview unless asset generation is mandatory.
+> **INVARIANT**: The Preview system MUST handle AI service failures gracefully to ensure users can still test their applications.
 
-When AI service is unavailable during preview:
-1. If asset generation is in progress → Retry with backoff
-2. If optional assets missing → Continue without blocking
-3. If mandatory assets missing → Block and show user-friendly message
+#### Failure Classification for Preview
+
+| Severity Level | Condition | Preview Behavior |
+|---------------|-----------|------------------|
+| **DEGRADED** | 3+ consecutive health failures or 10+ rate limits | Continue with backoff; show yellow status indicator |
+| **UNAVAILABLE** | Health check timeout or service not running | Block asset generation only; allow code preview |
+
+#### Asset Failure Handling Rules
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    ASSET GENERATION IN PREVIEW                       │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│ 1. If asset generation is in progress:                              │
+│    ├── Retry with exponential backoff (2s, 4s, 8s)                │
+│    ├── Max 3 retries                                               │
+│    └── If all fail: Use fallback asset → Continue                  │
+│                                                                      │
+│ 2. If optional assets missing (e.g., StoreLogo):                   │
+│    ├── Do NOT block preview                                         │
+│    ├── Show informational message                                   │
+│    └── Continue with available assets                               │
+│                                                                      │
+│ 3. If mandatory assets missing (e.g., Square44x44Logo):           │
+│    ├── Block preview until resolved                                 │
+│    ├── Show error with "Generate Assets" action button              │
+│    └── User can retry or use fallbacks                             │
+│                                                                      │
+│ 4. If AI service is completely unavailable:                        │
+│    ├── Disable asset generation UI                                  │
+│    ├── Allow code-only preview                                      │
+│    └── Show "AI Service unavailable" banner                        │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### Fallback Asset Strategy for Preview
+
+```csharp
+public class PreviewAssetService
+{
+    /// <summary>
+    /// Gets asset for preview, falling back to defaults if AI generation fails.
+    /// </summary>
+    public async Task<PreviewAsset> GetAssetForPreviewAsync(string assetId)
+    {
+        try
+        {
+            // Try AI-generated asset first
+            var asset = await _assetGenerator.GenerateAsync(assetId);
+            return new PreviewAsset { Data = asset, IsFallback = false };
+        }
+        catch (AssetGenerationException ex)
+        {
+            // Log error but don't block preview
+            _logger.LogWarning("Asset generation failed for {AssetId}: {Error}", assetId, ex.Message);
+            
+            // Return fallback
+            return new PreviewAsset 
+            { 
+                Data = AssetFallbacks.GetFallback(assetId),
+                IsFallback = true 
+            };
+        }
+    }
+}
+```
+
+#### User Notification Strategy
+
+| Scenario | Notification Type | Action Required |
+|----------|-----------------|-----------------|
+| Optional asset failed | Info bar (subtle) | None - continues silently |
+| Mandatory asset failed | Error bar with action | User clicks "Use Fallback" or "Retry" |
+| AI service degraded | Warning banner | None - continues with backoff |
+| AI service unavailable | Error banner | User can still preview code |
 
 The preview should remain functional even if AI service has issues, as long as the core build artifacts are available.
 

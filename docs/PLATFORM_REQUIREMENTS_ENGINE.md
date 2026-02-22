@@ -542,6 +542,99 @@ public static class WindowsAssetRequirements
 }
 ```
 
+### 3.3 Asset Generation Failure Policy
+
+> **INVARIANT**: The system MUST define explicit failure handling for asset generation to ensure build pipeline robustness.
+
+#### Failure Classification
+
+```csharp
+public enum AssetGenerationFailureType
+{
+    TRANSIENT_NETWORK_ERROR,    // Temporary network issue, retry likely to succeed
+    PERMANENT_PROVIDER_ERROR,   // Provider configuration issue, retry will fail
+    RATE_LIMIT_EXCEEDED,        // Too many requests, need backoff
+    INVALID_PROMPT,             // Prompt rejected by provider
+    TIMEOUT,                   // Request exceeded timeout threshold
+    UNKNOWN_ERROR               // Unclassified failure
+}
+```
+
+#### Retry Policy
+
+| Failure Type | Max Retries | Backoff Strategy | Fallback Action |
+|-------------|-------------|-----------------|-----------------|
+| `TRANSIENT_NETWORK_ERROR` | 3 | Exponential (2s, 4s, 8s) | Use placeholder asset |
+| `PERMANENT_PROVIDER_ERROR` | 1 | None | Use placeholder + log error |
+| `RATE_LIMIT_EXCEEDED` | 5 | Exponential (30s, 60s, 120s, 240s, 480s) | Use placeholder + notify user |
+| `INVALID_PROMPT` | 2 | Fixed (1s) | Use simplified prompt |
+| `TIMEOUT` | 2 | Fixed (2s) | Increase timeout, then use placeholder |
+| `UNKNOWN_ERROR` | 3 | Exponential (1s, 2s, 4s) | Use placeholder + log error |
+
+#### Fallback Assets
+
+> **INVARIANT**: The system MUST have fallback assets to ensure packaging can proceed even when AI image generation fails.
+
+```csharp
+public static class AssetFallbacks
+{
+    /// <summary>
+    /// Fallback assets used when AI generation fails.
+    /// These are simple colored rectangles with app name.
+    /// </summary>
+    public static readonly Dictionary<string, byte[]> FallbackAssets = new()
+    {
+        ["Square44x44Logo"] = GenerateSolidColorPng(44, 44, "#0078D4"),   // Windows Blue
+        ["Square150x150Logo"] = GenerateSolidColorPng(150, 150, "#0078D4"),
+        ["Wide310x150Logo"] = GenerateSolidColorPng(310, 150, "#0078D4"),
+        ["SplashScreen"] = GenerateSolidColorPng(620, 300, "#FFFFFF"),
+        ["StoreLogo"] = GenerateSolidColorPng(50, 50, "#0078D4")
+    };
+    
+    private static byte[] GenerateSolidColorPng(int width, int height, string hexColor)
+    {
+        // Generate a simple solid-color PNG as fallback
+        // In production, this would generate proper PNG bytes
+        // For now, returns placeholder data
+        return Array.Empty<byte>(); // Placeholder
+    }
+}
+```
+
+#### State Transitions
+
+```
+ASSET_GENERATING
+  │
+  ├──(success)──→ ASSETS_READY
+  │
+  └──(failure)──→ ASSET_GENERATION_FAILED
+                     │
+                     ├──(retry < max)──→ ASSET_GENERATING (with backoff)
+                     │
+                     └──(retry >= max)──→ Use fallback asset → ASSETS_READY
+```
+
+#### Error Events
+
+```csharp
+public record AssetsGenerationFailedEvent : BuilderEvent
+{
+    public string ProjectId { get; init; }
+    public List<AssetGenerationFailure> Failures { get; init; }
+    public int RetryCount { get; init; }
+}
+
+public record AssetGenerationFailure
+{
+    public string AssetId { get; init; }
+    public AssetGenerationFailureType Type { get; init; }
+    public string ErrorMessage { get; init; }
+    public bool UsedFallback { get; init; }
+}
+```
+```
+
 ---
 
 ## 4. Implicit Requirements Inference

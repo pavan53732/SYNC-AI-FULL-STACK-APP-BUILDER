@@ -395,6 +395,12 @@ public record UserCancelledEvent : BuilderEvent
     public string Reason { get; init; } = "User requested cancellation";
 }
 
+// Configuration change events
+public record ConfigurationChangedEvent : BuilderEvent
+{
+    public string Reason { get; init; } = "User updated AI provider settings";
+}
+
 // Capability scan events
 public record CapabilityScanCompletedEvent : BuilderEvent
 {
@@ -1053,6 +1059,8 @@ public interface IOrchestrator
 ## 12. ConstructionTransaction with Provider/Model Tracking
 
 > **INVARIANT**: Every ConstructionTransaction MUST record the AI provider and model used. This ensures reproducibility of AI-generated artifacts.
+
+> **INVARIANT**: Any change to AI configuration (via Settings > AI Settings) MUST emit a `ConfigurationChangedEvent`. The Orchestrator then transitions to `SYSTEM_RESET` state, clears any active tasks, and forces a complete revalidation before continuing construction. Hot model swapping during active construction is FORBIDDEN.
 
 ### ConstructionTransaction Record
 
