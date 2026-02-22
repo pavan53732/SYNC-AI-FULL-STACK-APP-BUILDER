@@ -60,10 +60,12 @@ public record AgentExecutionContext
 public enum AgentRole
 {
     ARCHITECT,
+    PLANNER,               // NEW: Read-only DAG creation
     SCHEMA,
     FRONTEND,
     BACKEND,
     INTEGRATION,
+    CAPABILITY_INFERENCE,  // NEW: Manifest manipulation
     FIXER
 }
 ```
@@ -76,15 +78,17 @@ Each agent role has a pre-defined "sandbox" of allowed file operations. Attempts
 
 | Agent | Allowed Write Patterns | Forbidden |
 | :--- | :--- | :--- |
-| **Architect** | `docs/**/*.md`, `README.md`, `*.sln` | `*.cs`, `*.xaml` |
+| **Architect** | `docs/**/*.md`, `README.md`, `*.sln` | `*.cs`, `*.xaml`, `Package.appxmanifest` |
+| **Planner** | **NONE (Read-Only)** | **ALL FILES** (Can only emit JSON Task Graphs) |
 | **Schema** | `Models/**/*.cs`, `Data/Migrations/**/*.cs` | `Controllers/*`, `Views/*` |
 | **Frontend** | `Views/**/*.xaml`, `ViewModels/**/*.cs` | `Services/*`, `Data/*` |
 | **Backend** | `Services/**/*.cs`, `Controllers/**/*.cs` | `Views/*`, `App.xaml` |
-| **Integration** | `Program.cs`, `App.xaml.cs` (DI wiring) | Core Models |
-| **Fixer** | *Target File Only* (Scoped to error source) | Anything else |
+| **Integration** | `Program.cs`, `App.xaml.cs` (DI wiring) | Core Models, Views |
+| **Capability Inference**| `Package.appxmanifest` ONLY | `*.cs`, `*.xaml` |
+| **Fixer** | *Target File Only* (Scoped to error source) | Anything outside error scope |
 
 **Enforcement:**
-The `PatchEngine` validates every `write` operation against the `AllowedFilePatterns` of the active context.
+The `PatchEngine` validates every `write` operation against the `AllowedFilePatterns` of the active context. If the `PLANNER` agent attempts a write operation, the Kernel instantly throws a `SANDBOX_ESCAPE_ATTEMPT` error.
 
 ---
 
@@ -108,13 +112,13 @@ public enum MemoryScope
 
 ### Read/Write Matrix
 
-| Scope | Architect | Schema | Frontend | Backend | Fixer |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Global** | READ | READ | READ | READ | READ |
-| **Task** | WRITE | READ | READ | READ | READ |
-| **Agent** | PRIVATE | PRIVATE | PRIVATE | PRIVATE | PRIVATE |
+| Scope | Architect | Planner | Schema | Frontend | Backend | Capability | Fixer |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Global** | READ | READ | READ | READ | READ | READ | READ |
+| **Task** | WRITE | WRITE | READ | READ | READ | READ | READ |
+| **Agent** | PRIVATE | PRIVATE | PRIVATE | PRIVATE | PRIVATE | PRIVATE | PRIVATE |
 
-*   **Task Memory**: Used to pass the "Spec" or "Plan" down. Only `Architect` writes the plan. Others read it.
+*   **Task Memory**: Used to pass the "Spec" or "Plan" down. Only the `Architect` and `Planner` write the plan. The execution agents (Frontend, Backend, etc.) only read it.
 *   **Agent Memory**: Used for internal reasoning ("Chain of Thought"). Discarded after execution.
 
 ### 4.1 Memory Lifecycle Enforcement

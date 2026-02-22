@@ -153,11 +153,13 @@ init-project → setup-database → define-models → setup-auth → db-migratio
 
 | Agent | Responsibility | AI Capability Used |
 | ----- | -------------- | ------------------ |
-| **Architect** | Define overall app structure | LLM (Chat) |
+| **Architect** | Define overall app structure and directories | LLM (Chat) |
+| **Planner** | Converts blueprint into an ordered DAG Task Graph (Read-Only) | LLM (Chat) |
 | **Schema** | Generate database models and migrations | LLM (Chat) |
 | **Frontend** | Generate UI components, pages, and **ALL VISUAL ASSETS** | LLM (Chat) + Image Gen (icons, logos, splash) |
 | **Backend** | Generate API routes and services | LLM (Chat) |
-| **Integration** | Wire dependencies together | LLM (Chat) |
+| **Integration** | Wire dependencies together (DI, Startup) | LLM (Chat) |
+| **Capability Inference** | Analyzes code to infer required Windows OS capabilities | LLM (Chat) |
 | **Fix** | Detect and repair build failures | LLM (Chat) + Web Search (docs) |
 
 > **All agents communicate with the AI Service Layer (Layer 6.6) via HTTP to localhost:3001**
