@@ -57,6 +57,9 @@ public record AgentExecutionContext
     public int MaxNodesModifiedPerTask { get; init; } = 500;
 }
 
+> **INVARIANT**: TokenBudget MUST be enforced at the AI Mini Service level.
+> Agents cannot exceed the global token ceiling.
+
 public enum AgentRole
 {
     ARCHITECT,

@@ -64,7 +64,7 @@ Prompt input                             Natural language parsing
 
 3. **Intelligent Scoping** — Impact analysis before regeneration. Only touch affected modules. Preserve untouched code.
 
-4. **Opinionated Defaults** — Constrain stack choices (WinUI 3 + .NET 8 + SQLite). Use opinionated templates. Enforce naming conventions.
+4. **Opinionated Defaults** — Constrain stack choices (WinUI 3 + .NET 8 + SQLite). Use opinionated architectural constraints. Enforce naming conventions.
 
 5. **Real Code Ownership** — Generate actual C#, XAML, SQL (not proprietary format). Export to GitHub, download as ZIP, continue in IDE.
 

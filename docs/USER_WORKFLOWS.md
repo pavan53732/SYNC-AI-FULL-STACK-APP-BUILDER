@@ -76,6 +76,17 @@ The system automatically manages the development environment:
 - **AI Service Auto-Start**: AI Mini Service starts automatically with the app (Layer 6.6)
 - **User-Configured AI**: Users set up their AI providers in Settings > AI Settings
 
+### AI Configuration Requirement
+
+On first launch:
+
+• If no encrypted AI config found:
+  → Redirect user to AI Settings page.
+  → Block construction until configuration validated.
+  → Test connection before allowing exit from setup.
+
+The system does not allow blueprint generation without validated AI configuration.
+
 ---
 
 ## 2. Primary User Cycle

@@ -502,6 +502,19 @@ catch (Win32Exception ex)
 }
 ```
 
+### AI Service Failure Handling
+
+If AI_SERVICE_DEGRADED:
+• Retry asset generation with exponential backoff.
+• Do not block preview unless asset generation is mandatory.
+
+When AI service is unavailable during preview:
+1. If asset generation is in progress → Retry with backoff
+2. If optional assets missing → Continue without blocking
+3. If mandatory assets missing → Block and show user-friendly message
+
+The preview should remain functional even if AI service has issues, as long as the core build artifacts are available.
+
 ---
 
 ## Performance Considerations

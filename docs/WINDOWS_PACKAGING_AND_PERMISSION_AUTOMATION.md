@@ -515,6 +515,16 @@ public enum ExecutionFallbackMode
 
 ---
 
+## AI Independence Principle
+
+> Packaging and manifest generation do NOT require live AI calls.
+> Capability inference relies on Roslyn semantic analysis.
+> Packaging must succeed even if AI service is unavailable.
+
+This removes hidden runtime dependency during release.
+
+---
+
 ## 9. References
 
 - [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 8-layer overview, deployment model

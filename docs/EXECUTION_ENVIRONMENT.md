@@ -872,6 +872,20 @@ public class MachineVariabilityHandler
 4. **Transactional Patch Engine**: Performs safe, reversible code mutations
 5. **SQLite Project Graph**: Persists project structure, symbols, dependencies
 6. **Process Sandbox**: Manages isolated execution with resource limits
+7. **AI Mini Service**: Managed child process for AI capabilities
+
+### 7.3 AI Mini Service Process
+
+The AI Mini Service is treated as a managed child process.
+
+• Started at application boot.
+• Bound to 127.0.0.1 only.
+• Restarted on config changes.
+• Terminated on SYSTEM_RESET.
+• Monitored for crash recovery.
+
+The AI Mini Service does NOT persist configuration to disk.
+All configuration is pushed at runtime via POST /api/config.
 
 ### 7.3 Architecture Diagram
 

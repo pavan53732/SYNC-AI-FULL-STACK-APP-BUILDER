@@ -224,6 +224,26 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 | **Automatic Startup** | Desktop app starts AI service if not running |
 | **Health Monitoring** | Desktop app monitors AI service health |
 
+### 3.X Global AI Configuration Invariant (NEW)
+
+> INVARIANT: AI configuration is GLOBAL to the installation.
+> It is NOT project-scoped.
+
+• Stored encrypted at:
+  %USERPROFILE%\.syncai\Config\ai.config.enc
+
+• Encrypted using Windows DPAPI (CurrentUser scope).
+• Loaded and validated at application startup.
+• Blueprint design MUST NOT begin unless AIConfigState == VALIDATED.
+
+The AI Mini Service does NOT persist configuration to disk.
+All configuration is pushed at runtime via POST /api/config.
+
+Changing AI configuration forces:
+1. SYSTEM_RESET
+2. Mini-service restart
+3. Revalidation before resuming execution
+
 ---
 
 ## 3.6 AI Capabilities Definition

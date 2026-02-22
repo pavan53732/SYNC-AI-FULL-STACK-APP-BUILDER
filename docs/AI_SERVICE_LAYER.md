@@ -468,6 +468,7 @@ public record HealthResponse
 {
     public bool Success { get; init; }
     public string Status { get; init; }
+    public string Version { get; init; }
     public ConfiguredSlots Configured { get; init; }
 }
 
@@ -616,7 +617,49 @@ See [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) for
 
 ---
 
-## 11. Process Lifecycle Management (AUTO-START)
+## 12. Deterministic Configuration Lifecycle (MANDATORY)
+
+### AIConfigState
+
+The system defines a global AI configuration state:
+
+NOT_CONFIGURED
+CONFIGURED
+VALIDATED
+INVALID
+SERVICE_UNAVAILABLE
+
+Blueprint design is BLOCKED unless state == VALIDATED.
+
+---
+
+### Boot Sequence (Required Order)
+
+1. Start mini-service.
+2. Load encrypted config.
+3. Decrypt in memory.
+4. POST /api/config.
+5. Perform test LLM call (minimal).
+6. Validate all model slots.
+7. Set AIConfigState = VALIDATED.
+
+If any slot fails:
+• State = INVALID
+• Construction is blocked.
+
+---
+
+### Config Change Handling
+
+When user updates AI settings:
+
+1. Cancel active tasks.
+2. Transition to SYSTEM_RESET.
+3. Restart mini-service.
+4. Revalidate configuration.
+5. Resume execution.
+
+Hot model swapping during active construction is FORBIDDEN.
 
 > **KEY PRINCIPLE:** The AI Mini Service must be **completely hidden** from the user. It starts automatically when the main app launches and runs in the background with no visible windows.
 

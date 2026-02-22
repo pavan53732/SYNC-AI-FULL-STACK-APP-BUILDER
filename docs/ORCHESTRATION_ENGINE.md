@@ -176,6 +176,14 @@ public enum BuilderState
 ```
 IDLE
   ↓ (blueprint request arrives)
+  
+// AI Config Guard - Block unless validated
+if (AIConfigState != AIConfigState.VALIDATED)
+{
+    TransitionTo(BuilderState.AI_SERVICE_UNAVAILABLE);
+    return;
+}
+
 BLUEPRINT_DESIGN
   ↓ (blueprint valid)
 BLUEPRINT_READY
@@ -1111,7 +1119,7 @@ public class ConstructionTransactionFactory
             // Provider/Model Tracking (CRITICAL)
             AIProviderBaseUrl = "configured-via-settings",
             AIModelName = "configured-via-settings",
-            AIServiceVersion = health.Status ?? "unknown",
+            AIServiceVersion = health.Version ?? "unknown",
             
             // Generate trace ID for log correlation
             TraceId = GenerateTraceId()

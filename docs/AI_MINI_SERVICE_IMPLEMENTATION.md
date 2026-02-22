@@ -205,12 +205,14 @@ const server = serve({
             success: true,
             status: "healthy",
             version: "1.0.0",
+            protocol: "sync-ai-ai-bridge-v1",
             uptime: process.uptime(),
             timestamp: new Date().toISOString(),
             configured: {
               primary: isPrimaryConfigured(),
               vision: isVisionConfigured(),
-              imageGen: isImageConfigured()
+              imageGen: isImageConfigured(),
+              validated: globalConfig.validated
             }
           });
 
@@ -870,6 +872,8 @@ export enum ErrorCode {
   METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED",
   NOT_FOUND = "NOT_FOUND",
   NOT_CONFIGURED = "NOT_CONFIGURED",
+  AI_CONFIG_NOT_VALIDATED = "AI_CONFIG_NOT_VALIDATED",
+  TOKEN_LIMIT_EXCEEDED = "TOKEN_LIMIT_EXCEEDED",
 
   // Server errors (5xx)
   INTERNAL_ERROR = "INTERNAL_ERROR",
@@ -892,6 +896,47 @@ export class AIServiceError extends Error {
   ) {
     super(message);
     this.name = "AIServiceError";
+  }
+}
+```
+
+### 5.2 Global Config State
+
+```typescript
+// Global configuration state
+interface GlobalConfig {
+  primaryClient: OpenAI | null;
+  primaryModel: string;
+  visionClient: OpenAI | null;
+  visionModel: string;
+  imageClient: OpenAI | null;
+  imageModel: string;
+  defaultTokenLimit: number;
+  validated: boolean;
+}
+
+let globalConfig: GlobalConfig = {
+  primaryClient: null,
+  primaryModel: "",
+  visionClient: null,
+  visionModel: "",
+  imageClient: null,
+  imageModel: "",
+  defaultTokenLimit: 8000,
+  validated: false
+};
+
+// ENFORCEMENT: Reject requests if config not validated
+function requireValidatedConfig() {
+  if (!globalConfig.validated) {
+    throw new Error("AI_CONFIG_NOT_VALIDATED");
+  }
+}
+
+// ENFORCEMENT: Token limit check
+function checkTokenLimit(requestedTokens: number) {
+  if (requestedTokens > globalConfig.defaultTokenLimit) {
+    throw new Error("TOKEN_LIMIT_EXCEEDED");
   }
 }
 ```

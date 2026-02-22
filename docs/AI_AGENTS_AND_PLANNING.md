@@ -356,6 +356,7 @@ private static readonly HashSet<string> AllowedOperations = new()
 
 | Date | Change |
 |------|--------|
+| 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - user-configured providers |
 | 2026-02-24 | **Clarified "NO TEMPLATES" statement** - No templates for VISUAL ASSETS, but Base Project Template IS used for project structure |
 | 2026-02-24 | Added explanation of Minimal Kernel Bootstrap (empty .csproj, App.xaml, MainWindow.xaml, Package.appxmanifest) |
 | 2026-02-23 | Added references to Platform Requirements Engine and Branding Inference Heuristics |
