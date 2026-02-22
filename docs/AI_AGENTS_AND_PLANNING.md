@@ -44,6 +44,13 @@ The AI Construction Engine transforms unstructured user prompts into adaptive ar
 │  │ Multi-Agent System    → Specialized code generation     ││
 │  │ Planning Engine       → Task graph construction         ││
 │  │ Retry Controller      → Error recovery strategy (1-9)   ││
+│  │ AI Service Client     → HTTP client to Layer 6.6        ││
+│  └─────────────────────────────────────────────────────────┘│
+├─────────────────────────────────────────────────────────────┤
+│  AI SERVICE LAYER (Layer 6.6) - NO API KEYS REQUIRED!      │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ z-ai-web-dev-sdk      → LLM / Image / TTS / ASR / VLM   ││
+│  │ localhost:3001        → Hidden background service        ││
 │  └─────────────────────────────────────────────────────────┘│
 ├─────────────────────────────────────────────────────────────┤
 │  RUNTIME SAFETY KERNEL (Enforcement Layer)                  │
@@ -55,6 +62,9 @@ The AI Construction Engine transforms unstructured user prompts into adaptive ar
 │  └─────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
 ```
+
+> **CRITICAL**: All AI capabilities are provided by **z-ai-web-dev-sdk** via the AI Service Layer (Layer 6.6).
+> **NO API KEYS REQUIRED** - The SDK handles authentication automatically!
 
 ---
 
@@ -141,14 +151,32 @@ init-project → setup-database → define-models → setup-auth → db-migratio
 
 ### The Agent Stack
 
-| Agent | Responsibility |
-| ----- | -------------- |
-| **Architect** | Define overall app structure |
-| **Schema** | Generate database models and migrations |
-| **Frontend** | Generate UI components and pages |
-| **Backend** | Generate API routes and services |
-| **Integration** | Wire dependencies together |
-| **Fix** | Detect and repair build failures |
+| Agent | Responsibility | AI Capability Used |
+| ----- | -------------- | ------------------ |
+| **Architect** | Define overall app structure | LLM (Chat) |
+| **Schema** | Generate database models and migrations | LLM (Chat) |
+| **Frontend** | Generate UI components, pages, and **ALL VISUAL ASSETS** | LLM (Chat) + Image Gen (icons, logos, splash) |
+| **Backend** | Generate API routes and services | LLM (Chat) |
+| **Integration** | Wire dependencies together | LLM (Chat) |
+| **Fix** | Detect and repair build failures | LLM (Chat) + Web Search (docs) |
+
+> **All agents communicate with the AI Service Layer (Layer 6.6) via HTTP to localhost:3001**
+> 
+> **CRITICAL: The Frontend Agent uses Branding Inference Heuristics to derive visual identity.**
+> 
+> **NO TEMPLATES FOR VISUAL ASSETS - All icons, logos, and splash screens are generated from first principles using:**
+> - [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) — Zero-template approach for visual assets
+> - [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) — Intelligent brand derivation from user intent
+>
+> **NOTE: Base Project Template (Minimal Kernel Bootstrap) IS USED for project structure:**
+> - Valid `.csproj` configuration (targets .NET 8, WinUI 3)
+> - Empty `App.xaml` and `App.xaml.cs`
+> - Empty `MainWindow.xaml`
+> - Skeleton `Package.appxmanifest`
+>
+> This template provides ONLY the empty project scaffolding. AI generates ALL functionality based on user's custom idea.
+>
+> See: [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) for complete API documentation
 
 ### Agent Output Contracts
 
@@ -326,6 +354,14 @@ private static readonly HashSet<string> AllowedOperations = new()
 
 | Date | Change |
 |------|--------|
+| 2026-02-24 | **Clarified "NO TEMPLATES" statement** - No templates for VISUAL ASSETS, but Base Project Template IS used for project structure |
+| 2026-02-24 | Added explanation of Minimal Kernel Bootstrap (empty .csproj, App.xaml, MainWindow.xaml, Package.appxmanifest) |
+| 2026-02-23 | Added references to Platform Requirements Engine and Branding Inference Heuristics |
+| 2026-02-23 | Updated Frontend Agent to include ALL VISUAL ASSETS generation |
+| 2026-02-23 | Added NO TEMPLATES note - all assets generated from first principles |
+| 2026-02-22 | Added AI Service Layer (Layer 6.6) integration - NO API KEYS REQUIRED |
+| 2026-02-22 | Added AI Service Client to agent architecture diagram |
+| 2026-02-22 | Added AI capability mapping to agent stack table |
 | 2026-02-21 | Removed internal retry loops from agents (Fixes Contradiction 4) |
 | 2026-02-21 | Added sequential execution clarification for DAG (Fixes Contradiction 6) |
 | 2026-02-21 | Added Retry Ownership invariant section |
@@ -334,6 +370,10 @@ private static readonly HashSet<string> AllowedOperations = new()
 
 ## References
 
-- [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 7-layer overview, global invariants
+- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — **AI capabilities via z-ai-web-dev-sdk (NO API KEYS!)**
+- [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) — Complete TypeScript implementation
+- [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) — **NEW: Zero-template approach - Platform requirements & asset generation**
+- [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) — **NEW: Intelligent brand derivation from user intent**
+- [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 8-layer overview, global invariants
 - [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) — State machine, retry controller
 - [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) — Roslyn indexing, symbol graph

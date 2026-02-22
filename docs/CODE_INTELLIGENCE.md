@@ -330,6 +330,34 @@ CREATE TABLE file_embeddings (
 CREATE INDEX idx_file_embeddings_file ON file_embeddings(file_id);
 ```
 
+### Generated Assets Table (Cross-Reference)
+
+> **NOTE**: The `generated_assets` table for tracking AI-generated visual assets (icons, logos, splash screens)
+> is defined in [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) Section 6.2.
+>
+> This table is managed by the Platform Requirements Engine, not the Code Intelligence layer.
+
+**For reference, the schema is:**
+
+```sql
+-- See PLATFORM_REQUIREMENTS_ENGINE.md for full implementation
+CREATE TABLE generated_assets (
+    id INTEGER PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    requirement_id TEXT NOT NULL,
+    asset_category TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    format TEXT NOT NULL DEFAULT 'png',
+    generation_source TEXT NOT NULL,  -- 'AI_GENERATED', 'USER_PROVIDED'
+    generation_prompt TEXT,
+    brand_context TEXT,               -- JSON of branding used
+    created_utc TEXT NOT NULL,
+    hash TEXT NOT NULL
+);
+```
+
 ### Snapshot Storage Optimization
 
 Snapshots must use Logical Graph Deltas + GZip File Snapshots to prevent disk explosion on large projects.
@@ -711,7 +739,19 @@ public interface IPatchEngine
 
 ## References
 
-- [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 7-layer overview, deployment model
+- [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 8-layer overview, deployment model
 - [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) — State machine, build system, retry logic
 - [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — AI Construction Engine vs Runtime Safety Kernel
+- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — **AI capabilities via z-ai-web-dev-sdk (NO API KEYS!)**
+- [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) — Complete TypeScript implementation
 - [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) — Sandbox, MSBuild, filesystem isolation
+- [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) — **NEW: generated_assets table for AI-generated assets**
+
+---
+
+## Change Log
+
+| Date | Change |
+|------|--------|
+| 2026-02-23 | Added Generated Assets Table cross-reference section |
+| 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md to References |

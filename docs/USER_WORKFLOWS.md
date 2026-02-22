@@ -4,7 +4,9 @@
 >
 > **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
 >
-> _Users interact with the AI Construction Engine. The Runtime Safety Kernel handles all enforcement silently._
+> _Users interact with the AI Construction Engine. The Runtime Safety Kernel handles all enforcement silently.
+
+---
 
 ## Table of Contents
 
@@ -55,6 +57,9 @@ It is not just a UI prototyping tool; it is a full-cycle software construction e
 | **Installer Generation**          | Every successful build produces a signed MSIX bundle.             | Windows App SDK Build Tools + MSIX                  |
 | **Permission Automation**         | APIs like Location/Camera are auto-detected and declared.         | Roslyn AST Scanning → Capability Injection          |
 | **Real Code Ownership**           | You own the C# and XAML. It's not a closed platform.              | Standard .csproj format, no proprietary lock-in     |
+| **Voice Input (ASR)**             | Speak prompts instead of typing.                                  | z-ai-web-dev-sdk ASR - NO API KEYS!                 |
+| **Voice Feedback (TTS)**          | Audio notifications for build completion.                         | z-ai-web-dev-sdk TTS - NO API KEYS!                 |
+| **Image Generation**              | Generate app icons and visual assets.                             | z-ai-web-dev-sdk Image Gen - NO API KEYS!           |
 
 ### The "No-Code" Illusion
 
@@ -70,6 +75,8 @@ The system automatically manages the development environment:
 - **NuGet Cache Corruption Detection**: Detects and repairs corrupted NuGet caches
 - **Self-Repair Strategy**: Automatic recovery from build environment issues
 - **Low-Resource Mitigation**: RAM/Disk constraints detected and handled gracefully
+- **AI Service Auto-Start**: AI Mini Service starts automatically with the app (Layer 6.6)
+- **NO API KEYS**: z-ai-web-dev-sdk handles all AI authentication automatically
 
 ---
 
@@ -94,9 +101,28 @@ The system automatically manages the development environment:
 2.  **Scaffolding**: "Setting up your workspace..." (File creation)
 3.  **Architecting**: "Designing database and UI..." (Agent planning)
 4.  **Coding**: "Writing C# and XAML..." (Code generation)
-5.  **Verifying**: "Checking for errors..." (Build & Auto-fix)
-6.  **Packaging**: "Signing and bundling..." (Manifest generation)
-7.  **Ready**: App is live and interactive.
+5.  **Generating Assets**: "Creating app icons and branding..." (Asset generation via AI)
+6.  **Verifying**: "Checking for errors..." (Build & Auto-fix)
+7.  **Packaging**: "Signing and bundling..." (Manifest generation)
+8.  **Ready**: App is live and interactive.
+
+### Asset Generation Phase (NEW)
+
+> **Related**: [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) — Zero-template approach
+>
+> **Related**: [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) — Intelligent brand derivation
+
+The system automatically generates visual assets without templates:
+
+| Asset Type | Generated From | User Message |
+|------------|----------------|--------------|
+| **App Icons** | Domain + App Name | "Generating app icons..." |
+| **Tile Logos** | Brand inference | "Creating tile logos..." |
+| **Splash Screen** | Color psychology | "Preparing splash screen..." |
+| **Store Logo** | Style derivation | "Creating store assets..." |
+
+**User sees**: Simple progress indicator with current asset being generated.
+**User NEVER sees**: Image generation prompts, AI model details, fallback retries.
 
 ### Observable System Behaviors
 
@@ -753,3 +779,11 @@ The system monitors for environment conditions that require user intervention. A
 > - This distinction ensures deterministic code safety while maintaining resilience for environmental issues.
 
 ---
+
+## Change Log
+
+| Date | Change |
+|------|--------|
+| 2026-02-23 | Added "Generating Assets" workflow state (step 5) |
+| 2026-02-23 | Added Asset Generation Phase section with PLATFORM_REQUIREMENTS_ENGINE.md and BRANDING_INFERENCE_HEURISTICS.md references |
+| 2026-02-23 | Added asset generation user messaging table |

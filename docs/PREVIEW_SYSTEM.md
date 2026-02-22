@@ -29,15 +29,24 @@ The system uses different capability inference timing for Preview vs Packaging:
 
 1. **Pre-Build Capability Scan (Fast Check)**: Quick Roslyn scan for obvious capability-requiring namespaces. If found and missing from manifest → Inject immediately.
 2. **Build (Debug)**: Generate binaries.
-3. **Roslyn Reindex**: Update semantic model.
-4. **Build Failure Check**: If build failed with capability-related error:
+3. **Asset Generation Check** (NEW):
+   - Check if all required assets exist (icons, logos, splash screen)
+   - If missing → Run **Asset Generation Pipeline** (see [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md))
+   - Generate: app icons, tile logos, splash screen, store logo
+   - **User sees**: "Generating visual assets..."
+4. **Roslyn Reindex**: Update semantic model.
+5. **Build Failure Check**: If build failed with capability-related error:
    - Run full **Capability Inference** scan
    - **Inject** missing capabilities to manifest
    - **Rebuild** (continuous retry until success or user cancellation)
-5. **Manifest Evaluation (Post-Build)**:
+6. **Manifest Evaluation (Post-Build)**:
    - If manifest changed during build → **Inject** → **Rebuild** (Resource Injection).
    - If no change → Proceed.
-6. **Launch**: Execute in isolated environment.
+7. **Launch**: Execute in isolated environment.
+
+> **Asset Generation Reference**: See [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) for the zero-template asset generation pipeline.
+>
+> **Branding Reference**: See [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) for how brand identity is derived from user intent.
 
 > **Key Difference from Packaging**: Preview allows "build → detect → fix → rebuild" cycle because iteration speed matters more than perfection. Packaging MUST run inference before build because installers cannot be partially fixed.
 
@@ -639,3 +648,16 @@ public class PreviewServiceTests
 - [USER_WORKFLOWS.md](USER_WORKFLOWS.md) - Features and user interaction patterns
 - [UI_IMPLEMENTATION.md](UI_IMPLEMENTATION.md) - UX principles
 - [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) - Packaging subsystem details
+- [AI_SERVICE_LAYER.md](AI_SERVICE_LAYER.md) - **AI capabilities via z-ai-web-dev-sdk (NO API KEYS!)**
+- [AI_MINI_SERVICE_IMPLEMENTATION.md](AI_MINI_SERVICE_IMPLEMENTATION.md) - Complete TypeScript implementation
+- [PLATFORM_REQUIREMENTS_ENGINE.md](PLATFORM_REQUIREMENTS_ENGINE.md) - **NEW: Zero-template asset generation pipeline**
+- [BRANDING_INFERENCE_HEURISTICS.md](BRANDING_INFERENCE_HEURISTICS.md) - **NEW: Intelligent brand derivation**
+
+---
+
+## Change Log
+
+| Date | Change |
+|------|--------|
+| 2026-02-23 | Added Asset Generation Check step (step 3) to Preview Pipeline |
+| 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md and BRANDING_INFERENCE_HEURISTICS.md to References |

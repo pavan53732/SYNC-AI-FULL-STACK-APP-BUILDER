@@ -156,7 +156,14 @@ public enum BuilderState
     REBUILD_REQUIRED = 22,
     SIGNING = 23,
     SIGNATURE_VALIDATION = 24,
-    ENVIRONMENT_RECOVERY = 25
+    ENVIRONMENT_RECOVERY = 25,
+    
+    // === PLATFORM REQUIREMENTS & ASSET GENERATION (NEW) ===
+    REQUIREMENT_EVALUATION = 26, // Evaluate platform requirements (NO TEMPLATES)
+    BRANDING_INFERENCE = 27,     // Derive brand identity from intent
+    ASSET_GENERATING = 28,       // Generate icons, logos, splash screens via AI
+    ASSETS_READY = 29,           // All assets generated successfully
+    ASSET_GENERATION_FAILED = 30 // Asset generation failed (triggers retry)
 }
 ```
 
@@ -384,6 +391,40 @@ public record CapabilityScanCompletedEvent : BuilderEvent
     public List<string> AddedCapabilities { get; init; }
     public bool ManifestUpdated { get; init; }
 }
+
+// Platform Requirements events (NEW)
+public record RequirementsEvaluatedEvent : BuilderEvent
+{
+    public string ProjectId { get; init; }
+    public int TotalRequirements { get; init; }
+    public int MandatoryCount { get; init; }
+    public int RecommendedCount { get; init; }
+    public int AssetCount { get; init; }
+}
+
+public record BrandingInferredEvent : BuilderEvent
+{
+    public string ProjectId { get; init; }
+    public string Domain { get; init; }
+    public string PrimaryColor { get; init; }
+    public string StyleMood { get; init; }
+}
+
+public record AssetsGeneratedEvent : BuilderEvent
+{
+    public string ProjectId { get; init; }
+    public List<GeneratedAssetInfo> GeneratedAssets { get; init; }
+    public bool AllSuccess { get; init; }
+}
+
+public record GeneratedAssetInfo
+{
+    public string AssetId { get; init; }
+    public string Category { get; init; }
+    public string FilePath { get; init; }
+    public int Width { get; init; }
+    public int Height { get; init; }
+}
 ```
 
 ---
@@ -468,6 +509,22 @@ public class BuilderReducer
             // === COMPLETION ===
             (BuilderState.EXECUTION_PLAN_BUILT, BuildCompletedEvent e) =>
                 context with { State = BuilderState.BUILD_SUCCEEDED, EventLog = [..context.EventLog, @event] },
+
+            // === PLATFORM REQUIREMENTS & ASSET GENERATION (NEW) ===
+            (BuilderState.BUILD_SUCCEEDED, BuildCompletedEvent e) =>
+                context with { State = BuilderState.REQUIREMENT_EVALUATION, EventLog = [..context.EventLog, @event] },
+
+            (BuilderState.REQUIREMENT_EVALUATION, RequirementsEvaluatedEvent e) =>
+                context with { State = BuilderState.BRANDING_INFERENCE, EventLog = [..context.EventLog, @event] },
+
+            (BuilderState.BRANDING_INFERENCE, BrandingInferredEvent e) =>
+                context with { State = BuilderState.ASSET_GENERATING, EventLog = [..context.EventLog, @event] },
+
+            (BuilderState.ASSET_GENERATING, AssetsGeneratedEvent e) =>
+                context with { State = BuilderState.ASSETS_READY, EventLog = [..context.EventLog, @event] },
+
+            (BuilderState.ASSETS_READY, TaskStartedEvent e) =>
+                context with { State = BuilderState.PACKAGING, EventLog = [..context.EventLog, @event] },
 
             // === INVALID TRANSITION ===
             _ => throw new InvalidOperationException($"Invalid transition: {context.State} + {@event.GetType().Name}")
@@ -567,7 +624,12 @@ public enum ErrorType
     PACKAGING_ERROR,
     RUNTIME_PREVIEW_ERROR,
     SANDBOX_ESCAPE_ATTEMPT,
-    PROCESS_CRASH
+    PROCESS_CRASH,
+    
+    // === ASSET GENERATION ERRORS (NEW) ===
+    ASSET_GENERATION_FAILED,       // Image generation failed
+    BRANDING_INFERENCE_FAILED,     // Could not derive brand identity
+    REQUIREMENT_EVALUATION_FAILED  // Could not evaluate platform requirements
 }
 ```
 
@@ -797,11 +859,15 @@ public interface IOrchestrator
 
 ## References
 
-- [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 7-layer overview, deployment model
+- [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 8-layer overview, deployment model
 - [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) — Roslyn indexing, symbol graph, patch engine
 - [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — AI Construction Engine vs Runtime Safety Kernel
 - [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) — Sandbox, MSBuild, filesystem isolation
 - [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) — Multi-agent coordination
+- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — **AI capabilities via z-ai-web-dev-sdk (NO API KEYS!)**
+- [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) — Complete TypeScript implementation
+- [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) — **NEW: Zero-template approach - Platform requirements**
+- [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) — **NEW: Intelligent brand derivation**
 
 ---
 
@@ -809,6 +875,10 @@ public interface IOrchestrator
 
 | Date | Change |
 |------|--------|
+| 2026-02-23 | Added ASSET_GENERATION_FAILED, BRANDING_INFERENCE_FAILED, REQUIREMENT_EVALUATION_FAILED error types |
+| 2026-02-23 | Added Platform Requirements & Asset Generation states (26-29) |
+| 2026-02-23 | Added RequirementsEvaluatedEvent, BrandingInferredEvent, AssetsGeneratedEvent |
+| 2026-02-23 | Added state transitions for REQUIREMENT_EVALUATION → BRANDING_INFERENCE → ASSET_GENERATING → ASSETS_READY |
 | 2026-02-21 | Converted to Infinite Silent Retry model - removed FAILED state, added SYSTEM_RESET |
 | 2026-02-21 | Added CANCELLED state as only terminal state (user-initiated only) |
 | 2026-02-21 | Added SystemResetEvent and AttemptedApproaches tracking |

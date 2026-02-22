@@ -380,8 +380,9 @@ var acrylicBrush = new AcrylicBrush
                          FontWeight="SemiBold"/>
                 </TextBlock>
                 <TextBlock>
-                    <Run Text="SDK:"/>
-                    <Run Text="{x:Bind ViewModel.SdkStatus, Mode=OneWay}"/>
+                    <Run Text="AI Service:"/>
+                    <Run Text="{x:Bind ViewModel.AIServiceStatus, Mode=OneWay}"
+                         Foreground="{StaticResource StatusSuccessBrush}"/>
                 </TextBlock>
                 <TextBlock>
                     <Run Text="Last Build:"/>
@@ -577,6 +578,65 @@ var acrylicBrush = new AcrylicBrush
                 <ProgressBar IsIndeterminate="True"/>
             </InfoBar.Content>
         </InfoBar>
+
+        <!-- Asset Generation Progress (NEW) -->
+        <StackPanel Grid.Row="3" Spacing="8" Margin="0,16,0,0"
+                    Visibility="{x:Bind ViewModel.IsGeneratingAssets, Mode=OneWay}">
+            <TextBlock Text="Generating Visual Assets"
+                       Style="{StaticResource SubtitleTextBlockStyle}"/>
+
+            <!-- Requirement Evaluation -->
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ProgressRing Grid.Column="0" Width="20" Height="20"
+                              IsActive="{x:Bind ViewModel.IsEvaluatingRequirements}"/>
+                <TextBlock Grid.Column="1" Text="Evaluating platform requirements..."
+                           VerticalAlignment="Center"/>
+                <FontIcon Grid.Column="2" Glyph="&#xE73E;" Foreground="Green"
+                          Visibility="{x:Bind ViewModel.RequirementsEvaluated}"/>
+            </Grid>
+
+            <!-- Branding Inference -->
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ProgressRing Grid.Column="0" Width="20" Height="20"
+                              IsActive="{x:Bind ViewModel.IsInferringBranding}"/>
+                <TextBlock Grid.Column="1" Text="Deriving brand identity..."
+                           VerticalAlignment="Center"/>
+                <FontIcon Grid.Column="2" Glyph="&#xE73E;" Foreground="Green"
+                          Visibility="{x:Bind ViewModel.BrandingInferred}"/>
+            </Grid>
+
+            <!-- Asset Generation List -->
+            <ListView ItemsSource="{x:Bind ViewModel.AssetsToGenerate, Mode=OneWay}"
+                      SelectionMode="None">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="models:AssetGenerationItem">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ProgressRing Grid.Column="0" Width="16" Height="16"
+                                          IsActive="{x:Bind IsGenerating}"/>
+                            <TextBlock Grid.Column="1" Text="{x:Bind AssetName}"
+                                       VerticalAlignment="Center"/>
+                            <FontIcon Grid.Column="2" Glyph="&#xE73E;" Foreground="Green"
+                                      Visibility="{x:Bind IsComplete}"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </StackPanel>
     </Grid>
 </Page>
 ```
@@ -732,11 +792,30 @@ var acrylicBrush = new AcrylicBrush
             <!-- AI Configuration -->
             <Expander Header="AI Configuration" IsExpanded="True">
                 <StackPanel Spacing="12" Padding="12">
-                    <PasswordBox Header="API Key"
-                                 Password="{x:Bind ViewModel.ApiKey, Mode=TwoWay}"
-                                 PlaceholderText="Enter your AI API key"/>
+                    <!-- AI Service Status -->
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
 
-                    <ComboBox Header="Model"
+                        <TextBlock Grid.Column="0"
+                                   Text="AI Service Status"/>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <Ellipse x:Name="AIServiceStatusDot"
+                                     Width="12" Height="12"
+                                     Fill="{StaticResource StatusSuccessBrush}"/>
+                            <TextBlock Text="{x:Bind ViewModel.AIServiceStatus, Mode=OneWay}"
+                                       Foreground="{StaticResource StatusSuccessBrush}"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <InfoBar Severity="Success"
+                             IsOpen="True"
+                             Message="AI Service is running. NO API KEYS REQUIRED - z-ai-web-dev-sdk handles authentication automatically."/>
+
+                    <ComboBox Header="Preferred Model"
                               ItemsSource="{x:Bind ViewModel.AvailableModels}"
                               SelectedItem="{x:Bind ViewModel.SelectedModel, Mode=TwoWay}"
                               Width="300"/>
@@ -1886,3 +1965,15 @@ public class BuildMonitorViewModel : ObservableObject
 - [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) — State machine, build system, retry logic
 - [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) — Roslyn integration, patch engine
 - [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) — Preview rendering
+- [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) — **NEW: Zero-template asset generation**
+- [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) — **NEW: Intelligent brand derivation**
+
+---
+
+## Change Log
+
+| Date | Change |
+|------|--------|
+| 2026-02-23 | Added Asset Generation Progress UI component to EditorPage |
+| 2026-02-23 | Added requirement evaluation and branding inference progress indicators |
+| 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md and BRANDING_INFERENCE_HEURISTICS.md to References |

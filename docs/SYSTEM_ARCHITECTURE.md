@@ -1,6 +1,6 @@
 # SYSTEM ARCHITECTURE
 
-> **The Authoritative Invariant Map: 7-Layer Architecture, Global Constraints, and Layer Boundaries**
+> **The Authoritative Invariant Map: 8-Layer Architecture, Global Constraints, and Layer Boundaries**
 >
 > _This document defines WHAT layers exist, HOW they interact, and WHAT invariants govern the system. Detailed implementations are delegated to specialized specifications._
 
@@ -12,6 +12,10 @@
 
 | Document | Purpose |
 |----------|---------|
+| [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) | **NEW: AI capabilities via z-ai-web-dev-sdk (NO API KEYS!)** |
+| [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) | **NEW: Complete AI mini service implementation** |
+| [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) | **NEW: Zero-template approach - Platform requirements & asset generation** |
+| [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) | **NEW: Intelligent brand derivation from user intent** |
 | [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) | Sandbox, MSBuild, Job Objects, ACL Enforcement |
 | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) | State Machine, Task Lifecycle, Build System, Retry Logic |
 | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) | Intent Parsing, DAG Generation, Agent Contracts |
@@ -25,7 +29,7 @@
 ## Table of Contents
 
 1. [System Overview](#1-system-overview)
-2. [The 7-Layer Architecture](#2-the-7-layer-architecture)
+2. [The 8-Layer Architecture](#2-the-8-layer-architecture)
 3. [Global Invariants](#3-global-invariants)
 4. [Layer Boundaries & Responsibilities](#4-layer-boundaries--responsibilities)
 5. [Control & Data Flow](#5-control--data-flow)
@@ -55,7 +59,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 | **Framework** | WinUI 3 (.NET 8) |
 | **Target OS** | Windows 10 Build 22621+ (Windows 11 standard) |
 | **Deployment** | MSIX packaging |
-| **AI Reasoning** | Cloud API (required) |
+| **AI Reasoning** | **Local AI Service (z-ai-web-dev-sdk) — NO API KEYS REQUIRED!** |
 | **Build & Execution** | Local-only (no cloud dependency) |
 
 ### Core Capabilities
@@ -66,12 +70,13 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 4. **Build System**: Hidden MSBuild, NuGet Restore, XAML Compilation
 5. **Runtime**: Live Preview, Hot Reload, Full Compiled Launch
 6. **Packaging & Permissions**: Automatic AppxManifest, Capability Inference, MSIX Bundle, Certificate Signing
+7. **AI Capabilities**: LLM, Image Generation, TTS, ASR, VLM, Web Search — **ALL FREE, NO API KEYS!**
 
 ---
 
-## 2. The 7-Layer Architecture
+## 2. The 8-Layer Architecture
 
-> **AI-Primary Architecture:** The AI Construction Engine sits at the top, directing all construction. The Runtime Safety Kernel enforces deterministic guarantees.
+> **AI-Primary Architecture:** The AI Construction Engine sits at the top, directing all construction. The Runtime Safety Kernel enforces deterministic guarantees. The AI Service Layer provides all AI capabilities without API keys.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -84,6 +89,15 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 │  │ Multi-Agent System    → Specialized code generation     ││
 │  │ Planning Engine       → Task graph construction         ││
 │  │ Retry Controller      → Error recovery strategy (1-9)   ││
+│  │ AI Service Client     → HTTP client to Layer 6.6        ││
+│  └─────────────────────────────────────────────────────────┘│
+├─────────────────────────────────────────────────────────────┤
+│  Layer 6.6: AI Service Layer (NEW)                          │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ Local HTTP Service    → localhost:3001                  ││
+│  │ z-ai-web-dev-sdk      → NO API KEYS REQUIRED!           ││
+│  │ LLM / Image / TTS     → All AI capabilities             ││
+│  │ ASR / VLM / Search    → Completely free to use          ││
 │  └─────────────────────────────────────────────────────────┘│
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 6: Runtime Safety Kernel (ENFORCEMENT LAYER)         │
@@ -111,7 +125,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### AI-Primary Control Hierarchy
+### AI-Primary Control Hierarchy (Updated)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -120,20 +134,27 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 │                                                              │
 │   AI leads construction: proposes, designs, generates        │
 │   Owns retry strategy for cycles 1-9                         │
+│   Communicates with AI Service Layer (Layer 6.6)             │
 └─────────────────────────────────────────────────────────────┘
                               │
-                              │ Proposes mutations
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                RUNTIME SAFETY KERNEL                         │
-│                  (Enforcement Layer)                         │
-│                                                              │
-│   Kernel enforces safety: validates, snapshots, resets       │
-│   Owns system resets at cycle 10+                            │
-└─────────────────────────────────────────────────────────────┘
+            ┌─────────────────┴─────────────────┐
+            │                                   │
+            │ HTTP (localhost:3001)             │ Proposes mutations
+            ▼                                   ▼
+┌───────────────────────────┐   ┌─────────────────────────────┐
+│    AI SERVICE LAYER       │   │    RUNTIME SAFETY KERNEL    │
+│    (Layer 6.6)            │   │    (Enforcement Layer)       │
+│                           │   │                              │
+│ z-ai-web-dev-sdk          │   │ Kernel enforces safety:      │
+│ NO API KEYS!              │   │ validates, snapshots, resets │
+│                           │   │ Owns system resets at 10+    │
+│ LLM, Image, TTS,          │   │                              │
+│ ASR, VLM, Search          │   │                              │
+└───────────────────────────┘   └─────────────────────────────┘
 ```
 
 **See:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for complete details.
+**See:** [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) for AI capabilities.
 
 ### Layer Ownership Map
 
@@ -147,6 +168,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 | **Layer 5** | (merged into Layer 6.5) | - |
 | **Layer 6** | Runtime Safety Kernel - enforcement, abort authority | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) |
 | **Layer 6.5** | AI Construction Engine - intelligence, generation | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) |
+| **Layer 6.6** | **AI Service Layer - z-ai-web-dev-sdk, NO API KEYS** | [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) |
 | **Layer 7** | WinUI 3 shell, user interaction | [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) |
 
 ---
@@ -182,6 +204,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 | **Path Sandbox** | All paths must be relative to project root. No `..` traversal. |
 | **Banned Directories** | `.git`, `.vs`, `bin`, `obj` are off-limits to AI patches. |
 | **Operation Whitelist** | Only whitelisted patch operations are permitted. |
+| **NO API KEYS** | AI capabilities via z-ai-web-dev-sdk require NO API keys. |
 
 ### 3.4 Packaging Invariants
 
@@ -191,6 +214,107 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 | **Version Authority** | `BuilderContext.ProjectMetadata["AppVersion"]` is the single source of truth. |
 | **Signing Mandatory** | All MSIX packages MUST be signed. |
 | **Atomic Packaging** | Packaging is all-or-nothing. Any failure triggers rollback. |
+
+### 3.5 AI Service Invariants
+
+| Invariant | Description |
+|-----------|-------------|
+| **No API Keys Required** | z-ai-web-dev-sdk handles authentication automatically |
+| **Local Service Only** | AI mini service runs on localhost:3001 only |
+| **Automatic Startup** | Desktop app starts AI service if not running |
+| **Health Monitoring** | Desktop app monitors AI service health |
+| **No Cost Control Needed** | z-ai-web-dev-sdk is completely FREE - no API costs |
+
+---
+
+## 3.6 AI Capabilities Definition
+
+### Goal
+
+> **Sync AI builds ANY Windows native desktop application from natural language.**
+
+### Base Technologies (Fixed Foundation)
+
+These are the **non-negotiable** technologies that ALL generated apps use:
+
+| Technology | Purpose | Why Fixed |
+|------------|---------|-----------|
+| **WinUI 3** | UI Framework | Modern Windows native UI |
+| **C# 12** | Language | .NET 8 ecosystem |
+| **XAML** | UI Markup | WinUI 3 standard |
+| **.NET 8** | Runtime | Long-term support |
+| **SQLite** | Local Database | Built into Windows |
+| **MVVM** | Architecture | Proven pattern for XAML apps |
+| **MSIX** | Packaging | Windows standard installer |
+
+**This is what the "Hidden System Prompt" (Constraint Documents) defines.**
+
+### Extended Capabilities (Unlimited - User's Custom Idea)
+
+The AI can add ANY additional capability based on the user's idea:
+
+| Capability | Examples |
+|------------|----------|
+| **NuGet Packages** | CommunityToolkit, Newtonsoft.Json, SkiaSharp, etc. |
+| **Windows APIs** | File system, Networking, Bluetooth, Media, etc. |
+| **Cloud Services** | REST APIs, Authentication, Real-time sync |
+| **Third-party Libraries** | Charts, PDF, Image processing, etc. |
+| **Custom UI Designs** | Any layout, theme, animation |
+
+### What Sync AI Can Build
+
+| Category | Example Apps |
+|----------|--------------|
+| ✅ Productivity | Notes, Tasks, Calendars, Time tracking |
+| ✅ Business | CRM, Inventory, Invoicing, POS |
+| ✅ Media | Players, Editors, Viewers, Converters |
+| ✅ Utility | File managers, System tools, Launchers |
+| ✅ Social | Chat clients, Feed readers, Community apps |
+| ✅ Education | Learning apps, Quizzes, Flashcards |
+| ✅ Health | Fitness tracking, Medical records, Diet apps |
+| ✅ Finance | Budgeting, Expenses, Investment tracking |
+| ✅ Creative | Drawing, Design tools, Music creation |
+| ✅ Games | 2D games, Puzzles, Arcade |
+| ✅ E-commerce | Shopping apps, Inventory, Order management |
+| ✅ Communication | Email clients, Messaging, VoIP |
+| ✅ Developer Tools | Code editors, DB managers, API testers |
+
+### What Sync AI Does NOT Build
+
+| Category | Reason |
+|----------|--------|
+| ❌ Web Apps | This is a Windows native builder |
+| ❌ Mobile Apps (iOS/Android) | Windows desktop only |
+| ❌ Console Apps | GUI apps only |
+| ❌ Linux/macOS Apps | Windows only |
+| ❌ Backend Services | Client apps only |
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  USER PROMPT: "Build me a fitness app with charts"          │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Step 1: Hidden System Prompt (Constraint Documents)        │
+│  ├── Use WinUI 3 for UI                                    │
+│  ├── Use MVVM architecture                                 │
+│  ├── Use SQLite for local database                         │
+│  └── Follow Windows packaging rules                        │
+│                                                             │
+│  Step 2: AI Generation (User's Custom Idea)                │
+│  ├── Views/FitnessPage.xaml (charts, progress cards)       │
+│  ├── ViewModels/FitnessViewModel.cs (logic)                │
+│  ├── Models/Workout.cs (data)                              │
+│  ├── Services/FitnessService.cs (functionality)            │
+│  └── NuGet: CommunityToolkit.WinUI.Controls (charts)       │
+│                                                             │
+│  RESULT: User's custom fitness app                         │
+│  - Built on BASE TECH STACK                                │
+│  - Extended with USER'S SPECIFIC NEEDS                     │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -250,7 +374,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 **Does NOT Own:**
 - Code indexing (Layer 4)
 - Build execution (Layer 2)
-- AI code generation (Layer 5)
+- AI code generation (Layer 6.5)
 
 **See:** [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) §6
 
@@ -264,25 +388,15 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 
 **Does NOT Own:**
 - Applying mutations (Layer 3)
-- Task planning (Layer 5)
+- Task planning (Layer 6.5)
 
 **See:** [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md)
 
-#### Layer 5: AI Agent Layer
-
-**Owns:**
-- Intent parsing and spec generation
-- Task graph (DAG) construction
-- Multi-agent coordination for code generation
-
-**Does NOT Own:**
-- Applying generated code (Layer 3)
-- Build execution (Layer 2)
-- State management (Layer 6)
+#### Layer 5: AI Agent Layer (Merged into Layer 6.5)
 
 **See:** [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md)
 
-#### Layer 6: Orchestrator Engine
+#### Layer 6: Runtime Safety Kernel
 
 **Owns:**
 - State machine (`BuilderState` enum)
@@ -291,11 +405,46 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 - Thread coordination
 
 **Does NOT Own:**
-- Code generation (Layer 5)
+- Code generation (Layer 6.5)
 - File mutations (Layer 3)
 - UI rendering (Layer 7)
 
 **See:** [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md)
+
+#### Layer 6.5: AI Construction Engine
+
+**Owns:**
+- Intent parsing and spec generation
+- Task graph (DAG) construction
+- Multi-agent coordination for code generation
+- Retry strategy (cycles 1-9)
+- AI Service Client for Layer 6.6 communication
+
+**Does NOT Own:**
+- Applying generated code (Layer 3)
+- Build execution (Layer 2)
+- State management (Layer 6)
+- AI model inference (Layer 6.6)
+
+**See:** [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md)
+
+#### Layer 6.6: AI Service Layer (NEW)
+
+**Owns:**
+- LLM (Chat Completions) for code generation
+- Image Generation for visual assets
+- TTS (Text to Speech) for notifications
+- ASR (Speech to Text) for voice input
+- VLM (Vision Language Model) for image analysis
+- Web Search for documentation lookup
+- All communication with z-ai-web-dev-sdk
+
+**Does NOT Own:**
+- Code generation logic (Layer 6.5)
+- State management (Layer 6)
+- File mutations (Layer 3)
+
+**See:** [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) and [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md)
 
 #### Layer 7: User Interface
 
@@ -316,22 +465,26 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 | From Layer | To Layer | Allowed? | Mechanism |
 |------------|----------|----------|-----------|
 | 7 → 6 | UI → Orchestrator | ✅ Yes | Command objects |
-| 6 → 5 | Orchestrator → AI | ✅ Yes | Task dispatch |
+| 6 → 6.5 | Orchestrator → AI Engine | ✅ Yes | Task dispatch |
+| 6.5 → 6.6 | AI Engine → AI Service | ✅ Yes | HTTP REST API |
 | 6 → 3 | Orchestrator → Patch | ✅ Yes | Patch operations |
 | 6 → 2 | Orchestrator → Build | ✅ Yes | Build requests |
-| 5 → 4 | AI → Roslyn | ✅ Yes | Context queries |
+| 6.5 → 4 | AI → Roslyn | ✅ Yes | Context queries |
 | 3 → 4 | Patch → Roslyn | ✅ Yes | Syntax trees |
 | 3 → 1 | Patch → Filesystem | ✅ Yes | File writes |
 | 7 → 3 | UI → Patch | ❌ No | - |
 | 7 → 2 | UI → Build | ❌ No | - |
+| 6.6 → External | AI Service → z-ai endpoints | ✅ Yes | HTTPS (handled by SDK) |
 
 **Rule:** UI (Layer 7) ONLY communicates with Orchestrator (Layer 6). All other communication must go through the Orchestrator.
+
+**Rule:** AI Construction Engine (Layer 6.5) communicates with AI Service Layer (Layer 6.6) via HTTP to localhost:3001.
 
 ---
 
 ## 5. Control & Data Flow
 
-### 5.1 High-Level Flow
+### 5.1 High-Level Flow (Updated)
 
 ```
 User Prompt
@@ -340,11 +493,13 @@ Layer 7: UI captures input → submits GenerateCommand
     ↓
 Layer 6: Orchestrator validates, locks workspace, transitions to AI_PLANNING
     ↓
-Layer 5: Intent parsing → Spec → Task Graph (DAG)
+Layer 6.5: Intent parsing → Spec → Task Graph (DAG)
     ↓
 Layer 6: Orchestrator dispatches tasks sequentially
     ↓
-Layer 5: AI generates patch
+Layer 6.5: AI generates patch (via Layer 6.6)
+    ↓
+Layer 6.6: AI Service processes LLM request (NO API KEYS!)
     ↓
 Layer 4: Roslyn validates target existence
     ↓
@@ -354,7 +509,7 @@ Layer 4: Incremental re-index
     ↓
 Layer 2: Build Service compiles
     ↓
-[If errors] → Layer 5: Fix Agent generates correction → retry
+[If errors] → Layer 6.5: Fix Agent generates correction → Layer 6.6 → retry
     ↓
 Layer 2.5: Capability inference → Manifest update → Package → Sign
     ↓
@@ -382,7 +537,7 @@ IDLE → AI_PLANNING → SPEC_PARSED → TASK_GRAPH_READY
 | Operation | Reasoning |
 |-----------|-----------|
 | Planning Layer | No shared state, read-only analysis |
-| AI Code Generation | Stateless, independent API calls |
+| AI Code Generation | Stateless, independent HTTP calls to Layer 6.6 |
 | Retrieval & Indexing | Read operations on immutable snapshots |
 
 ### 6.2 Serialized Operations (🔒 Must Be Sequential)
@@ -405,7 +560,7 @@ IDLE → AI_PLANNING → SPEC_PARSED → TASK_GRAPH_READY
 |--------|---------|-------------|
 | 🟢 UI Thread | Rendering, user input | Single (main) |
 | 🔵 Orchestrator Thread | Sequential execution | Single |
-| 🟣 AI Worker Pool | Code generation | Max 2 concurrent |
+| 🟣 AI Worker Pool | Code generation (HTTP to Layer 6.6) | Max 2 concurrent |
 | 🟡 Patch Worker | File mutations | Single-threaded |
 | 🔴 Build Worker | MSBuild compilation | Single (per build) |
 | ⚪ Background Maintenance | Cleanup, pruning | Single |
@@ -517,15 +672,24 @@ AI patches cannot touch:
 
 **Detailed Security Model:** See [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) §5
 
+### 9.4 AI Service Security (NEW)
+
+| Aspect | Implementation |
+|--------|---------------|
+| **Binding** | localhost only (127.0.0.1) |
+| **Port** | 3001 (configurable) |
+| **Authentication** | Not required (local service) |
+| **API Keys** | **NOT REQUIRED!** Handled by z-ai-web-dev-sdk |
+
 ---
 
 ## 10. Deployment Model
 
-### 10.1 Local-First Architecture
+### 10.1 Local-First Architecture (Updated)
 
 | Component | Location | Cloud Required? |
 |-----------|----------|-----------------|
-| AI Reasoning | Cloud API | **Yes** |
+| **AI Reasoning** | **Local AI Service (z-ai-web-dev-sdk)** | **NO! NO API KEYS!** |
 | Build & Compilation | Local PC | No |
 | NuGet Restore | Local PC | No (if cached) |
 | App Execution | Local PC | No |
@@ -542,10 +706,17 @@ AI patches cannot touch:
 1. **NO Web-Based Compilers** — All compilation is local MSBuild
 2. **NO Browser-Based Runtime** — Strictly WinUI 3 Desktop
 3. **NO Centralized Database** — All data stays in `%USERPROFILE%\.syncai\`
+4. **NO API Keys Required** — AI capabilities via z-ai-web-dev-sdk
 
 ---
 
 ## 11. Implementation Roadmap
+
+### Phase 0: AI Service Foundation (NEW - Weeks 0-1)
+- Set up AI Mini Service (Bun + z-ai-web-dev-sdk)
+- Implement all API endpoints (LLM, Image, TTS, ASR, VLM, Search)
+- Create C# client for Layer 6.6 communication
+- Test all AI capabilities
 
 ### Phase 1: Foundation (Weeks 1-4)
 - Orchestrator Engine (Layer 6)
@@ -565,7 +736,7 @@ AI patches cannot touch:
 ### Phase 4: Execution (Weeks 10-12)
 - Execution Kernel (Layer 2)
 - Error Classification (Layer 6)
-- Auto-Fix Strategies (Layer 5)
+- Auto-Fix Strategies (Layer 6.5)
 
 ### Phase 5: Production (Weeks 13-15)
 - Testing & Hardening
@@ -580,6 +751,8 @@ AI patches cannot touch:
 
 | Topic | Document | Section |
 |-------|----------|---------|
+| **AI Service Layer** | AI_SERVICE_LAYER.md | All |
+| **AI Mini Service Code** | AI_MINI_SERVICE_IMPLEMENTATION.md | All |
 | State Machine | ORCHESTRATION_ENGINE.md | §3 |
 | Task Schema | ORCHESTRATION_ENGINE.md | §2 |
 | Retry Logic | ORCHESTRATION_ENGINE.md | §7 |
@@ -618,15 +791,10 @@ AI patches cannot touch:
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-02-24 | **Added Section 3.6: AI Capabilities Definition** - Base Tech Stack, Extended Capabilities, What Sync AI Can/Cannot Build | Architecture Team |
+| 2026-02-24 | **Removed Cost Control Layer** - z-ai-web-dev-sdk is completely FREE, no API costs | Architecture Team |
+| 2026-02-24 | **Added "No Cost Control Needed" to AI Service Invariants** | Architecture Team |
+| 2026-02-22 | **Added Layer 6.6: AI Service Layer with z-ai-web-dev-sdk** | Architecture Team |
+| 2026-02-22 | **Updated AI Reasoning: NO API KEYS REQUIRED** | Architecture Team |
+| 2026-02-22 | Added AI Service cross-references | Architecture Team |
 | 2026-02-20 | Restructured as authoritative invariant map; extracted details to specialized specs | Architecture Team |
-</task_progress>
-<task_progress>- [x] Analyze current SYSTEM_ARCHITECTURE.md structure
-- [x] Read ORCHESTRATION_ENGINE.md
-- [x] Read CODE_INTELLIGENCE.md
-- [x] Read WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md
-- [x] Create EXECUTION_ENVIRONMENT.md (extract sandbox, MSBuild, Job Objects, ACL, machine variability)
-- [x] Create AI_AGENTS_AND_PLANNING.md (extract intent parsing, DAG generation, agent contracts)
-- [x] Update ORCHESTRATION_ENGINE.md (add execution lifecycle, thread types, serialization rules)
-- [x] Refactor SYSTEM_ARCHITECTURE.md to be the authoritative invariant map
-- [ ] Verify cross-references and consistency</task_progress>
-</write_to_file>

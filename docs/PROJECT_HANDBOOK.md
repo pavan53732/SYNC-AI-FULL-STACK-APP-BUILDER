@@ -34,6 +34,18 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 │   ├── ORCHESTRATION_ENGINE.md        # Deterministic orchestrator
 │   ├── CODE_INTELLIGENCE.md           # Roslyn, indexing, database
 │   ├── PROJECT_HANDBOOK.md            # This file
+│   ├── AI_RUNTIME_MODEL.md            # AI Construction Engine vs Runtime Safety Kernel
+│   ├── AI_AGENTS_AND_PLANNING.md      # Multi-agent specifications
+│   ├── AI_SERVICE_LAYER.md            # AI capabilities via z-ai-web-dev-sdk (NO API KEYS!)
+│   ├── AI_MINI_SERVICE_IMPLEMENTATION.md  # Complete TypeScript implementation
+│   ├── PLATFORM_REQUIREMENTS_ENGINE.md    # Zero-template approach - platform requirements
+│   ├── BRANDING_INFERENCE_HEURISTICS.md   # Intelligent brand derivation from user intent
+│   ├── EXECUTION_ENVIRONMENT.md       # Sandbox, MSBuild, filesystem isolation
+│   ├── PREVIEW_SYSTEM.md              # Preview rendering, sandbox launch
+│   ├── UI_IMPLEMENTATION.md           # WinUI 3 design philosophy, page specs
+│   ├── USER_WORKFLOWS.md              # User experience workflows
+│   ├── WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md  # Packaging pipeline
+│   ├── AGENT_EXECUTION_CONTRACT.md    # Agent execution context, file access contracts
 │   └── archive/                       # Archived specifications
 │
 ├── src/                               # Source code
@@ -106,7 +118,7 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 
 > **IMPORTANT**: This section aligns with `SYSTEM_ARCHITECTURE.md`. The layer definitions here are the SINGLE SOURCE OF TRUTH.
 
-### The 7-Layer Architecture (Infrastructure-Up Model)
+### The 8-Layer Architecture (Infrastructure-Up Model)
 
 | Layer | Name | Responsibility | Directory |
 |-------|------|----------------|-----------|
@@ -117,7 +129,12 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 | **Layer 5** | Code Intelligence | Roslyn indexing, symbol graph | `Services/🟡 Code Intelligence/` |
 | **Layer 6** | Runtime Safety Kernel | State machine, retry logic, enforcement | `Services/🔴 Runtime Safety Kernel/` |
 | **Layer 6.5** | AI Construction Engine | Primary brain, code generation | `Services/🟣 AI Construction Engine/` |
+| **Layer 6.6** | **AI Service Layer** | **z-ai-web-dev-sdk - NO API KEYS!** | `Assets/ai-service.exe` |
 | **Layer 7** | User Interface | WinUI 3 shell | `UI/` |
+
+> **Layer 6.6 (AI Service Layer)**: Provides all AI capabilities via z-ai-web-dev-sdk.
+> The compiled `ai-service.exe` runs as a hidden background process on localhost:3001.
+> **NO API KEYS REQUIRED** - SDK handles authentication automatically!
 
 ### Layer Communication Rules
 
@@ -146,6 +163,34 @@ Layer 1 (Filesystem) ←────────── Layer 6 (Orchestrator)
 
 ## 3. Dependencies & Technology Stack
 
+### Base Tech Stack (Fixed Foundation)
+
+> **These are the non-negotiable technologies that ALL generated apps use.**
+>
+> **This is what the "Hidden System Prompt" defines - the FRAMEWORK RULES.**
+
+| Technology | Purpose | Why Fixed |
+|------------|---------|-----------|
+| **WinUI 3** | UI Framework | Modern Windows native UI |
+| **C# 12** | Language | .NET 8 ecosystem |
+| **XAML** | UI Markup | WinUI 3 standard |
+| **.NET 8** | Runtime | Long-term support |
+| **SQLite** | Local Database | Built into Windows |
+| **MVVM** | Architecture | Proven pattern for XAML apps |
+| **MSIX** | Packaging | Windows standard installer |
+
+### Extended Capabilities (Unlimited)
+
+> **The AI can add ANY additional capability based on user's custom idea.**
+
+| Capability | Examples |
+|------------|----------|
+| **NuGet Packages** | CommunityToolkit, Newtonsoft.Json, SkiaSharp, etc. |
+| **Windows APIs** | File system, Networking, Bluetooth, Media, etc. |
+| **Cloud Services** | REST APIs, Authentication, Real-time sync |
+| **Third-party Libraries** | Charts, PDF, Image processing, etc. |
+| **Custom UI Designs** | Any layout, theme, animation |
+
 ### Platform & Runtime
 
 | Component | Technology | Version |
@@ -161,6 +206,15 @@ Layer 1 (Filesystem) ←────────── Layer 6 (Orchestrator)
 |-----------|------------|
 | **C# Analysis** | Microsoft.CodeAnalysis (Roslyn) 4.8+ |
 | **AST Manipulation** | Roslyn SyntaxRewriter, SyntaxFactory |
+
+### AI Capabilities (Layer 6.6)
+
+| Component | Technology |
+|-----------|------------|
+| **AI SDK** | z-ai-web-dev-sdk (NO API KEYS!) |
+| **Runtime** | Bun (compiled to standalone .exe) |
+| **Capabilities** | LLM, Image Gen, TTS, ASR, VLM, Web Search |
+| **Communication** | HTTP on localhost:3001 |
 
 ### Database & Persistence
 
@@ -289,5 +343,12 @@ The user should only see:
 
 | Date | Change |
 |------|--------|
+| 2026-02-24 | **Added "Base Tech Stack (Fixed Foundation)" section** - Defines non-negotiable technologies |
+| 2026-02-24 | **Added "Extended Capabilities (Unlimited)" section** - AI can add any capability based on user's idea |
+| 2026-02-23 | Updated docs tree with all 12 documentation files |
+| 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md and BRANDING_INFERENCE_HEURISTICS.md to docs list |
+| 2026-02-22 | Added Layer 6.6 (AI Service Layer) with z-ai-web-dev-sdk - NO API KEYS! |
+| 2026-02-22 | Added AI capabilities section to technology stack |
+| 2026-02-22 | Added AI_SERVICE_LAYER.md and AI_MINI_SERVICE_IMPLEMENTATION.md references |
 | 2026-02-21 | Unified layer definitions with SYSTEM_ARCHITECTURE.md (Fixes Contradiction 2) |
 | 2026-02-21 | Updated directory structure to use infrastructure-up layer model |

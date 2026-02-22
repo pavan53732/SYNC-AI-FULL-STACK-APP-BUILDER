@@ -4,7 +4,7 @@
 >
 > **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
 >
-> _Governs the transition from "Compile" to "Distribute". Automates Identity, Capabilities, and Signing. The Packaging Pipeline is owned by the Runtime Safety Kernel._
+> _Governs the transition from "Compile" to "Distribute". Automates Identity, Capabilities, and Signing. The Packaging Pipeline is owned by the Runtime Safety Kernel.
 
 ---
 
@@ -444,11 +444,14 @@ public enum ExecutionFallbackMode
 
 ## 9. References
 
-- [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 7-layer overview, deployment model
+- [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 8-layer overview, deployment model
 - [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) — State machine, build system, retry logic
 - [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) — Roslyn indexing, symbol graph, capability scanning
 - [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) — Sandbox implementation, process isolation
 - [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — AI/Kernel relationship, enforcement layer
+- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — **AI capabilities via z-ai-web-dev-sdk (NO API KEYS!)**
+- [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) — Complete TypeScript implementation
+- [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) — **NEW: Zero-template asset generation for packaging**
 
 ---
 
@@ -465,4 +468,5 @@ public enum ExecutionFallbackMode
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md to References | Architecture Team |
 | 2026-02-20 | Initial specification | Architecture Team |

@@ -1,0 +1,1131 @@
+# Platform Requirements Engine
+
+> **The Zero-Template Approach: Generate Everything from First Principles**
+>
+> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
+>
+> _The Platform Requirements Engine defines WHAT must exist. The AI Construction Engine decides HOW it looks._
+
+---
+
+## Table of Contents
+
+1. [Core Philosophy](#1-core-philosophy)
+2. [Platform Requirements Definition](#2-platform-requirements-definition)
+3. [Asset Generation Pipeline](#3-asset-generation-pipeline)
+4. [Implicit Requirements Inference](#4-implicit-requirements-inference)
+5. [Integration with AI Construction Engine](#5-integration-with-ai-construction-engine)
+6. [Implementation Specification](#6-implementation-specification)
+
+---
+
+## 1. Core Philosophy
+
+### Why NOT Templates?
+
+| Template Approach | Problem |
+|------------------|---------|
+| Pre-defined structure | Limits creativity to template boundaries |
+| Placeholder replacement | Generated apps look templated |
+| Maintenance burden | Every update requires template changes |
+| Doesn't scale | Cannot build "any software user wants" |
+| Not truly AI-native | It's fancy copy-paste, not generation |
+
+### The Zero-Template Principle
+
+> **The AI does not copy. The AI creates.**
+
+```
+❌ WRONG: Template → Replace Placeholders → Output
+✅ RIGHT: Requirements → AI Design → AI Generation → Output
+```
+
+### Key Insight
+
+```
+Templates = Constraints on creativity
+Platform Requirements = Guardrails for correctness
+
+The difference is crucial:
+- Templates tell the AI "build it THIS way"
+- Requirements tell the AI "build it ANY way, but include THESE"
+```
+
+---
+
+## 2. Platform Requirements Definition
+
+### 2.1 Platform Requirement Types
+
+```csharp
+public enum PlatformRequirementType
+{
+    // MUST exist - enforced by platform
+    MANDATORY,
+    
+    // SHOULD exist - best practice
+    RECOMMENDED,
+    
+    // MAY exist - enhancement
+    OPTIONAL
+}
+
+public record PlatformRequirement
+{
+    public string Id { get; init; }
+    public string Name { get; init; }
+    public string Description { get; init; }
+    public PlatformRequirementType Type { get; init; }
+    public string[] Platforms { get; init; }  // "Windows", "All"
+    public RequirementCategory Category { get; init; }
+    public Func<AppIntent, bool> Condition { get; init; }  // When does this apply?
+}
+
+public enum RequirementCategory
+{
+    ASSET,           // Icons, images, logos
+    MANIFEST,        // AppxManifest entries
+    SECURITY,        // Capabilities, permissions
+    ARCHITECTURE,    // Patterns, structure
+    LOCALIZATION,    // Language resources
+    ACCESSIBILITY    // Accessibility features
+}
+```
+
+### 2.2 Windows Platform Requirements (Complete List)
+
+```csharp
+public static class WindowsPlatformRequirements
+{
+    /// <summary>
+    /// All mandatory Windows app requirements.
+    /// These are NON-NEGOTIABLE - Windows will reject the package without them.
+    /// </summary>
+    public static readonly PlatformRequirement[] Mandatory = new[]
+    {
+        // === IDENTITY ===
+        new PlatformRequirement
+        {
+            Id = "WIN_APP_IDENTITY",
+            Name = "App Identity",
+            Description = "Unique identity for the application",
+            Type = PlatformRequirementType.MANDATORY,
+            Platforms = new[] { "Windows" },
+            Category = RequirementCategory.MANIFEST,
+            Condition = _ => true  // Always required
+        },
+        
+        // === VISUAL ASSETS ===
+        new PlatformRequirement
+        {
+            Id = "WIN_SQUARE44_LOGO",
+            Name = "Square44x44Logo",
+            Description = "App icon for taskbar and start menu",
+            Type = PlatformRequirementType.MANDATORY,
+            Platforms = new[] { "Windows" },
+            Category = RequirementCategory.ASSET,
+            Condition = _ => true
+        },
+        
+        new PlatformRequirement
+        {
+            Id = "WIN_SQUARE150_LOGO",
+            Name = "Square150x150Logo",
+            Description = "Medium tile icon for start menu",
+            Type = PlatformRequirementType.MANDATORY,
+            Platforms = new[] { "Windows" },
+            Category = RequirementCategory.ASSET,
+            Condition = _ => true
+        },
+        
+        new PlatformRequirement
+        {
+            Id = "WIN_SPLASH_SCREEN",
+            Name = "SplashScreen",
+            Description = "Splash screen shown during app launch",
+            Type = PlatformRequirementType.MANDATORY,
+            Platforms = new[] { "Windows" },
+            Category = RequirementCategory.ASSET,
+            Condition = _ => true
+        },
+        
+        new PlatformRequirement
+        {
+            Id = "WIN_DISPLAY_NAME",
+            Name = "DisplayName",
+            Description = "Human-readable app name",
+            Type = PlatformRequirementType.MANDATORY,
+            Platforms = new[] { "Windows" },
+            Category = RequirementCategory.MANIFEST,
+            Condition = _ => true
+        },
+        
+        // === ARCHITECTURE ===
+        new PlatformRequirement
+        {
+            Id = "WIN_ENTRY_POINT",
+            Name = "Entry Point",
+            Description = "App.xaml as application entry point",
+            Type = PlatformRequirementType.MANDATORY,
+            Platforms = new[] { "Windows" },
+            Category = RequirementCategory.ARCHITECTURE,
+            Condition = _ => true
+        },
+        
+        // === SECURITY ===
+        new PlatformRequirement
+        {
+            Id = "WIN_INTERNET_CLIENT",
+            Name = "Internet Client Capability",
+            Description = "Required for outbound network access",
+            Type = PlatformRequirementType.MANDATORY,
+            Platforms = new[] { "Windows" },
+            Category = RequirementCategory.SECURITY,
+            Condition = intent => intent.RequiresInternet == true
+        },
+        
+        // === LOCALIZATION ===
+        new PlatformRequirement
+        {
+            Id = "WIN_DEFAULT_LANGUAGE",
+            Name = "Default Language",
+            Description = "en-US as default language resource",
+            Type = PlatformRequirementType.MANDATORY,
+            Platforms = new[] { "Windows" },
+            Category = RequirementCategory.LOCALIZATION,
+            Condition = _ => true
+        }
+    };
+    
+    /// <summary>
+    /// Recommended but not mandatory requirements.
+    /// </summary>
+    public static readonly PlatformRequirement[] Recommended = new[]
+    {
+        new PlatformRequirement
+        {
+            Id = "WIN_WIDE310_LOGO",
+            Name = "Wide310x150Logo",
+            Description = "Wide tile for start menu",
+            Type = PlatformRequirementType.RECOMMENDED,
+            Platforms = new[] { "Windows" },
+            Category = RequirementCategory.ASSET,
+            Condition = _ => true
+        },
+        
+        new PlatformRequirement
+        {
+            Id = "WIN_STORE_LOGO",
+            Name = "StoreLogo",
+            Description = "Icon for Microsoft Store listing",
+            Type = PlatformRequirementType.RECOMMENDED,
+            Platforms = new[] { "Windows" },
+            Category = RequirementCategory.ASSET,
+            Condition = _ => true
+        },
+        
+        new PlatformRequirement
+        {
+            Id = "WIN_ACCENT_COLOR",
+            Name = "Accent Color",
+            Description = "Brand color for tiles and chrome",
+            Type = PlatformRequirementType.RECOMMENDED,
+            Platforms = new[] { "Windows" },
+            Category = RequirementCategory.ASSET,
+            Condition = _ => true
+        },
+        
+        new PlatformRequirement
+        {
+            Id = "WIN_SETTINGS_PAGE",
+            Name = "Settings Page",
+            Description = "User preference configuration",
+            Type = PlatformRequirementType.RECOMMENDED,
+            Platforms = new[] { "Windows" },
+            Category = RequirementCategory.ARCHITECTURE,
+            Condition = intent => intent.ComplexityLevel >= ComplexityLevel.MEDIUM
+        }
+    };
+    
+    /// <summary>
+    /// Optional enhancements.
+    /// </summary>
+    public static readonly PlatformRequirement[] Optional = new[]
+    {
+        new PlatformRequirement
+        {
+            Id = "WIN_NOTIFICATION",
+            Name = "Toast Notifications",
+            Description = "Push notification capability",
+            Type = PlatformRequirementType.OPTIONAL,
+            Platforms = new[] { "Windows" },
+            Category = RequirementCategory.SECURITY,
+            Condition = intent => intent.Features.Contains("notifications")
+        },
+        
+        new PlatformRequirement
+        {
+            Id = "WIN_BACKGROUND_TASK",
+            Name = "Background Task",
+            Description = "Background processing capability",
+            Type = PlatformRequirementType.OPTIONAL,
+            Platforms = new[] { "Windows" },
+            Category = RequirementCategory.SECURITY,
+            Condition = intent => intent.Features.Contains("background")
+        }
+    };
+}
+```
+
+### 2.3 Requirement Resolution Flow
+
+```
+User Prompt: "Build a finance tracker with charts"
+        ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 1. AI PARSES INTENT                                          │
+│    - AppType: Finance                                        │
+│    - Features: ["charts", "data", "sqlite"]                 │
+│    - RequiresInternet: false                                 │
+│    - ComplexityLevel: MEDIUM                                 │
+└─────────────────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 2. PLATFORM REQUIREMENTS ENGINE EVALUATES ALL REQUIREMENTS  │
+│                                                              │
+│    MANDATORY (always included):                              │
+│    ✓ WIN_APP_IDENTITY                                       │
+│    ✓ WIN_SQUARE44_LOGO                                      │
+│    ✓ WIN_SQUARE150_LOGO                                     │
+│    ✓ WIN_SPLASH_SCREEN                                      │
+│    ✓ WIN_DISPLAY_NAME                                       │
+│    ✓ WIN_ENTRY_POINT                                        │
+│    ✓ WIN_DEFAULT_LANGUAGE                                   │
+│    ✗ WIN_INTERNET_CLIENT (Condition: RequiresInternet=true) │
+│                                                              │
+│    RECOMMENDED (based on complexity):                        │
+│    ✓ WIN_WIDE310_LOGO                                       │
+│    ✓ WIN_STORE_LOGO                                         │
+│    ✓ WIN_ACCENT_COLOR                                       │
+│    ✓ WIN_SETTINGS_PAGE (Complexity >= MEDIUM)               │
+│                                                              │
+│    OPTIONAL (based on features):                             │
+│    ✗ WIN_NOTIFICATION (Feature not requested)               │
+│    ✗ WIN_BACKGROUND_TASK (Feature not requested)            │
+└─────────────────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 3. OUTPUT: Requirement Manifest                              │
+│    - 10 requirements to fulfill                              │
+│    - 7 assets to generate                                    │
+│    - 3 manifest entries to create                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. Asset Generation Pipeline
+
+### 3.1 Asset Generation Strategy
+
+```csharp
+public class AssetGenerationPipeline
+{
+    private readonly IImageGenerationService _imageGen;
+    private readonly ILogger<AssetGenerationPipeline> _logger;
+    
+    /// <summary>
+    /// Generates all required assets for the application.
+    /// NO TEMPLATES - everything is generated from scratch.
+    /// </summary>
+    public async Task<AssetGenerationResult> GenerateAssetsAsync(
+        AppIntent intent,
+        List<AssetRequirement> requirements)
+    {
+        var results = new List<GeneratedAsset>();
+        
+        foreach (var requirement in requirements)
+        {
+            var asset = requirement.Category switch
+            {
+                AssetCategory.APP_ICON => await GenerateAppIconAsync(intent, requirement),
+                AssetCategory.SPLASH_SCREEN => await GenerateSplashScreenAsync(intent, requirement),
+                AssetCategory.STORE_LOGO => await GenerateStoreLogoAsync(intent, requirement),
+                AssetCategory.TILE_LOGO => await GenerateTileLogoAsync(intent, requirement),
+                _ => await GenerateGenericAssetAsync(intent, requirement)
+            };
+            
+            results.Add(asset);
+        }
+        
+        return new AssetGenerationResult
+        {
+            Assets = results,
+            Success = results.All(r => r.Success)
+        };
+    }
+    
+    /// <summary>
+    /// Generates app icon using AI Image Generation.
+    /// No template - generated from brand intent.
+    /// </summary>
+    private async Task<GeneratedAsset> GenerateAppIconAsync(AppIntent intent, AssetRequirement requirement)
+    {
+        // Derive branding from app intent
+        var brandPrompt = BuildBrandPrompt(intent);
+        
+        // Generate with AI
+        var imageData = await _imageGen.GenerateImageAsync(new ImageGenerationRequest
+        {
+            Prompt = brandPrompt,
+            Width = requirement.Width,
+            Height = requirement.Height,
+            Style = "app-icon, clean, minimal, professional"
+        });
+        
+        return new GeneratedAsset
+        {
+            Requirement = requirement,
+            Data = imageData,
+            Success = true,
+            Source = "AI_GENERATED"
+        };
+    }
+    
+    /// <summary>
+    /// Builds image generation prompt from app intent.
+    /// This is where the AI derives branding WITHOUT templates.
+    /// </summary>
+    private string BuildBrandPrompt(AppIntent intent)
+    {
+        var sb = new StringBuilder();
+        
+        // App name influences design
+        sb.Append($"App icon for '{intent.AppName}'");
+        
+        // Domain influences color scheme
+        if (intent.Domain != null)
+        {
+            sb.Append(intent.Domain.ToLower() switch
+            {
+                "finance" => ", blue color scheme, trustworthy, professional",
+                "health" => ", green color scheme, clean, modern",
+                "education" => ", purple color scheme, friendly, approachable",
+                "productivity" => ", orange color scheme, energetic, efficient",
+                "social" => ", pink color scheme, vibrant, connected",
+                "gaming" => ", dark theme, neon accents, dynamic",
+                _ => ", modern minimalist design"
+            });
+        }
+        
+        // Style preferences
+        if (intent.StyleHints != null)
+        {
+            sb.Append($", {intent.StyleHints}");
+        }
+        
+        // Default: Fluent Design inspired
+        sb.Append(", Fluent Design System, Windows 11 style");
+        
+        return sb.ToString();
+    }
+    
+    /// <summary>
+    /// Generates splash screen using AI.
+    /// </summary>
+    private async Task<GeneratedAsset> GenerateSplashScreenAsync(AppIntent intent, AssetRequirement requirement)
+    {
+        var prompt = $"Splash screen for '{intent.AppName}' app, " +
+                     $"{intent.Domain ?? "general"} theme, " +
+                     "clean background with centered logo, " +
+                     "Windows 11 style, professional, minimal";
+        
+        var imageData = await _imageGen.GenerateImageAsync(new ImageGenerationRequest
+        {
+            Prompt = prompt,
+            Width = requirement.Width,   // 620
+            Height = requirement.Height, // 300
+            Style = "splash-screen, clean, professional"
+        });
+        
+        return new GeneratedAsset
+        {
+            Requirement = requirement,
+            Data = imageData,
+            Success = true,
+            Source = "AI_GENERATED"
+        };
+    }
+}
+```
+
+### 3.2 Asset Requirement Categories
+
+```csharp
+public enum AssetCategory
+{
+    APP_ICON,        // Primary app logo
+    TILE_LOGO,       // Windows tile variants
+    SPLASH_SCREEN,   // Launch splash
+    STORE_LOGO,      // Microsoft Store
+    BADGE_LOGO,      // Notification badge
+    PACKAGE_LOGO     // Package display
+}
+
+public record AssetRequirement
+{
+    public string Id { get; init; }
+    public string Name { get; init; }
+    public AssetCategory Category { get; init; }
+    public int Width { get; init; }
+    public int Height { get; init; }
+    public string Format { get; init; } = "png";
+    public bool IsMandatory { get; init; }
+    public string ManifestKey { get; init; }  // Key in Package.appxmanifest
+}
+
+public static class WindowsAssetRequirements
+{
+    public static readonly AssetRequirement[] AllIcons = new[]
+    {
+        new AssetRequirement
+        {
+            Id = "Square44x44Logo",
+            Name = "Small App Icon",
+            Category = AssetCategory.APP_ICON,
+            Width = 44,
+            Height = 44,
+            IsMandatory = true,
+            ManifestKey = "Square44x44Logo"
+        },
+        new AssetRequirement
+        {
+            Id = "Square150x150Logo",
+            Name = "Medium Tile",
+            Category = AssetCategory.TILE_LOGO,
+            Width = 150,
+            Height = 150,
+            IsMandatory = true,
+            ManifestKey = "Square150x150Logo"
+        },
+        new AssetRequirement
+        {
+            Id = "Wide310x150Logo",
+            Name = "Wide Tile",
+            Category = AssetCategory.TILE_LOGO,
+            Width = 310,
+            Height = 150,
+            IsMandatory = false,
+            ManifestKey = "Wide310x150Logo"
+        },
+        new AssetRequirement
+        {
+            Id = "SplashScreen",
+            Name = "Splash Screen",
+            Category = AssetCategory.SPLASH_SCREEN,
+            Width = 620,
+            Height = 300,
+            IsMandatory = true,
+            ManifestKey = "SplashScreen"
+        },
+        new AssetRequirement
+        {
+            Id = "StoreLogo",
+            Name = "Store Logo",
+            Category = AssetCategory.STORE_LOGO,
+            Width = 50,
+            Height = 50,
+            IsMandatory = false,
+            ManifestKey = "StoreLogo"
+        }
+    };
+}
+```
+
+---
+
+## 4. Implicit Requirements Inference
+
+### 4.1 What Gets Inferred (NOT TEMPLATED)
+
+```csharp
+public class ImplicitRequirementsInference
+{
+    /// <summary>
+    /// Analyzes user intent and infers additional requirements.
+    /// This is NOT template matching - it's intelligent inference.
+    /// </summary>
+    public AppRequirements InferRequirements(AppIntent intent)
+    {
+        var requirements = new AppRequirements();
+        
+        // === INFER FROM APP TYPE ===
+        requirements.Architecture = InferArchitecture(intent);
+        
+        // === INFER FROM FEATURES ===
+        requirements.Capabilities = InferCapabilities(intent);
+        
+        // === INFER FROM DOMAIN ===
+        requirements.Branding = InferBranding(intent);
+        
+        // === INFER FROM COMPLEXITY ===
+        requirements.Structure = InferStructure(intent);
+        
+        return requirements;
+    }
+    
+    private ArchitectureRequirements InferArchitecture(AppIntent intent)
+    {
+        // NOT a template - derived from what the app needs
+        return new ArchitectureRequirements
+        {
+            Pattern = intent.Features.Any(f => f.Contains("database")) 
+                ? ArchitecturePattern.MVVM_WITH_REPOSITORY 
+                : ArchitecturePattern.MVVM,
+            
+            Layers = DetermineRequiredLayers(intent),
+            
+            Services = DetermineRequiredServices(intent),
+            
+            Navigation = DetermineNavigationPattern(intent)
+        };
+    }
+    
+    private List<string> DetermineRequiredLayers(AppIntent intent)
+    {
+        var layers = new List<string> { "UI", "Core" };
+        
+        if (intent.Features.Any(f => f.Contains("database") || f.Contains("data")))
+            layers.Add("Data");
+        
+        if (intent.Features.Any(f => f.Contains("api") || f.Contains("sync")))
+            layers.Add("Network");
+        
+        if (intent.Features.Any(f => f.Contains("auth") || f.Contains("login")))
+            layers.Add("Auth");
+        
+        return layers;
+    }
+    
+    private List<string> DetermineRequiredServices(AppIntent intent)
+    {
+        var services = new List<string>();
+        
+        // Infer from features - NOT from template
+        if (intent.Features.Contains("database"))
+            services.Add("IDatabaseService");
+        
+        if (intent.Features.Contains("settings"))
+            services.Add("ISettingsService");
+        
+        if (intent.Features.Contains("theme") || intent.Features.Contains("dark mode"))
+            services.Add("IThemeService");
+        
+        if (intent.Features.Contains("navigation"))
+            services.Add("INavigationService");
+        
+        if (intent.RequiresInternet)
+            services.Add("INetworkService");
+        
+        return services;
+    }
+    
+    private BrandingRequirements InferBranding(AppIntent intent)
+    {
+        // Derive branding from app name and domain - NOT from template
+        return new BrandingRequirements
+        {
+            PrimaryColor = DerivePrimaryColor(intent),
+            SecondaryColor = DeriveSecondaryColor(intent),
+            LogoStyle = DeriveLogoStyle(intent),
+            Typography = DeriveTypography(intent),
+            IconStyle = DeriveIconStyle(intent)
+        };
+    }
+    
+    private string DerivePrimaryColor(AppIntent intent)
+    {
+        // Color psychology inference
+        return intent.Domain?.ToLower() switch
+        {
+            "finance" => "#0078D4",     // Trustworthy blue
+            "health" => "#107C10",      // Healthy green
+            "education" => "#881798",   // Creative purple
+            "productivity" => "#FF8C00", // Energetic orange
+            "social" => "#E8117D",      // Social pink
+            "gaming" => "#00B294",      // Gaming teal
+            "media" => "#D13438",       // Media red
+            _ => "#0078D4"              // Default Windows blue
+        };
+    }
+    
+    private string DeriveLogoStyle(AppIntent intent)
+    {
+        // Style inference based on app characteristics
+        var complexity = intent.ComplexityLevel switch
+        {
+            ComplexityLevel.SIMPLE => "minimal",
+            ComplexityLevel.MEDIUM => "balanced",
+            ComplexityLevel.COMPLEX => "detailed",
+            _ => "balanced"
+        };
+        
+        var tone = intent.Domain?.ToLower() switch
+        {
+            "finance" or "health" => "professional",
+            "gaming" or "social" => "playful",
+            "education" => "friendly",
+            _ => "modern"
+        };
+        
+        return $"{complexity}, {tone}";
+    }
+}
+```
+
+### 4.2 Feature-to-Requirement Mapping
+
+```csharp
+public static class FeatureRequirementMapping
+{
+    /// <summary>
+    /// Maps user features to platform requirements.
+    /// Dynamic - not hardcoded in templates.
+    /// </summary>
+    public static readonly Dictionary<string, PlatformRequirement[]> FeatureMap = new()
+    {
+        ["database"] = new[]
+        {
+            new PlatformRequirement
+            {
+                Id = "FEAT_SQLITE",
+                Name = "SQLite Database",
+                Category = RequirementCategory.ARCHITECTURE,
+                Type = PlatformRequirementType.MANDATORY,
+                Description = "Local SQLite database for data persistence"
+            }
+        },
+        
+        ["internet"] = new[]
+        {
+            new PlatformRequirement
+            {
+                Id = "FEAT_INTERNET_CLIENT",
+                Name = "Internet Client",
+                Category = RequirementCategory.SECURITY,
+                Type = PlatformRequirementType.MANDATORY,
+                Description = "Outbound network access capability"
+            }
+        },
+        
+        ["notifications"] = new[]
+        {
+            new PlatformRequirement
+            {
+                Id = "FEAT_TOAST_CAPABLE",
+                Name = "Toast Capable",
+                Category = RequirementCategory.SECURITY,
+                Type = PlatformRequirementType.MANDATORY,
+                Description = "Enable toast notifications"
+            }
+        },
+        
+        ["camera"] = new[]
+        {
+            new PlatformRequirement
+            {
+                Id = "FEAT_WEBCAM",
+                Name = "Webcam",
+                Category = RequirementCategory.SECURITY,
+                Type = PlatformRequirementType.MANDATORY,
+                Description = "Camera access capability"
+            }
+        },
+        
+        ["microphone"] = new[]
+        {
+            new PlatformRequirement
+            {
+                Id = "FEAT_MICROPHONE",
+                Name = "Microphone",
+                Category = RequirementCategory.SECURITY,
+                Type = PlatformRequirementType.MANDATORY,
+                Description = "Microphone access capability"
+            }
+        },
+        
+        ["location"] = new[]
+        {
+            new PlatformRequirement
+            {
+                Id = "FEAT_LOCATION",
+                Name = "Location",
+                Category = RequirementCategory.SECURITY,
+                Type = PlatformRequirementType.MANDATORY,
+                Description = "Geolocation capability"
+            }
+        },
+        
+        ["file-picker"] = new[]
+        {
+            new PlatformRequirement
+            {
+                Id = "FEAT_BROAD_FILESYSTEM",
+                Name = "Broad Filesystem Access",
+                Category = RequirementCategory.SECURITY,
+                Type = PlatformRequirementType.RECOMMENDED,
+                Description = "Full filesystem access for file picker"
+            }
+        },
+        
+        ["background"] = new[]
+        {
+            new PlatformRequirement
+            {
+                Id = "FEAT_BACKGROUND_TASK",
+                Name = "Background Task",
+                Category = RequirementCategory.SECURITY,
+                Type = PlatformRequirementType.MANDATORY,
+                Description = "Background processing capability"
+            }
+        }
+    };
+}
+```
+
+---
+
+## 5. Integration with AI Construction Engine
+
+### 5.1 How It Works with Your Existing Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    EXISTING ARCHITECTURE                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Layer 6.5: AI Construction Engine                          │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ Architect Agent    → Designs architecture               ││
+│  │ Schema Agent       → Generates data models              ││
+│  │ Frontend Agent     → Creates UI + GENERATES ICONS       ││
+│  │ Backend Agent      → Implements services                ││
+│  │ Integration Agent  → Wires dependencies                 ││
+│  │ Fix Agent          → Repairs errors                     ││
+│  └─────────────────────────────────────────────────────────┘│
+│                          ↑                                   │
+│                          │ Consults                          │
+│                          │                                   │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ Platform Requirements Engine (NEW)                      ││
+│  │                                                         ││
+│  │ • What icons are needed?                                ││
+│  │ • What capabilities are required?                       ││
+│  │ • What manifest entries?                                ││
+│  │ • What branding to infer?                               ││
+│  │                                                         ││
+│  │ NO TEMPLATES - Just requirements                        ││
+│  └─────────────────────────────────────────────────────────┘│
+│                          ↑                                   │
+│                          │ Uses                              │
+│                          │                                   │
+│  Layer 6.6: AI Service Layer                                │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ Image Generation → Generate icons, logos, splash        ││
+│  │ LLM             → Design architecture, generate code    ││
+│  │ VLM             → Analyze generated assets              ││
+│  └─────────────────────────────────────────────────────────┘│
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 5.2 Integration Points
+
+```csharp
+public class ArchitectAgent
+{
+    private readonly PlatformRequirementsEngine _requirementsEngine;
+    private readonly AIServiceClient _aiService;
+    
+    public async Task<ArchitectureBlueprint> DesignArchitectureAsync(AppIntent intent)
+    {
+        // Step 1: Get platform requirements (NO TEMPLATES)
+        var requirements = await _requirementsEngine.EvaluateRequirementsAsync(intent);
+        
+        // Step 2: Let AI design the architecture from scratch
+        var designPrompt = BuildDesignPrompt(intent, requirements);
+        var design = await _aiService.GenerateArchitectureAsync(designPrompt);
+        
+        // Step 3: Validate against requirements
+        var validation = _requirementsEngine.ValidateDesign(design, requirements);
+        
+        if (!validation.IsValid)
+        {
+            // AI missed something - inject requirement explicitly
+            design = await AugmentDesignAsync(design, validation.MissingRequirements);
+        }
+        
+        return design;
+    }
+    
+    private string BuildDesignPrompt(AppIntent intent, RequirementsManifest requirements)
+    {
+        return $@"
+You are designing a Windows WinUI 3 application from scratch.
+
+USER INTENT:
+{intent.Description}
+
+DETECTED FEATURES:
+{string.Join("\n", intent.Features)}
+
+PLATFORM REQUIREMENTS (you MUST include these):
+{FormatRequirements(requirements)}
+
+CONSTRAINTS:
+- Use MVVM pattern
+- Use .NET 8 and WinUI 3
+- Use SQLite for data persistence
+- Follow Fluent Design System
+
+DO NOT use templates. Design from first principles.
+Generate a complete architecture with:
+1. Project structure (folders, files)
+2. Services needed
+3. Views and ViewModels
+4. Data models
+5. Navigation structure
+
+Output as JSON ArchitectureBlueprint.
+";
+    }
+}
+```
+
+### 5.3 Frontend Agent Integration (Icon Generation)
+
+```csharp
+public class FrontendAgent
+{
+    private readonly PlatformRequirementsEngine _requirementsEngine;
+    private readonly IImageGenerationService _imageGen;
+    
+    public async Task<FrontendGenerationResult> GenerateUIAsync(
+        ArchitectureBlueprint blueprint,
+        AppIntent intent)
+    {
+        // Step 1: Get asset requirements
+        var assetRequirements = await _requirementsEngine.GetAssetRequirementsAsync(intent);
+        
+        // Step 2: Generate assets using AI (NO TEMPLATES)
+        var assets = await GenerateAssetsAsync(intent, assetRequirements);
+        
+        // Step 3: Generate UI code
+        var uiCode = await GenerateUICodeAsync(blueprint, intent, assets);
+        
+        return new FrontendGenerationResult
+        {
+            XamlFiles = uiCode.XamlFiles,
+            ViewModels = uiCode.ViewModels,
+            Assets = assets
+        };
+    }
+    
+    private async Task<List<GeneratedAsset>> GenerateAssetsAsync(
+        AppIntent intent,
+        List<AssetRequirement> requirements)
+    {
+        var assets = new List<GeneratedAsset>();
+        
+        // Derive branding from intent
+        var brandContext = DeriveBrandingContext(intent);
+        
+        foreach (var requirement in requirements)
+        {
+            // Generate each asset from scratch using AI
+            var prompt = BuildAssetPrompt(intent, requirement, brandContext);
+            var imageData = await _imageGen.GenerateImageAsync(prompt);
+            
+            assets.Add(new GeneratedAsset
+            {
+                Requirement = requirement,
+                Data = imageData,
+                Path = $"Assets/{requirement.Id}.{requirement.Format}"
+            });
+        }
+        
+        return assets;
+    }
+    
+    private string BuildAssetPrompt(AppIntent intent, AssetRequirement requirement, BrandingContext brand)
+    {
+        return requirement.Category switch
+        {
+            AssetCategory.APP_ICON => 
+                $"App icon for '{intent.AppName}', {brand.Style}, " +
+                $"{brand.PrimaryColor} accent, minimal, modern, " +
+                $"Windows 11 style, {requirement.Width}x{requirement.Height}",
+            
+            AssetCategory.TILE_LOGO =>
+                $"Windows tile icon for '{intent.AppName}', " +
+                $"{brand.Style}, {brand.PrimaryColor} background, " +
+                $"clean design, {requirement.Width}x{requirement.Height}",
+            
+            AssetCategory.SPLASH_SCREEN =>
+                $"Splash screen for '{intent.AppName}' app, " +
+                $"{brand.PrimaryColor} accent, clean background, " +
+                $"centered logo, professional, " +
+                $"{requirement.Width}x{requirement.Height}",
+            
+            _ => $"App asset for '{intent.AppName}', {brand.Style}, {requirement.Width}x{requirement.Height}"
+        };
+    }
+}
+```
+
+---
+
+## 6. Implementation Specification
+
+### 6.1 Required Services
+
+```csharp
+// Add to your dependency injection
+
+services.AddSingleton<IPlatformRequirementsEngine, PlatformRequirementsEngine>();
+services.AddSingleton<IAssetGenerationPipeline, AssetGenerationPipeline>();
+services.AddSingleton<IImplicitRequirementsInference, ImplicitRequirementsInference>();
+services.AddSingleton<IBrandingInferenceService, BrandingInferenceService>();
+```
+
+### 6.2 Database Schema Addition
+
+```sql
+-- Add to your SQLite schema for tracking generated assets
+
+CREATE TABLE generated_assets (
+    id INTEGER PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    requirement_id TEXT NOT NULL,
+    asset_category TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    format TEXT NOT NULL DEFAULT 'png',
+    generation_source TEXT NOT NULL,  -- 'AI_GENERATED', 'USER_PROVIDED'
+    generation_prompt TEXT,
+    brand_context TEXT,               -- JSON of branding used
+    created_utc TEXT NOT NULL,
+    hash TEXT NOT NULL,
+    
+    FOREIGN KEY (project_id) REFERENCES projects(id)
+);
+
+CREATE INDEX idx_generated_assets_project ON generated_assets(project_id);
+CREATE INDEX idx_generated_assets_requirement ON generated_assets(requirement_id);
+```
+
+### 6.3 Update to State Machine
+
+> **CANONICAL SOURCE**: ORCHESTRATION_ENGINE.md defines the authoritative state numbers. This section must match exactly.
+
+```csharp
+// Add to BuilderState enum (CANONICAL - matches ORCHESTRATION_ENGINE.md)
+public enum BuilderState
+{
+    // ... existing states (0-25) ...
+    
+    // === PLATFORM REQUIREMENTS & ASSET GENERATION (26-29) ===
+    REQUIREMENT_EVALUATION = 26, // Evaluate platform requirements (NO TEMPLATES)
+    BRANDING_INFERENCE = 27,     // Derive brand identity from intent
+    ASSET_GENERATING = 28,       // Generate icons, logos, splash screens via AI
+    ASSETS_READY = 29,           // All assets generated successfully
+    ASSET_GENERATION_FAILED = 30 // Asset generation failed (triggers retry)
+}
+
+// State transitions (CANONICAL - matches ORCHESTRATION_ENGINE.md)
+// For NEW APPS: Requirements evaluated BEFORE generation
+(BuilderState.BLUEPRINT_READY, BlueprintReadyEvent e) =>
+    context with { State = BuilderState.REQUIREMENT_EVALUATION },
+
+(BuilderState.REQUIREMENT_EVALUATION, RequirementsEvaluatedEvent e) =>
+    context with { State = BuilderState.BRANDING_INFERENCE },
+
+(BuilderState.BRANDING_INFERENCE, BrandingInferredEvent e) =>
+    context with { State = BuilderState.ASSET_GENERATING },
+
+(BuilderState.ASSET_GENERATING, AssetsGeneratedEvent e) =>
+    context with { State = BuilderState.ASSETS_READY },
+
+(BuilderState.ASSETS_READY, TaskStartedEvent e) =>
+    context with { State = BuilderState.AI_GENERATING },
+
+// For PACKAGING builds: Requirements evaluated AFTER build success
+(BuilderState.BUILD_SUCCEEDED, BuildCompletedEvent e) =>
+    context with { State = BuilderState.REQUIREMENT_EVALUATION },
+
+// Error handling for asset generation
+(BuilderState.ASSET_GENERATING, AssetsGenerationFailedEvent e) =>
+    context with { State = BuilderState.RETRYING, EventLog = [..context.EventLog, @event] },
+
+(BuilderState.BRANDING_INFERENCE, BrandingInferenceFailedEvent e) =>
+    context with { State = BuilderState.RETRYING, EventLog = [..context.EventLog, @event] },
+```
+
+### 6.4 Timing Clarification
+
+**Two Timing Models:**
+
+| Build Type | When Requirements Evaluated | Why |
+|------------|---------------------------|-----|
+| **New App** | BEFORE AI_GENERATING | AI needs requirements to generate correct code |
+| **Refinement** | BEFORE AI_GENERATING | AI needs to know what assets already exist |
+| **Packaging** | AFTER BUILD_SUCCEEDED | Final check before MSIX creation |
+
+```
+
+---
+
+## Summary
+
+### What This Replaces
+
+| Old Approach | New Approach |
+|-------------|--------------|
+| Template files | Platform Requirements Engine |
+| Placeholder replacement | AI-generated from intent |
+| Fixed structure | Dynamic architecture design |
+| Hardcoded assets | AI-generated branding |
+| Limited app types | Infinite possibilities |
+
+### Key Benefits
+
+1. **Truly Infinite**: Users can build ANY software, not limited by templates
+2. **Zero Maintenance**: No templates to update
+3. **Consistent Quality**: All generated from first principles
+4. **Platform Compliant**: Requirements engine ensures Windows acceptance
+5. **AI-Native**: Designed for AI generation from day one
+
+### What Gets Generated (Not Templated)
+
+- ✅ App icons (all sizes)
+- ✅ Splash screens
+- ✅ Tile logos
+- ✅ Brand colors
+- ✅ Architecture structure
+- ✅ Service interfaces
+- ✅ Manifest entries
+- ✅ Capabilities
+- ✅ Navigation patterns
+- ✅ Everything else
+
+**NO TEMPLATES. PURE GENERATION.**
+
+---
+
+## References
+
+- [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — AI Construction Engine vs Runtime Safety Kernel
+- [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) — Multi-agent coordination
+- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — AI capabilities via z-ai-web-dev-sdk
+- [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 8-layer architecture
