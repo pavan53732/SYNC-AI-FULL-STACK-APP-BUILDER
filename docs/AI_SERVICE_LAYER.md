@@ -593,6 +593,30 @@ public async Task<T> WithRetryAsync<T>(Func<Task<T>> operation, int maxRetries =
 
 ## 9. API Contract
 
+### 9.1 Protocol Version Handshake
+
+> **The AI Mini Service uses a versioned protocol for communication.**
+> This ensures compatibility between desktop app and mini-service.
+
+**Protocol Version:** `sync-ai-ai-bridge-v1`
+
+**Handshake Flow:**
+
+```
+1. Desktop app starts mini-service
+2. Desktop app calls GET /health
+3. Mini-service responds with:
+   {
+     "protocol": "sync-ai-ai-bridge-v1",
+     "version": "1.0.0"
+   }
+4. Desktop app validates protocol field matches expected version
+5. If mismatch: log warning, continue (for forward compatibility)
+```
+
+> **INVARIANT**: The `protocol` field MUST be present in `/health` response.
+> Desktop app MUST validate this field before proceeding.
+
 ### Complete API Specification
 
 See [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) for:
@@ -601,6 +625,18 @@ See [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) for
 - All endpoint implementations
 - Error handling code
 - Startup scripts
+
+### 9.2 Encryption Specification
+
+> **AI configuration encryption is defined centrally in [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) Section 3.W.**
+
+| Aspect | Specification |
+|--------|---------------|
+| **Algorithm** | Windows DPAPI (DataProtectionScope.CurrentUser) |
+| **Storage Path** | `%USERPROFILE%\.syncai\Config\ai.config.enc` |
+| **No Plain Text** | Plain JSON configuration files are FORBIDDEN |
+
+**See:** [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §3.W for full encryption specification.
 
 ### Service Lifecycle
 

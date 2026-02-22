@@ -244,6 +244,102 @@ Changing AI configuration forces:
 2. Mini-service restart
 3. Revalidation before resuming execution
 
+### 3.Y AIConfigState Formal Definition (CENTRALIZED)
+
+> **This enum MUST be defined in Layer 6 (Runtime Safety Kernel domain model).**
+> All references to AIConfigState across documentation MUST reference this canonical definition.
+
+```csharp
+public enum AIConfigState
+{
+    /// <summary>
+    /// No AI configuration has been provided yet.
+    /// User has not configured any AI providers in Settings > AI Settings.
+    /// </summary>
+    NOT_CONFIGURED,
+    
+    /// <summary>
+    /// Configuration has been provided but not yet validated.
+    /// POST /api/config has been called with provider details.
+    /// </summary>
+    CONFIGURED,
+    
+    /// <summary>
+    /// Configuration has been validated successfully.
+    /// Test LLM call succeeded. Blueprint design is now permitted.
+    /// </summary>
+    VALIDATED,
+    
+    /// <summary>
+    /// Configuration was provided but validation failed.
+    /// Invalid API key, unreachable endpoint, or quota exceeded.
+    /// </summary>
+    INVALID,
+    
+    /// <summary>
+    /// AI Mini Service is not running or not reachable.
+    /// Service health check failed.
+    /// </summary>
+    SERVICE_UNAVAILABLE
+}
+```
+
+**State Transition Rules:**
+
+| From State | Trigger | To State |
+|------------|---------|----------|
+| NOT_CONFIGURED | User saves AI Settings | CONFIGURED |
+| CONFIGURED | POST /api/config succeeds + test call passes | VALIDATED |
+| CONFIGURED | POST /api/config fails | INVALID |
+| CONFIGURED | Mini-service stops responding | SERVICE_UNAVAILABLE |
+| VALIDATED | Mini-service stops responding | SERVICE_UNAVAILABLE |
+| VALIDATED | User changes AI Settings | CONFIGURED |
+| INVALID | User saves new AI Settings | CONFIGURED |
+| SERVICE_UNAVAILABLE | Mini-service restarts + becomes healthy | CONFIGURED |
+
+**Critical Invariant:** `BLUEPRINT_DESIGN` state transition is BLOCKED unless `AIConfigState == VALIDATED`.
+
+---
+
+### 3.Z Deterministic AI Parameter Lock
+
+> **To ensure reproducible AI behavior, these parameters are LOCKED and CANNOT be changed by agents.**
+
+| Parameter | Locked Value | Rationale |
+|-----------|--------------|-----------|
+| `temperature` | `0.0` | Deterministic output for reproducible builds |
+| `top_p` | `1.0` | Use full probability distribution |
+| `presence_penalty` | `0.0` | No repetition penalty for code generation |
+| `frequency_penalty` | `0.0` | No frequency-based repetition penalty |
+
+> **INVARIANT**: Agents CANNOT override these locked values. Any request passing different values MUST be rejected by the AI Mini Service.
+
+---
+
+### 3.W Encryption Specification (MANDATORY)
+
+> **AI configuration MUST be encrypted at rest using Windows DPAPI.**
+
+| Aspect | Specification |
+|--------|---------------|
+| **Encryption Algorithm** | Windows DPAPI (Data Protection API) |
+| **Scope** | CurrentUser (only the same Windows user can decrypt) |
+| **File Path** | `%USERPROFILE%\.syncai\Config\ai.config.enc` |
+| **Format** | Encrypted binary blob (no plain JSON ever written to disk) |
+| **Key Management** | Windows manages key lifecycle automatically |
+
+**Encryption Flow:**
+
+```
+1. User enters API keys in Settings > AI Settings
+2. Desktop app encrypts using DPAPI (CurrentUser scope)
+3. Encrypted blob written to ai.config.enc
+4. On startup: DPAPI decrypts in memory only
+5. Decrypted config pushed to Mini Service via POST /api/config
+6. In-memory config cleared on app shutdown
+```
+
+
 ---
 
 ## 3.6 AI Capabilities Definition

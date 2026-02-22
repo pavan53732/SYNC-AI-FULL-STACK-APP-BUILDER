@@ -398,6 +398,14 @@ export interface ChatOptions {
   temperature?: number;
 }
 
+// TokenBudget enforcement - LOCKED parameters per SYSTEM_ARCHITECTURE.md §3.Z
+const LOCKED_PARAMS = {
+  temperature: 0.0,      // Deterministic output
+  top_p: 1.0,            // Full probability distribution
+  presence_penalty: 0.0, // No repetition penalty
+  frequency_penalty: 0.0 // No frequency penalty
+};
+
 export async function chatCompletion(
   messages: ChatMessage[],
   options: ChatOptions = {}
@@ -406,11 +414,25 @@ export async function chatCompletion(
     throw new Error("Primary model not configured. Send config via POST /api/config first.");
   }
 
+  // TokenBudget enforcement: Use min of requested tokens or default limit
+  const effectiveMaxTokens = Math.min(
+    options.maxTokens ?? globalConfig.defaultTokenLimit,
+    globalConfig.defaultTokenLimit
+  );
+
+  // Explicit TokenBudget → SDK mapping
   const response = await primaryClient.chat.completions.create({
     model: primaryModel,
     messages: messages as any,
-    max_tokens: options.maxTokens,
-    temperature: options.temperature
+    
+    // TokenBudget enforcement: explicit max_tokens from AgentExecutionContext
+    max_tokens: effectiveMaxTokens,
+    
+    // Deterministic AI parameters - LOCKED (per §3.Z)
+    temperature: LOCKED_PARAMS.temperature,
+    top_p: LOCKED_PARAMS.top_p,
+    presence_penalty: LOCKED_PARAMS.presence_penalty,
+    frequency_penalty: LOCKED_PARAMS.frequency_penalty
   });
 
   return response.choices[0]?.message?.content || "";
@@ -858,6 +880,69 @@ function errorResponse(code: string, message: string, status = 400): Response {
 ---
 
 ## 5. Error Handling
+
+### 5.0 Health Contract & Failure Thresholds
+
+> **The Mini-Service health is formally defined to enable deterministic failure modeling.**
+
+#### Health States
+
+| State | Meaning | Orchestrator Action |
+|-------|---------|-------------------|
+| `healthy` | All model slots configured and validated | Continue normal operation |
+| `degraded` | One or more slots failed, but service responds | Retry with exponential backoff |
+| `unhealthy` | Service not responding or crashed | Restart mini-service |
+
+#### Health Check Response
+
+```json
+{
+  "success": true,
+  "status": "healthy",
+  "version": "1.0.0",
+  "protocol": "sync-ai-ai-bridge-v1",
+  "uptime": 123.45,
+  "timestamp": "2026-02-23T00:00:00.000Z",
+  "configured": {
+    "primary": true,
+    "vision": true,
+    "imageGen": false,
+    "validated": true
+  },
+  "health": {
+    "primary": "ok",
+    "vision": "ok",
+    "imageGen": "not_configured"
+  }
+}
+```
+
+#### Timeout Thresholds
+
+| Operation | Timeout | Failure Action |
+|-----------|---------|---------------|
+| Health check | 5s | Mark unhealthy, restart |
+| Chat (simple) | 30s | Return error, allow retry |
+| Chat (complex) | 60s | Return error, allow retry |
+| Image generation | 120s | Return error, allow retry |
+| Vision analysis | 30s | Return error, allow retry |
+
+#### Rate Limit Handling (429 Response)
+
+| Scenario | Action |
+|----------|--------|
+| 429 received | Exponential backoff (2s, 4s, 8s, max 30s) |
+| 3 consecutive 429s | Transition to DEGRADED state |
+| 10 consecutive 429s | Transition to UNHEALTHY, restart service |
+
+#### Retry Backoff Strategy
+
+```typescript
+function calculateBackoff(attempt: number): number {
+  // Exponential backoff: 2s, 4s, 8s, 16s, 30s (cap)
+  return Math.min(2 * Math.pow(2, attempt), 30000);
+}
+```
 
 ### 5.1 Error Types (utils/errors.ts)
 
