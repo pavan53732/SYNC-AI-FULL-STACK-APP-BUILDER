@@ -568,7 +568,7 @@ User Prompt
 - [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) — State machine
 - [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) — Agent coordination
 - [AGENT_EXECUTION_CONTRACT.md](./AGENT_EXECUTION_CONTRACT.md) — Sandbox constraints
-- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — **AI capabilities via z-ai-web-dev-sdk (NO API KEYS!)**
+- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — **AI capabilities via user-configured providers**
 - [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) — Complete AI service implementation
 
 ---
@@ -579,8 +579,8 @@ User Prompt
 |------|--------|
 | 2026-02-24 | **Added "Hidden System Prompt (Constraint Documents)" section** - Explains framework rules vs user's idea |
 | 2026-02-24 | **Added "Base Project Template (Minimal Kernel Bootstrap)" section** - Explains empty structure scaffolding |
+| 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - user-configured providers |
 | 2026-02-22 | Added AI Service Layer references (Layer 6.6) |
-| 2026-02-22 | Added NO API KEYS requirement |
 | 2026-02-21 | Converted to Infinite Silent Retry model |
 | 2026-02-21 | Replaced "Hard Abort" with "System Reset + Forced Amnesia" |
 | 2026-02-21 | Added Cancellation Authority section (only way to stop) |

@@ -1138,5 +1138,5 @@ CREATE INDEX idx_generated_assets_requirement ON generated_assets(requirement_id
 
 - [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — AI Construction Engine vs Runtime Safety Kernel
 - [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) — Multi-agent coordination
-- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — AI capabilities via z-ai-web-dev-sdk
+- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — AI capabilities via user-configured providers
 - [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 8-layer architecture

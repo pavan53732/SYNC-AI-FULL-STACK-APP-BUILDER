@@ -789,9 +789,10 @@ var acrylicBrush = new AcrylicBrush
     <ScrollViewer>
         <StackPanel Padding="24" Spacing="24" MaxWidth="800">
 
-            <!-- AI Configuration -->
-            <Expander Header="AI Configuration" IsExpanded="True">
-                <StackPanel Spacing="12" Padding="12">
+            <!-- AI Settings -->
+            <Expander Header="AI Settings" IsExpanded="True">
+                <StackPanel Spacing="16" Padding="12">
+
                     <!-- AI Service Status -->
                     <Grid ColumnSpacing="12">
                         <Grid.ColumnDefinitions>
@@ -805,64 +806,88 @@ var acrylicBrush = new AcrylicBrush
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                             <Ellipse x:Name="AIServiceStatusDot"
                                      Width="12" Height="12"
-                                     Fill="{StaticResource StatusSuccessBrush}"/>
-                            <TextBlock Text="{x:Bind ViewModel.AIServiceStatus, Mode=OneWay}"
-                                       Foreground="{StaticResource StatusSuccessBrush}"/>
+                                     Fill="{x:Bind ViewModel.ServiceStatusBrush, Mode=OneWay}"/>
+                            <TextBlock Text="{x:Bind ViewModel.AIServiceStatus, Mode=OneWay}"/>
                         </StackPanel>
                     </Grid>
 
-                    <InfoBar Severity="Success"
-                             IsOpen="True"
-                             Message="AI Service is running. NO API KEYS REQUIRED - z-ai-web-dev-sdk handles authentication automatically."/>
-
-                    <ComboBox Header="Preferred Model"
-                              ItemsSource="{x:Bind ViewModel.AvailableModels}"
-                              SelectedItem="{x:Bind ViewModel.SelectedModel, Mode=TwoWay}"
-                              Width="300"/>
-                </StackPanel>
-            </Expander>
-
-            <!-- Build Configuration -->
-            <Expander Header="Build Configuration">
-                <StackPanel Spacing="12" Padding="12">
                     <InfoBar Severity="Informational"
                              IsOpen="True"
-                             Message="Build settings are managed automatically. The system retries continuously until success."/>
-                </StackPanel>
-            </Expander>
+                             Message="Configure your AI providers below. Each slot uses an OpenAI-compatible API."/>
 
-            <!-- Workspace Configuration -->
-            <Expander Header="Workspace">
-                <StackPanel Spacing="12" Padding="12">
-                    <TextBox Header="Workspace Path"
-                             Text="{x:Bind ViewModel.WorkspacePath, Mode=TwoWay}"
-                             IsReadOnly="True"/>
+                    <!-- Primary Model (Code & Chat) -->
+                    <StackPanel Spacing="8" BorderBrush="{StaticResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="16">
+                        <TextBlock Text="🧠 Primary Model (Code &amp; Chat)"
+                                   Style="{StaticResource SubtitleTextBlockStyle}"/>
+                        <TextBlock Text="Used for code generation, chat completions, and architecture design."
+                                   Opacity="0.6"/>
 
-                    <Button Content="Change Location"
-                            Click="{x:Bind ViewModel.ChangeWorkspacePath}"/>
-                </StackPanel>
-            </Expander>
+                        <TextBox Header="Model Name"
+                                 PlaceholderText="e.g., openai/gpt-4o"
+                                 Text="{x:Bind ViewModel.PrimaryModelName, Mode=TwoWay}"/>
+                        <TextBox Header="Base URL"
+                                 PlaceholderText="e.g., https://openrouter.ai/api/v1"
+                                 Text="{x:Bind ViewModel.PrimaryBaseUrl, Mode=TwoWay}"/>
+                        <PasswordBox Header="API Key"
+                                     PlaceholderText="sk-..."
+                                     Password="{x:Bind ViewModel.PrimaryApiKey, Mode=TwoWay}"/>
 
-            <!-- SDK Validation -->
-            <Expander Header="SDK Status">
-                <StackPanel Spacing="12" Padding="12">
-                    <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
+                        <Button Content="Test Connection"
+                                Click="{x:Bind ViewModel.TestPrimaryConnection}"
+                                Style="{StaticResource AccentButtonStyle}"/>
+                    </StackPanel>
 
-                        <TextBlock Grid.Column="0"
-                                   Text="{x:Bind ViewModel.SdkVersion, Mode=OneWay}"/>
+                    <!-- Vision Model (UI Analysis) -->
+                    <StackPanel Spacing="8" BorderBrush="{StaticResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="16">
+                        <TextBlock Text="👁️ Vision Model (UI Analysis)"
+                                   Style="{StaticResource SubtitleTextBlockStyle}"/>
+                        <TextBlock Text="Used for analyzing UI screenshots and image understanding."
+                                   Opacity="0.6"/>
 
-                        <FontIcon Grid.Column="1"
-                                  Glyph="&#xE73E;"
-                                  Foreground="Green"
-                                  Visibility="{x:Bind ViewModel.IsSdkValid, Mode=OneWay}"/>
-                    </Grid>
+                        <TextBox Header="Model Name"
+                                 PlaceholderText="e.g., openai/gpt-4o"
+                                 Text="{x:Bind ViewModel.VisionModelName, Mode=TwoWay}"/>
+                        <TextBox Header="Base URL"
+                                 PlaceholderText="e.g., https://openrouter.ai/api/v1"
+                                 Text="{x:Bind ViewModel.VisionBaseUrl, Mode=TwoWay}"/>
+                        <PasswordBox Header="API Key"
+                                     PlaceholderText="sk-..."
+                                     Password="{x:Bind ViewModel.VisionApiKey, Mode=TwoWay}"/>
 
-                    <Button Content="Validate SDK"
-                            Click="{x:Bind ViewModel.ValidateSdk}"/>
+                        <Button Content="Test Connection"
+                                Click="{x:Bind ViewModel.TestVisionConnection}"/>
+                    </StackPanel>
+
+                    <!-- Image Generation Model (Icons & Splash) -->
+                    <StackPanel Spacing="8" BorderBrush="{StaticResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="16">
+                        <TextBlock Text="🎨 Image Generation (Icons &amp; Splash)"
+                                   Style="{StaticResource SubtitleTextBlockStyle}"/>
+                        <TextBlock Text="Used for generating app icons, splash screens, and visual assets."
+                                   Opacity="0.6"/>
+
+                        <TextBox Header="Model Name"
+                                 PlaceholderText="e.g., dall-e-3"
+                                 Text="{x:Bind ViewModel.ImageGenModelName, Mode=TwoWay}"/>
+                        <TextBox Header="Base URL"
+                                 PlaceholderText="e.g., https://api.openai.com/v1"
+                                 Text="{x:Bind ViewModel.ImageGenBaseUrl, Mode=TwoWay}"/>
+                        <PasswordBox Header="API Key"
+                                     PlaceholderText="sk-..."
+                                     Password="{x:Bind ViewModel.ImageGenApiKey, Mode=TwoWay}"/>
+
+                        <Button Content="Test Connection"
+                                Click="{x:Bind ViewModel.TestImageGenConnection}"/>
+                    </StackPanel>
+
+                    <!-- Save Button -->
+                    <Button Content="Save AI Settings"
+                            Click="{x:Bind ViewModel.SaveAISettings}"
+                            Style="{StaticResource AccentButtonStyle}"
+                            HorizontalAlignment="Right"/>
+
                 </StackPanel>
             </Expander>
 

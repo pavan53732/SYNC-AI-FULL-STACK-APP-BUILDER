@@ -57,9 +57,7 @@ It is not just a UI prototyping tool; it is a full-cycle software construction e
 | **Installer Generation**          | Every successful build produces a signed MSIX bundle.             | Windows App SDK Build Tools + MSIX                  |
 | **Permission Automation**         | APIs like Location/Camera are auto-detected and declared.         | Roslyn AST Scanning → Capability Injection          |
 | **Real Code Ownership**           | You own the C# and XAML. It's not a closed platform.              | Standard .csproj format, no proprietary lock-in     |
-| **Voice Input (ASR)**             | Speak prompts instead of typing.                                  | z-ai-web-dev-sdk ASR - NO API KEYS!                 |
-| **Voice Feedback (TTS)**          | Audio notifications for build completion.                         | z-ai-web-dev-sdk TTS - NO API KEYS!                 |
-| **Image Generation**              | Generate app icons and visual assets.                             | z-ai-web-dev-sdk Image Gen - NO API KEYS!           |
+| **Image Generation**              | Generate app icons and visual assets.                             | openai SDK Image Gen - user-configured              |
 
 ### The "No-Code" Illusion
 
@@ -76,7 +74,7 @@ The system automatically manages the development environment:
 - **Self-Repair Strategy**: Automatic recovery from build environment issues
 - **Low-Resource Mitigation**: RAM/Disk constraints detected and handled gracefully
 - **AI Service Auto-Start**: AI Mini Service starts automatically with the app (Layer 6.6)
-- **NO API KEYS**: z-ai-web-dev-sdk handles all AI authentication automatically
+- **User-Configured AI**: Users set up their AI providers in Settings > AI Settings
 
 ---
 

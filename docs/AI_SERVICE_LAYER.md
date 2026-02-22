@@ -4,7 +4,7 @@
 >
 > **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
 >
-> _Governs the communication between the Windows Desktop App and the z-ai-web-dev-sdk AI backend. NO API KEYS REQUIRED._
+> _Governs the communication between the Windows Desktop App and user-configured OpenAI-compatible AI providers via a local HTTP mini-service._
 
 ---
 
@@ -28,22 +28,22 @@
 
 ### Purpose
 
-The AI Service Layer bridges the gap between the **Windows Desktop Application** (C# / .NET 8 / WinUI 3) and the **AI capabilities** provided by **z-ai-web-dev-sdk** (Node.js / TypeScript).
+The AI Service Layer bridges the gap between the **Windows Desktop Application** (C# / .NET 8 / WinUI 3) and user-configured **OpenAI-compatible AI providers** via the `openai` npm SDK (Node.js / TypeScript).
 
 ### Key Principle
 
-> **NO API KEYS REQUIRED!**
+> **User-Configured AI Providers**
 >
-> The z-ai-web-dev-sdk handles all AI authentication automatically. The system is completely free to use.
+> Users configure their own AI providers (OpenRouter, OpenAI, or any OpenAI-compatible endpoint) in the app's **Settings > AI Settings** page. The system supports three independent model slots: **Primary** (code/chat), **Vision** (UI analysis), and **Image Generation** (icons/splash).
 
 ### Why This Layer Exists
 
 | Component | Technology | Role |
 |-----------|------------|------|
 | **Sync AI Desktop** | C# / .NET 8 / WinUI 3 | Main application, UI, Orchestrator, Build System |
-| **AI Mini Service** | Bun / Node.js + z-ai-web-dev-sdk | AI capabilities (LLM, Image, TTS, ASR, VLM, Search) |
+| **AI Mini Service** | Bun / Node.js + `openai` SDK | AI capabilities (LLM, Vision, Image Gen, Search) |
 
-The z-ai-web-dev-sdk is a **Node.js/TypeScript SDK**, which cannot be used directly in a C#/.NET application. Therefore, we need a **local HTTP service** that wraps the SDK and exposes AI capabilities via REST API.
+The `openai` npm SDK is a **Node.js/TypeScript library**, which cannot be used directly in a C#/.NET application. Therefore, we need a **local HTTP service** that wraps the SDK and exposes AI capabilities via REST API.
 
 ---
 
@@ -55,6 +55,7 @@ The z-ai-web-dev-sdk is a **Node.js/TypeScript SDK**, which cannot be used direc
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 7: User Interface (WinUI 3 / XAML)                   │
 │  ─ Prompt input, real-time preview, version timeline         │
+│  ─ Settings > AI Settings (user-configured providers)       │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 6.5: AI Construction Engine (PRIMARY INTELLIGENCE)   │
 │  ┌─────────────────────────────────────────────────────────┐│
@@ -65,12 +66,14 @@ The z-ai-web-dev-sdk is a **Node.js/TypeScript SDK**, which cannot be used direc
 │  │ AI Service Client     → HTTP client to Layer 6.6        ││
 │  └─────────────────────────────────────────────────────────┘│
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 6.6: AI Service Layer (NEW)                          │
+│  Layer 6.6: AI Service Layer                                │
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │ Local HTTP Service    → localhost:3001                  ││
-│  │ z-ai-web-dev-sdk      → NO API KEYS!                    ││
-│  │ LLM / Image / TTS     → AI capabilities                 ││
-│  │ ASR / VLM / Search    → All AI features                 ││
+│  │ openai SDK            → OpenAI-compatible providers     ││
+│  │ 3-Slot Config:                                          ││
+│  │   🧠 Primary  (code/chat)   → user-configured          ││
+│  │   👁️ Vision   (UI analysis) → user-configured          ││
+│  │   🎨 Image Gen (icons)      → user-configured          ││
 │  └─────────────────────────────────────────────────────────┘│
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 6: Runtime Safety Kernel (ENFORCEMENT LAYER)         │
@@ -108,6 +111,13 @@ The z-ai-web-dev-sdk is a **Node.js/TypeScript SDK**, which cannot be used direc
 │   │ └─ AI Service Client (HTTP)                         │   │
 │   └─────────────────────────────────────────────────────┘   │
 │                           │                                  │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │ Settings > AI Settings (User-Configured)            │   │
+│   │ ├─ 🧠 Primary:  model / baseURL / apiKey            │   │
+│   │ ├─ 👁️ Vision:   model / baseURL / apiKey            │   │
+│   │ └─ 🎨 Image Gen: model / baseURL / apiKey           │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                           │                                  │
 │                           │ HTTP POST (localhost:3001)      │
 │                           ▼                                  │
 └─────────────────────────────────────────────────────────────┘
@@ -118,13 +128,11 @@ The z-ai-web-dev-sdk is a **Node.js/TypeScript SDK**, which cannot be used direc
 │           AI MINI SERVICE (Bun / Node.js)                    │
 │                                                              │
 │   ┌─────────────────────────────────────────────────────┐   │
-│   │ z-ai-web-dev-sdk (NO API KEYS!)                     │   │
-│   │ ├─ LLM (Chat Completions)                           │   │
-│   │ ├─ Image Generation                                 │   │
-│   │ ├─ TTS (Text to Speech)                             │   │
-│   │ ├─ ASR (Speech to Text)                             │   │
-│   │ ├─ VLM (Vision Language Model)                      │   │
-│   │ └─ Web Search                                       │   │
+│   │ openai SDK (User-Configured Providers)              │   │
+│   │ ├─ 🧠 primaryClient  → LLM Chat Completions        │   │
+│   │ ├─ 👁️ visionClient   → Vision Language Model       │   │
+│   │ ├─ 🎨 imageClient    → Image Generation            │   │
+│   │ └─ 🔍 searchClient   → Web Search (via Primary)    │   │
 │   └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -135,16 +143,15 @@ The z-ai-web-dev-sdk is a **Node.js/TypeScript SDK**, which cannot be used direc
 
 ### HTTP Endpoints
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/chat` | POST | LLM chat completions |
-| `/api/chat/stream` | POST | Streaming LLM responses |
-| `/api/generate-image` | POST | Image generation |
-| `/api/tts` | POST | Text to speech synthesis |
-| `/api/asr` | POST | Speech to text transcription |
-| `/api/vision` | POST | Image analysis (VLM) |
-| `/api/search` | POST | Web search |
-| `/health` | GET | Service health check |
+| Endpoint | Method | Purpose | Model Slot Used |
+|----------|--------|---------|----------------|
+| `/api/chat` | POST | LLM chat completions | 🧠 Primary |
+| `/api/chat/stream` | POST | Streaming LLM responses | 🧠 Primary |
+| `/api/generate-image` | POST | Image generation | 🎨 Image Gen |
+| `/api/vision` | POST | Image analysis (VLM) | 👁️ Vision |
+| `/api/search` | POST | Web search | 🧠 Primary |
+| `/api/config` | POST | Push AI provider config from desktop app | — |
+| `/health` | GET | Service health check | — |
 
 ### Request/Response Format
 
@@ -224,69 +231,6 @@ Binary image data (PNG)
 - Visual assets
 
 ---
-
-### 4.3 TTS (Text to Speech)
-
-**Endpoint:** `POST /api/tts`
-
-**Request:**
-```json
-{
-  "text": "Build completed successfully",
-  "voice": "tongtong",
-  "speed": 1.0
-}
-```
-
-**Response:**
-```
-Binary audio data (WAV)
-```
-
-**Available Voices:**
-- `tongtong` - Warm and friendly
-- `chuichui` - Lively and cute
-- `xiaochen` - Calm and professional
-- `jam` - English gentleman
-
-**Constraints:**
-- Max text length: 1024 characters
-- Speed range: 0.5 to 2.0
-
-**Use Cases:**
-- Build completion announcements
-- Error notifications
-- Accessibility features
-
----
-
-### 4.4 ASR (Speech to Text)
-
-**Endpoint:** `POST /api/asr`
-
-**Request:**
-```json
-{
-  "audioBase64": "UklGRiQAAABXQVZFZm10..."
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "text": "Create a todo list application",
-  "confidence": 0.95
-}
-```
-
-**Supported Formats:**
-- WAV, MP3, M4A, FLAC, OGG
-
-**Use Cases:**
-- Voice input for prompts
-- Voice commands
-- Accessibility
 
 ---
 
@@ -371,17 +315,54 @@ public class AIServiceClient
         };
     }
     
-    // Chat completion
+    // ── Configuration ──────────────────────────────────────
+    
+    /// <summary>
+    /// Sends AI provider settings to the service. Called on app startup
+    /// and whenever the user changes Settings > AI Settings.
+    /// </summary>
+    public async Task<bool> ConfigureAsync(AIProviderSettings settings)
+    {
+        var request = new
+        {
+            primary = settings.Primary != null ? new
+            {
+                modelName = settings.Primary.ModelName,
+                baseUrl = settings.Primary.BaseUrl,
+                apiKey = settings.Primary.ApiKey
+            } : null,
+            vision = settings.Vision != null ? new
+            {
+                modelName = settings.Vision.ModelName,
+                baseUrl = settings.Vision.BaseUrl,
+                apiKey = settings.Vision.ApiKey
+            } : null,
+            imageGen = settings.ImageGen != null ? new
+            {
+                modelName = settings.ImageGen.ModelName,
+                baseUrl = settings.ImageGen.BaseUrl,
+                apiKey = settings.ImageGen.ApiKey
+            } : null
+        };
+        
+        var response = await _httpClient.PostAsJsonAsync("/api/config", request);
+        response.EnsureSuccessStatusCode();
+        
+        var result = await response.Content.ReadFromJsonAsync<ConfigResponse>();
+        return result.Configured.Primary && result.Configured.Vision;
+    }
+    
+    // ── Chat (Primary Model) ──────────────────────────────
+    
     public async Task<string> ChatAsync(string systemPrompt, string userPrompt)
     {
         var request = new
         {
             messages = new[]
             {
-                new { role = "assistant", content = systemPrompt },
+                new { role = "system", content = systemPrompt },
                 new { role = "user", content = userPrompt }
-            },
-            thinking = new { type = "disabled" }
+            }
         };
         
         var response = await _httpClient.PostAsJsonAsync("/api/chat", request);
@@ -391,38 +372,20 @@ public class AIServiceClient
         return result.Content;
     }
     
-    // Image generation
+    // ── Image Generation (Image Gen Model) ────────────────
+    
     public async Task<byte[]> GenerateImageAsync(string prompt, string size = "1024x1024")
     {
         var request = new { prompt, size };
         var response = await _httpClient.PostAsJsonAsync("/api/generate-image", request);
         response.EnsureSuccessStatusCode();
         
-        return await response.Content.ReadAsByteArrayAsync();
+        var result = await response.Content.ReadFromJsonAsync<ImageResponse>();
+        return Convert.FromBase64String(result.ImageBase64);
     }
     
-    // Text to speech
-    public async Task<byte[]> TextToSpeechAsync(string text, string voice = "tongtong", double speed = 1.0)
-    {
-        var request = new { text, voice, speed };
-        var response = await _httpClient.PostAsJsonAsync("/api/tts", request);
-        response.EnsureSuccessStatusCode();
-        
-        return await response.Content.ReadAsByteArrayAsync();
-    }
+    // ── Vision Analysis (Vision Model) ────────────────────
     
-    // Speech to text
-    public async Task<string> SpeechToTextAsync(byte[] audioData)
-    {
-        var request = new { audioBase64 = Convert.ToBase64String(audioData) };
-        var response = await _httpClient.PostAsJsonAsync("/api/asr", request);
-        response.EnsureSuccessStatusCode();
-        
-        var result = await response.Content.ReadFromJsonAsync<ASRResponse>();
-        return result.Text;
-    }
-    
-    // Vision analysis
     public async Task<string> AnalyzeImageAsync(string prompt, byte[] imageData)
     {
         var request = new
@@ -437,30 +400,81 @@ public class AIServiceClient
         return result.Content;
     }
     
-    // Web search
-    public async Task<List<SearchResult>> SearchAsync(string query, int numResults = 10)
+    // ── Web Search (Primary Model) ────────────────────────
+    
+    public async Task<string> SearchAsync(string query)
     {
-        var request = new { query, num = numResults };
+        var request = new { query };
         var response = await _httpClient.PostAsJsonAsync("/api/search", request);
         response.EnsureSuccessStatusCode();
         
         var result = await response.Content.ReadFromJsonAsync<SearchResponse>();
-        return result.Results;
+        return result.Content;
     }
     
-    // Health check
+    // ── Health Check ──────────────────────────────────────
+    
+    public async Task<HealthResponse> GetHealthAsync()
+    {
+        var response = await _httpClient.GetAsync("/health");
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<HealthResponse>();
+    }
+    
     public async Task<bool> IsHealthyAsync()
     {
         try
         {
-            var response = await _httpClient.GetAsync("/health");
-            return response.IsSuccessStatusCode;
+            var health = await GetHealthAsync();
+            return health.Success;
         }
         catch
         {
             return false;
         }
     }
+}
+
+// ── DTOs ──────────────────────────────────────────────────
+
+public record AIProviderSettings
+{
+    public AIProviderSlot? Primary { get; init; }
+    public AIProviderSlot? Vision { get; init; }
+    public AIProviderSlot? ImageGen { get; init; }
+}
+
+public record AIProviderSlot
+{
+    public string ModelName { get; init; }
+    public string BaseUrl { get; init; }
+    public string ApiKey { get; init; }
+}
+
+public record ConfigResponse
+{
+    public bool Success { get; init; }
+    public ConfiguredSlots Configured { get; init; }
+}
+
+public record ConfiguredSlots
+{
+    public bool Primary { get; init; }
+    public bool Vision { get; init; }
+    public bool ImageGen { get; init; }
+}
+
+public record HealthResponse
+{
+    public bool Success { get; init; }
+    public string Status { get; init; }
+    public ConfiguredSlots Configured { get; init; }
+}
+
+public record ImageResponse
+{
+    public bool Success { get; init; }
+    public string ImageBase64 { get; init; }
 }
 ```
 
@@ -522,8 +536,7 @@ public async Task<T> WithRetryAsync<T>(Func<Task<T>> operation, int maxRetries =
 | Chat (simple) | < 2s |
 | Chat (complex) | < 10s |
 | Image generation | < 15s |
-| TTS | < 2s |
-| ASR | < 3s |
+| Vision analysis | < 5s |
 | Web search | < 3s |
 
 ### Optimization Strategies
@@ -551,10 +564,10 @@ public async Task<T> WithRetryAsync<T>(Func<Task<T>> operation, int maxRetries =
 
 | Aspect | Implementation |
 |--------|---------------|
-| **API Keys** | NOT REQUIRED! |
+| **API Keys** | User-configured per model slot; stored encrypted locally |
 | **User Data** | Stays local |
-| **Network Calls** | Only to z-ai-web-dev-sdk endpoints |
-| **Logging** | No sensitive data logged |
+| **Network Calls** | Only to user-configured AI provider endpoints |
+| **Logging** | No sensitive data logged (API keys never logged) |
 
 ### Service Isolation
 
@@ -568,8 +581,8 @@ public async Task<T> WithRetryAsync<T>(Func<Task<T>> operation, int maxRetries =
 │ │ AI Mini Service (Same user context)                     │ │
 │ │                                                         │ │
 │ │ ┌─────────────────────────────────────────────────────┐│ │
-│ │ │ z-ai-web-dev-sdk                                    ││ │
-│ │ │ (Handles authentication automatically)              ││ │
+│ │ │ openai SDK                                         ││ │
+│ │ │ (Receives config from desktop app via /api/config) ││ │
 │ │ └─────────────────────────────────────────────────────┘│ │
 │ └─────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
@@ -1029,14 +1042,14 @@ The `ai-service.exe` is just another asset file:
 | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) | Agents use AI Service for generation |
 | [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) | Complete implementation code |
 | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) | Orchestrator coordinates AI Service calls |
-| [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) | UI may use TTS/ASR features |
+| [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) | UI includes AI Settings page |
 
 ### Implementation Dependencies
 
 ```
 AI_MINI_SERVICE_IMPLEMENTATION.md
     │
-    ├── z-ai-web-dev-sdk (NPM package)
+    ├── openai (NPM package)
     ├── Bun runtime
     └── TypeScript 5.x
 
@@ -1061,7 +1074,8 @@ AI_SERVICE_LAYER.md (this document)
 | Date | Change |
 |------|--------|
 | 2026-02-22 | Initial specification for AI Service Layer |
-| 2026-02-22 | Added NO API KEYS requirement |
 | 2026-02-22 | Integrated with 7-layer architecture as Layer 6.6 |
 | 2026-02-22 | Added Section 11: Process Lifecycle Management (Auto-Start) |
 | 2026-02-22 | **Changed to compiled executable ONLY** - removed `bun run dev` scripts approach for production |
+| 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - 3-slot user-configured AI providers |
+| 2026-02-23 | **Removed TTS/ASR features** - Simplified to LLM, Vision, Image Gen, Search |

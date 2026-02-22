@@ -12,7 +12,7 @@
 
 | Document | Purpose |
 |----------|---------|
-| [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) | **NEW: AI capabilities via z-ai-web-dev-sdk (NO API KEYS!)** |
+| [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) | **AI capabilities via user-configured OpenAI-compatible providers** |
 | [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) | **NEW: Complete AI mini service implementation** |
 | [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) | **NEW: Zero-template approach - Platform requirements & asset generation** |
 | [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) | **NEW: Intelligent brand derivation from user intent** |
@@ -59,7 +59,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 | **Framework** | WinUI 3 (.NET 8) |
 | **Target OS** | Windows 10 Build 22621+ (Windows 11 standard) |
 | **Deployment** | MSIX packaging |
-| **AI Reasoning** | **Local AI Service (z-ai-web-dev-sdk) — NO API KEYS REQUIRED!** |
+| **AI Reasoning** | **Local AI Mini Service (openai SDK) — User-configured providers** |
 | **Build & Execution** | Local-only (no cloud dependency) |
 
 ### Core Capabilities
@@ -70,13 +70,13 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 4. **Build System**: Hidden MSBuild, NuGet Restore, XAML Compilation
 5. **Runtime**: Live Preview, Hot Reload, Full Compiled Launch
 6. **Packaging & Permissions**: Automatic AppxManifest, Capability Inference, MSIX Bundle, Certificate Signing
-7. **AI Capabilities**: LLM, Image Generation, TTS, ASR, VLM, Web Search — **ALL FREE, NO API KEYS!**
+7. **AI Capabilities**: LLM, Vision, Image Generation, Web Search — via user-configured OpenAI-compatible providers
 
 ---
 
 ## 2. The 8-Layer Architecture
 
-> **AI-Primary Architecture:** The AI Construction Engine sits at the top, directing all construction. The Runtime Safety Kernel enforces deterministic guarantees. The AI Service Layer provides all AI capabilities without API keys.
+> **AI-Primary Architecture:** The AI Construction Engine sits at the top, directing all construction. The Runtime Safety Kernel enforces deterministic guarantees. The AI Service Layer provides AI capabilities via user-configured OpenAI-compatible providers.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -95,9 +95,9 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 │  Layer 6.6: AI Service Layer (NEW)                          │
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │ Local HTTP Service    → localhost:3001                  ││
-│  │ z-ai-web-dev-sdk      → NO API KEYS REQUIRED!           ││
-│  │ LLM / Image / TTS     → All AI capabilities             ││
-│  │ ASR / VLM / Search    → Completely free to use          ││
+│  │ openai SDK            → User-configured providers       ││
+│  │ LLM / Vision / Image  → All AI capabilities             ││
+│  │ Search                → User-configured                  ││
 │  └─────────────────────────────────────────────────────────┘│
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 6: Runtime Safety Kernel (ENFORCEMENT LAYER)         │
@@ -145,11 +145,11 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 │    AI SERVICE LAYER       │   │    RUNTIME SAFETY KERNEL    │
 │    (Layer 6.6)            │   │    (Enforcement Layer)       │
 │                           │   │                              │
-│ z-ai-web-dev-sdk          │   │ Kernel enforces safety:      │
-│ NO API KEYS!              │   │ validates, snapshots, resets │
+│ openai SDK              │   │ Kernel enforces safety:      │
+│ User-configured         │   │ validates, snapshots, resets │
 │                           │   │ Owns system resets at 10+    │
-│ LLM, Image, TTS,          │   │                              │
-│ ASR, VLM, Search          │   │                              │
+│ LLM, Vision, Image Gen,   │   │                              │
+│ Search                    │   │                              │
 └───────────────────────────┘   └─────────────────────────────┘
 ```
 
@@ -168,7 +168,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 | **Layer 5** | (merged into Layer 6.5) | - |
 | **Layer 6** | Runtime Safety Kernel - enforcement, abort authority | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) |
 | **Layer 6.5** | AI Construction Engine - intelligence, generation | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) |
-| **Layer 6.6** | **AI Service Layer - z-ai-web-dev-sdk, NO API KEYS** | [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) |
+| **Layer 6.6** | **AI Service Layer - openai SDK, user-configured providers** | [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) |
 | **Layer 7** | WinUI 3 shell, user interaction | [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) |
 
 ---
@@ -204,7 +204,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 | **Path Sandbox** | All paths must be relative to project root. No `..` traversal. |
 | **Banned Directories** | `.git`, `.vs`, `bin`, `obj` are off-limits to AI patches. |
 | **Operation Whitelist** | Only whitelisted patch operations are permitted. |
-| **NO API KEYS** | AI capabilities via z-ai-web-dev-sdk require NO API keys. |
+| **User-Configured AI** | AI capabilities via user-configured OpenAI-compatible providers |
 
 ### 3.4 Packaging Invariants
 
@@ -219,11 +219,10 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 
 | Invariant | Description |
 |-----------|-------------|
-| **No API Keys Required** | z-ai-web-dev-sdk handles authentication automatically |
+| **User-Configured Providers** | Users configure AI providers via Settings > AI Settings |
 | **Local Service Only** | AI mini service runs on localhost:3001 only |
 | **Automatic Startup** | Desktop app starts AI service if not running |
 | **Health Monitoring** | Desktop app monitors AI service health |
-| **No Cost Control Needed** | z-ai-web-dev-sdk is completely FREE - no API costs |
 
 ---
 
@@ -433,11 +432,9 @@ The AI can add ANY additional capability based on the user's idea:
 **Owns:**
 - LLM (Chat Completions) for code generation
 - Image Generation for visual assets
-- TTS (Text to Speech) for notifications
-- ASR (Speech to Text) for voice input
-- VLM (Vision Language Model) for image analysis
+- Vision Language Model for UI analysis
 - Web Search for documentation lookup
-- All communication with z-ai-web-dev-sdk
+- All communication with user-configured OpenAI-compatible providers
 
 **Does NOT Own:**
 - Code generation logic (Layer 6.5)
@@ -474,7 +471,7 @@ The AI can add ANY additional capability based on the user's idea:
 | 3 → 1 | Patch → Filesystem | ✅ Yes | File writes |
 | 7 → 3 | UI → Patch | ❌ No | - |
 | 7 → 2 | UI → Build | ❌ No | - |
-| 6.6 → External | AI Service → z-ai endpoints | ✅ Yes | HTTPS (handled by SDK) |
+| 6.6 → External | AI Service → User-configured providers | ✅ Yes | HTTPS |
 
 **Rule:** UI (Layer 7) ONLY communicates with Orchestrator (Layer 6). All other communication must go through the Orchestrator.
 
@@ -499,7 +496,7 @@ Layer 6: Orchestrator dispatches tasks sequentially
     ↓
 Layer 6.5: AI generates patch (via Layer 6.6)
     ↓
-Layer 6.6: AI Service processes LLM request (NO API KEYS!)
+Layer 6.6: AI Service processes LLM request (user-configured provider)
     ↓
 Layer 4: Roslyn validates target existence
     ↓
@@ -679,7 +676,7 @@ AI patches cannot touch:
 | **Binding** | localhost only (127.0.0.1) |
 | **Port** | 3001 (configurable) |
 | **Authentication** | Not required (local service) |
-| **API Keys** | **NOT REQUIRED!** Handled by z-ai-web-dev-sdk |
+| **API Keys** | User-configured per model slot in Settings > AI Settings |
 
 ---
 
@@ -689,7 +686,7 @@ AI patches cannot touch:
 
 | Component | Location | Cloud Required? |
 |-----------|----------|-----------------|
-| **AI Reasoning** | **Local AI Service (z-ai-web-dev-sdk)** | **NO! NO API KEYS!** |
+| **AI Reasoning** | **Local AI Mini Service (openai SDK)** | **User-configured providers** |
 | Build & Compilation | Local PC | No |
 | NuGet Restore | Local PC | No (if cached) |
 | App Execution | Local PC | No |
@@ -706,15 +703,15 @@ AI patches cannot touch:
 1. **NO Web-Based Compilers** — All compilation is local MSBuild
 2. **NO Browser-Based Runtime** — Strictly WinUI 3 Desktop
 3. **NO Centralized Database** — All data stays in `%USERPROFILE%\.syncai\`
-4. **NO API Keys Required** — AI capabilities via z-ai-web-dev-sdk
+4. **User-Configured AI** — AI capabilities via user-configured OpenAI-compatible providers
 
 ---
 
 ## 11. Implementation Roadmap
 
 ### Phase 0: AI Service Foundation (NEW - Weeks 0-1)
-- Set up AI Mini Service (Bun + z-ai-web-dev-sdk)
-- Implement all API endpoints (LLM, Image, TTS, ASR, VLM, Search)
+- Set up AI Mini Service (Bun + openai SDK)
+- Implement all API endpoints (LLM, Image, Vision, Search)
 - Create C# client for Layer 6.6 communication
 - Test all AI capabilities
 
@@ -792,9 +789,11 @@ AI patches cannot touch:
 | Date | Change | Author |
 |------|--------|--------|
 | 2026-02-24 | **Added Section 3.6: AI Capabilities Definition** - Base Tech Stack, Extended Capabilities, What Sync AI Can/Cannot Build | Architecture Team |
-| 2026-02-24 | **Removed Cost Control Layer** - z-ai-web-dev-sdk is completely FREE, no API costs | Architecture Team |
-| 2026-02-24 | **Added "No Cost Control Needed" to AI Service Invariants** | Architecture Team |
-| 2026-02-22 | **Added Layer 6.6: AI Service Layer with z-ai-web-dev-sdk** | Architecture Team |
-| 2026-02-22 | **Updated AI Reasoning: NO API KEYS REQUIRED** | Architecture Team |
+| 2026-02-24 | **Removed Cost Control Layer** - simplified AI service | Architecture Team |
+| 2026-02-24 | **Updated AI Service Invariants** | Architecture Team |
+| 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - 3-slot user-configured providers | Architecture Team |
+| 2026-02-23 | **Removed TTS/ASR features** - Simplified to LLM, Vision, Image Gen, Search | Architecture Team |
+| 2026-02-22 | **Added Layer 6.6: AI Service Layer** | Architecture Team |
+| 2026-02-22 | Added AI Service cross-references | Architecture Team |
 | 2026-02-22 | Added AI Service cross-references | Architecture Team |
 | 2026-02-20 | Restructured as authoritative invariant map; extracted details to specialized specs | Architecture Team |

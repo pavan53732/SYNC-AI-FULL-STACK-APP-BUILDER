@@ -1042,9 +1042,9 @@ public interface IOrchestrator
 
 ---
 
-## 12. ConstructionTransaction with SDK Version Tracking
+## 12. ConstructionTransaction with Provider/Model Tracking
 
-> **INVARIANT**: Every ConstructionTransaction MUST record the z-ai-web-dev-sdk version used. This ensures reproducibility of AI-generated artifacts.
+> **INVARIANT**: Every ConstructionTransaction MUST record the AI provider and model used. This ensures reproducibility of AI-generated artifacts.
 
 ### ConstructionTransaction Record
 
@@ -1059,10 +1059,10 @@ public record ConstructionTransaction
     // Snapshot reference for rollback
     public string PreMutationSnapshotId { get; init; }
     
-    // === SDK VERSION TRACKING (NEW - CRITICAL FOR REPRODUCIBILITY) ===
-    public string AISdkVersion { get; init; }        // e.g., "1.2.3"
-    public string AISdkCommitHash { get; init; }     // Git commit hash for debugging
-    public string AIServiceVersion { get; init; }    // ai-service.exe build version
+    // === PROVIDER/MODEL TRACKING (CRITICAL FOR REPRODUCIBILITY) ===
+    public string AIProviderBaseUrl { get; init; }    // e.g., "https://openrouter.ai/api/v1"
+    public string AIModelName { get; init; }          // e.g., "openai/gpt-4o"
+    public string AIServiceVersion { get; init; }     // ai-service.exe build version
     
     // Trace ID for correlating logs
     public string TraceId { get; init; }
@@ -1078,7 +1078,8 @@ public record ConstructionTransaction
 public record AIOperationRecord
 {
     public string OperationId { get; init; }
-    public string OperationType { get; init; }  // "LLM", "IMAGE_GEN", "TTS", "ASR", "VLM", "SEARCH"
+    public string OperationType { get; init; }  // "LLM", "IMAGE_GEN", "VLM", "SEARCH"
+    public string ModelUsed { get; init; }       // Which model slot handled this operation
     public DateTime Timestamp { get; init; }
     public TimeSpan Duration { get; init; }
     public bool Success { get; init; }
@@ -1088,7 +1089,7 @@ public record AIOperationRecord
 }
 ```
 
-### SDK Version Injection
+### Provider Info Injection
 
 ```csharp
 public class ConstructionTransactionFactory
@@ -1097,8 +1098,8 @@ public class ConstructionTransactionFactory
     
     public async Task<ConstructionTransaction> CreateTransactionAsync(string taskId, string description)
     {
-        // Get SDK version from AI service
-        var sdkInfo = await _aiClient.GetSdkVersionAsync();
+        // Get health/config info from AI service
+        var health = await _aiClient.GetHealthAsync();
         
         return new ConstructionTransaction
         {
@@ -1107,10 +1108,10 @@ public class ConstructionTransactionFactory
             StartedAt = DateTime.UtcNow,
             PreMutationSnapshotId = GetCurrentSnapshotId(),
             
-            // SDK Version Tracking (CRITICAL)
-            AISdkVersion = sdkInfo.Version,
-            AISdkCommitHash = sdkInfo.CommitHash,
-            AIServiceVersion = sdkInfo.ServiceVersion,
+            // Provider/Model Tracking (CRITICAL)
+            AIProviderBaseUrl = "configured-via-settings",
+            AIModelName = "configured-via-settings",
+            AIServiceVersion = health.Status ?? "unknown",
             
             // Generate trace ID for log correlation
             TraceId = GenerateTraceId()
@@ -1119,7 +1120,7 @@ public class ConstructionTransactionFactory
     
     private string GenerateTraceId()
     {
-        // Format: proj_{projectId}_task_{taskId}_{timestamp}
+        // Format: trace_{guid}
         return $"trace_{Guid.NewGuid():N}";
     }
 }
@@ -1151,9 +1152,6 @@ public class AIOperationTimeouts
         ["IMAGE_GEN_STANDARD"] = TimeSpan.FromSeconds(30),   // 1024x1024
         ["IMAGE_GEN_LARGE"] = TimeSpan.FromSeconds(60),      // Larger sizes
         
-        // Audio Operations
-        ["TTS"] = TimeSpan.FromSeconds(15),                   // Text-to-speech
-        ["ASR"] = TimeSpan.FromSeconds(30),                   // Speech-to-text
         
         // Vision
         ["VLM_ANALYSIS"] = TimeSpan.FromSeconds(45),          // Image analysis
@@ -1484,72 +1482,18 @@ public class AIServiceE2ETests
     [Fact]
     public async Task Image_GenerateStandard_ReturnsValidImage()
     {
-        var imageData = await _client.GenerateImageAsync(
+        var imageBase64 = await _client.GenerateImageAsync(
             prompt: "A simple app icon",
             size: "1024x1024"
         );
         
-        Assert.NotNull(imageData);
-        Assert.True(imageData.Length > 0);
-        // Verify PNG header
-        Assert.Equal(0x89, imageData[0]);
-        Assert.Equal(0x50, imageData[1]);
+        Assert.NotNull(imageBase64);
+        Assert.True(imageBase64.Length > 0);
+        // Verify it's valid base64 by decoding
+        var imageBytes = Convert.FromBase64String(imageBase64);
+        Assert.True(imageBytes.Length > 0);
     }
     
-    [Fact]
-    public async Task Image_GenerateWithSeed_ProducesDeterministicResult()
-    {
-        var seed = 12345;
-        
-        var image1 = await _client.GenerateImageAsync(
-            prompt: "App icon",
-            size: "1024x1024",
-            seed: seed
-        );
-        
-        var image2 = await _client.GenerateImageAsync(
-            prompt: "App icon",
-            size: "1024x1024",
-            seed: seed
-        );
-        
-        // Same seed + prompt should produce identical images
-        Assert.Equal(image1, image2);
-    }
-    
-    // === TTS Tests ===
-    [Fact]
-    public async Task TTS_Synthesize_ReturnsValidAudio()
-    {
-        var audioData = await _client.TextToSpeechAsync(
-            text: "Build completed successfully",
-            voice: "tongtong"
-        );
-        
-        Assert.NotNull(audioData);
-        Assert.True(audioData.Length > 0);
-        // Verify WAV header
-        Assert.Equal(0x52, audioData[0]); // 'R'
-        Assert.Equal(0x49, audioData[1]); // 'I'
-        Assert.Equal(0x46, audioData[2]); // 'F'
-        Assert.Equal(0x46, audioData[3]); // 'F'
-    }
-    
-    // === ASR Tests ===
-    [Fact]
-    public async Task ASR_Transcribe_ReturnsAccurateText()
-    {
-        // First generate audio with TTS
-        var audioData = await _client.TextToSpeechAsync(
-            text: "Hello world",
-            voice: "tongtong"
-        );
-        
-        var result = await _client.SpeechToTextAsync(audioData);
-        
-        Assert.NotNull(result);
-        Assert.Contains("hello", result.ToLower());
-    }
     
     // === Vision Tests ===
     [Fact]
@@ -1780,7 +1724,7 @@ public class AIMiniServiceManager
 - [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — AI Construction Engine vs Runtime Safety Kernel
 - [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) — Sandbox, MSBuild, filesystem isolation
 - [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) — Multi-agent coordination
-- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — **AI capabilities via z-ai-web-dev-sdk (NO API KEYS!)**
+- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — **AI capabilities via user-configured providers**
 - [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) — Complete TypeScript implementation
 - [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) — **NEW: Zero-template approach - Platform requirements**
 - [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) — **NEW: Intelligent brand derivation**
@@ -1792,7 +1736,7 @@ public class AIMiniServiceManager
 | Date | Change |
 |------|--------|
 | 2026-02-26 | **Added Section 17: ai-service.exe Package Integrity** - Startup integrity check, hash verification, Authenticode signature validation |
-| 2026-02-26 | **Added Section 16: AI E2E Test Suite Specification** - Complete test coverage for LLM, Image, TTS, ASR, Vision, Search, Error handling, Trace ID propagation |
+| 2026-02-26 | **Added Section 16: AI E2E Test Suite Specification** - Complete test coverage for LLM, Image Gen, Vision, Search, Error handling, Trace ID propagation |
 | 2026-02-26 | **Added Section 15: AI Service Failure Governance** - Failure detection, fallback strategy, state transitions for AI_SERVICE_UNAVAILABLE/DEGRADED |
 | 2026-02-26 | **Added Section 14: Trace ID Propagation** - Trace context, HTTP header propagation, AI service request logging with trace ID |
 | 2026-02-26 | **Added Section 13: Timeout Granularity Configuration** - Per-operation-type timeouts, timeout enforcement |

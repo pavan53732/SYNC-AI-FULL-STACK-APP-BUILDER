@@ -25,7 +25,7 @@ To prevent "autonomy drift" and ensuring deterministic system behavior, all agen
 *   **No Universal Access**: An agent can only touch files relevant to its role.
 *   **No Shared Writable Memory**: Agents cannot overwrite global state.
 *   **No Infinite Loops**: Resource budgets are enforced per-execution.
-*   **AI Service Communication**: All AI capabilities come from Layer 6.6 (AI Service Layer) - **NO API KEYS REQUIRED!**
+*   **AI Service Communication**: All AI capabilities come from Layer 6.6 (AI Service Layer) via user-configured providers.
 
 ---
 
@@ -213,7 +213,7 @@ The enforcement mechanisms follow the AI-Primary model:
 | Token budget | Runtime Safety Kernel | Hard timeout if exceeded |
 | Retry strategy | AI Construction Engine | Agents decide how to adapt |
 | Error recovery | AI Construction Engine | Agents decide fix approach |
-| AI capabilities | AI Service Layer (Layer 6.6) | LLM, Image, TTS, ASR, VLM, Search - NO API KEYS! |
+| AI capabilities | AI Service Layer (Layer 6.6) | LLM, Vision, Image Gen, Search - user-configured |
 
 ### 5.2 The Sandbox Guard
 
@@ -248,7 +248,7 @@ Agents are invoked with hard limits.
 
 ## References
 
-- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — **AI capabilities via z-ai-web-dev-sdk (NO API KEYS!)**
+- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — **AI capabilities via user-configured providers**
 - [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) — Complete TypeScript implementation
 - [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — AI Construction Engine vs Runtime Safety Kernel
 - [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) — Multi-agent coordination

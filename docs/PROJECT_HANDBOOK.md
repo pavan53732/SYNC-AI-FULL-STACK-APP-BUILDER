@@ -36,7 +36,7 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 │   ├── PROJECT_HANDBOOK.md            # This file
 │   ├── AI_RUNTIME_MODEL.md            # AI Construction Engine vs Runtime Safety Kernel
 │   ├── AI_AGENTS_AND_PLANNING.md      # Multi-agent specifications
-│   ├── AI_SERVICE_LAYER.md            # AI capabilities via z-ai-web-dev-sdk (NO API KEYS!)
+│   ├── AI_SERVICE_LAYER.md            # AI capabilities via user-configured providers
 │   ├── AI_MINI_SERVICE_IMPLEMENTATION.md  # Complete TypeScript implementation
 │   ├── PLATFORM_REQUIREMENTS_ENGINE.md    # Zero-template approach - platform requirements
 │   ├── BRANDING_INFERENCE_HEURISTICS.md   # Intelligent brand derivation from user intent
@@ -129,12 +129,12 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 | **Layer 5** | Code Intelligence | Roslyn indexing, symbol graph | `Services/🟡 Code Intelligence/` |
 | **Layer 6** | Runtime Safety Kernel | State machine, retry logic, enforcement | `Services/🔴 Runtime Safety Kernel/` |
 | **Layer 6.5** | AI Construction Engine | Primary brain, code generation | `Services/🟣 AI Construction Engine/` |
-| **Layer 6.6** | **AI Service Layer** | **z-ai-web-dev-sdk - NO API KEYS!** | `Assets/ai-service.exe` |
+| **Layer 6.6** | **AI Service Layer** | **openai SDK - user-configured providers** | `Assets/ai-service.exe` |
 | **Layer 7** | User Interface | WinUI 3 shell | `UI/` |
 
-> **Layer 6.6 (AI Service Layer)**: Provides all AI capabilities via z-ai-web-dev-sdk.
+> **Layer 6.6 (AI Service Layer)**: Provides AI capabilities via user-configured OpenAI-compatible providers.
 > The compiled `ai-service.exe` runs as a hidden background process on localhost:3001.
-> **NO API KEYS REQUIRED** - SDK handles authentication automatically!
+> Users configure their AI providers (model, base URL, API key) in **Settings > AI Settings**.
 
 ### Layer Communication Rules
 
@@ -211,9 +211,9 @@ Layer 1 (Filesystem) ←────────── Layer 6 (Orchestrator)
 
 | Component | Technology |
 |-----------|------------|
-| **AI SDK** | z-ai-web-dev-sdk (NO API KEYS!) |
+| **AI SDK** | openai npm SDK (user-configured providers) |
 | **Runtime** | Bun (compiled to standalone .exe) |
-| **Capabilities** | LLM, Image Gen, TTS, ASR, VLM, Web Search |
+| **Capabilities** | LLM, Vision, Image Gen, Web Search |
 | **Communication** | HTTP on localhost:3001 |
 
 ### Database & Persistence
@@ -347,7 +347,7 @@ The user should only see:
 | 2026-02-24 | **Added "Extended Capabilities (Unlimited)" section** - AI can add any capability based on user's idea |
 | 2026-02-23 | Updated docs tree with all 12 documentation files |
 | 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md and BRANDING_INFERENCE_HEURISTICS.md to docs list |
-| 2026-02-22 | Added Layer 6.6 (AI Service Layer) with z-ai-web-dev-sdk - NO API KEYS! |
+| 2026-02-23 | **Added Layer 6.6 (AI Service Layer) with openai SDK - 3-slot user-configured providers** |
 | 2026-02-22 | Added AI capabilities section to technology stack |
 | 2026-02-22 | Added AI_SERVICE_LAYER.md and AI_MINI_SERVICE_IMPLEMENTATION.md references |
 | 2026-02-21 | Unified layer definitions with SYSTEM_ARCHITECTURE.md (Fixes Contradiction 2) |

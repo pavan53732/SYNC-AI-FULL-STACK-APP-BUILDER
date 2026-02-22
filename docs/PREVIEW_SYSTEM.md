@@ -648,7 +648,7 @@ public class PreviewServiceTests
 - [USER_WORKFLOWS.md](USER_WORKFLOWS.md) - Features and user interaction patterns
 - [UI_IMPLEMENTATION.md](UI_IMPLEMENTATION.md) - UX principles
 - [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) - Packaging subsystem details
-- [AI_SERVICE_LAYER.md](AI_SERVICE_LAYER.md) - **AI capabilities via z-ai-web-dev-sdk (NO API KEYS!)**
+- [AI_SERVICE_LAYER.md](AI_SERVICE_LAYER.md) - **AI capabilities via user-configured providers**
 - [AI_MINI_SERVICE_IMPLEMENTATION.md](AI_MINI_SERVICE_IMPLEMENTATION.md) - Complete TypeScript implementation
 - [PLATFORM_REQUIREMENTS_ENGINE.md](PLATFORM_REQUIREMENTS_ENGINE.md) - **NEW: Zero-template asset generation pipeline**
 - [BRANDING_INFERENCE_HEURISTICS.md](BRANDING_INFERENCE_HEURISTICS.md) - **NEW: Intelligent brand derivation**

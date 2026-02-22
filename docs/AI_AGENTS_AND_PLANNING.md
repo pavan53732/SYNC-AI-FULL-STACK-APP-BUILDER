@@ -47,9 +47,9 @@ The AI Construction Engine transforms unstructured user prompts into adaptive ar
 │  │ AI Service Client     → HTTP client to Layer 6.6        ││
 │  └─────────────────────────────────────────────────────────┘│
 ├─────────────────────────────────────────────────────────────┤
-│  AI SERVICE LAYER (Layer 6.6) - NO API KEYS REQUIRED!      │
+│  AI SERVICE LAYER (Layer 6.6) - User-Configured Providers   │
 │  ┌─────────────────────────────────────────────────────────┐│
-│  │ z-ai-web-dev-sdk      → LLM / Image / TTS / ASR / VLM   ││
+│  │ openai SDK            → LLM / Vision / Image Gen         ││
 │  │ localhost:3001        → Hidden background service        ││
 │  └─────────────────────────────────────────────────────────┘│
 ├─────────────────────────────────────────────────────────────┤
@@ -63,8 +63,8 @@ The AI Construction Engine transforms unstructured user prompts into adaptive ar
 └─────────────────────────────────────────────────────────────┘
 ```
 
-> **CRITICAL**: All AI capabilities are provided by **z-ai-web-dev-sdk** via the AI Service Layer (Layer 6.6).
-> **NO API KEYS REQUIRED** - The SDK handles authentication automatically!
+> **CRITICAL**: All AI capabilities are provided via the **openai SDK** through the AI Service Layer (Layer 6.6).
+> Users configure their AI providers (model name, base URL, API key) in **Settings > AI Settings**.
 
 ---
 
@@ -361,7 +361,7 @@ private static readonly HashSet<string> AllowedOperations = new()
 | 2026-02-23 | Added references to Platform Requirements Engine and Branding Inference Heuristics |
 | 2026-02-23 | Updated Frontend Agent to include ALL VISUAL ASSETS generation |
 | 2026-02-23 | Added NO TEMPLATES note - all assets generated from first principles |
-| 2026-02-22 | Added AI Service Layer (Layer 6.6) integration - NO API KEYS REQUIRED |
+| 2026-02-22 | Added AI Service Layer (Layer 6.6) integration |
 | 2026-02-22 | Added AI Service Client to agent architecture diagram |
 | 2026-02-22 | Added AI capability mapping to agent stack table |
 | 2026-02-21 | Removed internal retry loops from agents (Fixes Contradiction 4) |
@@ -372,7 +372,7 @@ private static readonly HashSet<string> AllowedOperations = new()
 
 ## References
 
-- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — **AI capabilities via z-ai-web-dev-sdk (NO API KEYS!)**
+- [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — **AI capabilities via user-configured providers**
 - [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) — Complete TypeScript implementation
 - [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) — **NEW: Zero-template approach - Platform requirements & asset generation**
 - [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) — **NEW: Intelligent brand derivation from user intent**
