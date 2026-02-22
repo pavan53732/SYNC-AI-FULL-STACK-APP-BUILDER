@@ -1412,6 +1412,19 @@ public record FallbackAction
 ```csharp
 // Add to BuilderReducer
 
+// === CONFIGURATION CHANGE HANDLING ===
+(BuilderState.ANY, ConfigurationChangedEvent e) =>
+{
+    // Cancel any running tasks, rollback to last stable snapshot,
+    // and force a full system reset before applying new config.
+    return context with
+    {
+        State = BuilderState.SYSTEM_RESET,
+        UserCancelled = false,   // not a user cancel, just a reset
+        EventLog = [..context.EventLog, e]
+    };
+}
+
 // === AI SERVICE FAILURE HANDLING ===
 (BuilderState.AI_GENERATING, AIServiceUnavailableEvent e) =>
     context with { State = BuilderState.AI_SERVICE_UNAVAILABLE, EventLog = [..context.EventLog, @event] },
@@ -1444,10 +1457,22 @@ AI_SERVICE_UNAVAILABLE State:
 │    → Resume AI_GENERATING                                   │
 │ 5. If recovery fails after 3 attempts:                      │
 │    → Wait 60 seconds                                        │
-│    → Retry recovery                                         │
+│    → Retry recovery                                          │
 │ 6. User can always cancel to stop waiting                   │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### 15.1 Degraded State Definition and Escalation
+
+| State                  | Trigger                                                                                     | Behavior                                                                                              | Recovery                                                                                     |
+|------------------------|---------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|
+| `AI_SERVICE_DEGRADED`  | - 3 consecutive health check failures<br>- 3 consecutive request timeouts<br>- 10+ 429 rate‑limit responses | - AI operations continue with exponential backoff<br>- Blueprint generation is **blocked**<br>- UI shows yellow status dot | Auto‑recovery after 1 successful health check; fallback to `AI_SERVICE_UNAVAILABLE` if 10 consecutive failures |
+| `AI_SERVICE_UNAVAILABLE` | - Health check timeout (5s)<br>- Process not running<br>- Any request returns 5xx error       | - All AI‑dependent operations are blocked<br>- Orchestrator stays in this state until recovery succeeds | Automatic restart of mini‑service, then retry health check; after 3 failed restarts, wait 60s and retry indefinitely |
+
+**Transition Rules:**
+- `AI_SERVICE_DEGRADED` → `AI_GENERATING` after a successful health check.
+- `AI_SERVICE_UNAVAILABLE` → `CONFIGURED` after mini‑service restart and successful `/health` call.
+- User can always cancel to leave these states and return to `IDLE`.
 
 ---
 
