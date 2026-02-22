@@ -22,6 +22,7 @@
 8. [Complete Implementation](#8-complete-implementation)
 9. [Integration Points](#9-integration-points)
 10. [Fallback Strategy When Inference Fails](#10-fallback-strategy-when-inference-fails)
+11. [Asset Determinism and Caching](#11-asset-determinism-and-caching)
 
 ---
 
@@ -1508,6 +1509,30 @@ public class BrandingInferenceService
 
 ---
 
+## 11. Asset Determinism and Caching
+
+**Generated binary assets are cached by IntentHash. Once generated, assets are never regenerated unless IntentHash changes.**
+
+This converts model determinism into artifact determinism:
+
+| Concept | Description |
+|---------|-------------|
+| **IntentHash** | A deterministic hash computed from the user's branding intent (colors, style preferences, domain, icon preferences) |
+| **Cache Key** | `IntentHash` serves as the unique identifier for all generated assets |
+| **Cache Lookup** | Before generation, system checks if assets exist for the current IntentHash |
+| **Regeneration Trigger** | Assets are regenerated ONLY when IntentHash changes (indicating intent change) |
+
+### Production Safety Guarantee
+
+This caching mechanism ensures:
+
+1. **Cost efficiency**: No redundant AI API calls for identical intents
+2. **Consistency**: Same intent always produces identical artifacts
+3. **Auditability**: Asset provenance is traceable to specific intent states
+4. **Performance**: Cached assets are served immediately without generation delay
+
+---
+
 ## References
 
 - [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) — Zero-template approach
@@ -1522,4 +1547,5 @@ public class BrandingInferenceService
 
 | Date | Change |
 |------|--------|
+| 2026-02-23 | Added Section 11: Asset Determinism and Caching |
 | 2026-02-23 | Added Section 10: Fallback Strategy When Inference Fails |

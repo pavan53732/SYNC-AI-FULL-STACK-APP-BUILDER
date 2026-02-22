@@ -308,6 +308,27 @@ public enum BuildMode
 }
 ```
 
+### Runtime Enforcement of Single Active Transaction
+
+The single-transaction invariant is enforced at runtime through:
+
+#### Code Enforcement
+```csharp
+// Invariant: Exactly one active ConstructionTransaction per Orchestrator instance.
+if (_activeTransaction != null)
+{
+    throw new InvalidOperationException(
+        "TRANSACTION_ALREADY_ACTIVE: Orchestrator enforces single active transaction.");
+}
+```
+
+#### Persistence Guarantees
+- **ActiveTransactionId persisted in DB**: The ID of the currently active transaction is written to persistent storage before any mutation begins
+- **Crash recovery restores only that transaction**: On restart, the system queries the persisted ActiveTransactionId and resumes exactly that transaction
+- **All new tasks rejected until resolved**: While an active transaction exists, any new task requests are rejected with `TRANSACTION_ALREADY_ACTIVE` error
+
+This ensures that the documented invariant ("one task at a time") has runtime enforcement that survives process crashes and restarts.
+
 ### Event Types (Replayable & Debuggable)
 
 ```csharp
@@ -716,6 +737,19 @@ public class RetryController
 |-------------|-------|-------------|----------|
 | 1-9 | AI Construction Engine | Strategy flexible | AI adapts, learns, retries |
 | 10+ | Runtime Safety Kernel | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
+
+#### Infinite Loop Prevention Guarantee
+
+**By design, infinite retry loops are impossible.**
+
+The retry system enforces this through:
+
+1. **Finite stages**: Only 4 stages exist (FIX_LEVEL → INTEGRATION_LEVEL → ARCHITECTURE_LEVEL → SYSTEM_RESET)
+2. **Progressive escalation**: Each stage represents a fundamentally different approach, not repetition
+3. **SYSTEM_RESET clears state**: Stage 4 wipes AI memory and context, ensuring a fresh approach
+4. **No ABORT state**: The system never gives up — it always resets and retries with a clean slate
+
+This means the system can never enter a non-terminating state. Every failure eventually triggers a SYSTEM_RESET, which produces a fundamentally new approach.
 
 ---
 
