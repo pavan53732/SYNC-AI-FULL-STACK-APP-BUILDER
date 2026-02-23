@@ -217,9 +217,14 @@ Content-Type: application/json
 ```
 
 **Response:**
+```json
+{
+  "success": true,
+  "imageBase64": "iVBORw0KGgoAAAANSUhEUgAAA..."
+}
 ```
-Binary image data (PNG)
-```
+
+> **Note:** The response returns JSON with base64-encoded image data. This is consistent with other endpoints and easier for debugging. The C# client converts this to `byte[]` via `Convert.FromBase64String()`.
 
 **Supported Sizes:**
 - `1024x1024` (Square)
@@ -271,8 +276,7 @@ Binary image data (PNG)
 **Request:**
 ```json
 {
-  "query": "WinUI 3 best practices 2024",
-  "num": 10
+  "query": "WinUI 3 best practices 2024"
 }
 ```
 
@@ -280,16 +284,11 @@ Binary image data (PNG)
 ```json
 {
   "success": true,
-  "results": [
-    {
-      "url": "https://...",
-      "name": "WinUI 3 Best Practices",
-      "snippet": "...",
-      "host_name": "learn.microsoft.com"
-    }
-  ]
+  "content": "Based on the search results, here are WinUI 3 best practices..."
 }
 ```
+
+> **Note:** The search endpoint returns a plain string response in the `content` field, consistent with the chat endpoint. The LLM synthesizes the search results into a coherent response.
 
 **Use Cases:**
 - Documentation lookup

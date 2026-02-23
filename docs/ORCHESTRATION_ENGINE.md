@@ -492,9 +492,13 @@ public class BuilderReducer
                 UpdateTaskAndTransition(context, e.TaskId, BuilderState.INDEXING, @event),
 
             (BuilderState.INDEXING, TaskIndexedEvent e) =>
-                context with { State = BuilderState.CAPABILITY_SCAN, EventLog = [..context.EventLog, @event] },
+                // CONDITIONAL: Skip CAPABILITY_SCAN for DEBUG builds (reactive inference on failure)
+                // Only run proactive scan for RELEASE builds
+                context.CurrentBuildMode == BuildMode.RELEASE
+                    ? context with { State = BuilderState.CAPABILITY_SCAN, EventLog = [..context.EventLog, @event] }
+                    : context with { State = BuilderState.BUILDING, EventLog = [..context.EventLog, @event] },
 
-            // === CAPABILITY SCAN ===
+            // === CAPABILITY SCAN (RELEASE builds only) ===
             (BuilderState.CAPABILITY_SCAN, CapabilityScanCompletedEvent e) =>
                 context with { State = BuilderState.BUILDING, EventLog = [..context.EventLog, @event] },
 
