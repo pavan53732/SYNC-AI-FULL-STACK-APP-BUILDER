@@ -577,11 +577,8 @@ public class AITrustBoundary
     private readonly string _projectRoot;
     private readonly RoslynIndexer _indexer;
 
-    private static readonly HashSet<string> BannedDirectories = new()
-    {
-        ".git", ".vs", "bin", "obj",
-        ".metadata.json"
-    };
+    // Reuse the canonical BannedPaths definition (see §2.4)
+    private static readonly HashSet<string> BannedPaths = FileSystemSandbox.BannedPaths;
 
     public ValidationResult ValidatePatch(Patch patch)
     {
@@ -619,12 +616,14 @@ public class AITrustBoundary
         if (path.Contains(".."))
             return false;
 
-        // Check for banned directories
+        // Check for banned paths
         var normalizedPath = path.Replace('\\', '/').ToLowerInvariant();
-        foreach (var banned in BannedDirectories)
+        foreach (var banned in BannedPaths)
         {
             if (normalizedPath.Contains($"/{banned}/") ||
-                normalizedPath.StartsWith($"{banned}/"))
+                normalizedPath.StartsWith($"{banned}/") ||
+                normalizedPath.EndsWith($"/{banned}") ||
+                normalizedPath.Equals(banned, StringComparison.OrdinalIgnoreCase))
                 return false;
         }
 

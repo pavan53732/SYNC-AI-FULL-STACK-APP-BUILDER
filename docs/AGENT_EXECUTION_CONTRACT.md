@@ -109,7 +109,10 @@ public enum MemoryScope
     TASK_SCOPED,
     
     // Agent Scoped: Private scratchpad for the agent instance
-    AGENT_SCOPED
+    AGENT_SCOPED,
+    
+    // Retry Scoped: Isolated per-retry attempt, always cleared between attempts
+    RETRY_SCOPED
 }
 ```
 
@@ -177,14 +180,14 @@ public class RetryMemoryPolicy
     /// </summary>
     public void PrepareRetryMemory(RetryStage stage, string projectId)
     {
-        // Always clear RETRY and AGENT scopes
-        _memoryLifecycleManager.DisposeScope(MemoryScope.RETRY, projectId);
-        _memoryLifecycleManager.DisposeScope(MemoryScope.AGENT, projectId);
+        // Always clear RETRY_SCOPED and AGENT_SCOPED scopes
+        _memoryLifecycleManager.DisposeScope(MemoryScope.RETRY_SCOPED, projectId);
+        _memoryLifecycleManager.DisposeScope(MemoryScope.AGENT_SCOPED, projectId);
 
-        // On SYSTEM_RESET, clear TASK scope (Forced Amnesia)
+        // On SYSTEM_RESET, clear TASK_SCOPED scope (Forced Amnesia)
         if (stage == RetryStage.SYSTEM_RESET)
         {
-            _memoryLifecycleManager.DisposeScope(MemoryScope.TASK, projectId);
+            _memoryLifecycleManager.DisposeScope(MemoryScope.TASK_SCOPED, projectId);
         }
         // Otherwise TASK_SCOPED is RETAINED for retry continuity
     }

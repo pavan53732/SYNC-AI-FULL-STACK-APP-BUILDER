@@ -159,7 +159,7 @@ init-project → setup-database → define-models → setup-auth → db-migratio
 | **Frontend** | Generate UI components, pages, and **ALL VISUAL ASSETS** | LLM (Chat) + Image Gen (icons, logos, splash) |
 | **Backend** | Generate API routes and services | LLM (Chat) |
 | **Integration** | Wire dependencies together (DI, Startup) | LLM (Chat) |
-| **Capability Inference** | Analyzes code to infer required Windows OS capabilities | LLM (Chat) |
+| **Capability Inference** | Updates `Package.appxmanifest` with inferred capabilities (uses static Roslyn analysis from Layer 4) | **Static Analysis (no LLM)** |
 | **Fix** | Detect and repair build failures | LLM (Chat) + Web Search (docs) |
 
 > **All agents communicate with the AI Service Layer (Layer 6.6) via HTTP to localhost:3001**
@@ -313,8 +313,10 @@ async def fix_agent(error):
    c. Orchestrator decides retry strategy
    d. Orchestrator invokes agent again
 4. If retry count >= 10:
-   a. Orchestrator aborts
+   a. Orchestrator initiates SYSTEM_RESET
    b. Rolls back to PreMutationSnapshotId
+   c. Clears all task-scoped memory (Forced Amnesia)
+   d. Retries with entirely new approach
 ```
 
 ### Retry Governance Contract (Infinite Silent Retry)

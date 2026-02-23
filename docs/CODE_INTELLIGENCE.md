@@ -358,22 +358,24 @@ CREATE TABLE generated_assets (
 );
 ```
 
-### Snapshot Storage Optimization
+### Snapshot Storage (Git-Based)
 
-Snapshots must use Logical Graph Deltas + GZip File Snapshots to prevent disk explosion on large projects.
+> **NOTE**: Snapshots are managed via Git. See [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) §2.5 for the complete Git-based snapshot mechanism.
 
-```csharp
-public class SnapshotCompressionStrategy
-{
-    public async Task<byte[]> CompressAsync(string snapshotPath)
-    {
-        using var sourceStream = File.OpenRead(snapshotPath);
-        using var memoryStream = new MemoryStream();
-        using var gzipStream = new System.IO.Compression.GZipStream(memoryStream, System.IO.Compression.CompressionMode.Compress);
-        await sourceStream.CopyToAsync(gzipStream);
-        return memoryStream.ToArray();
-    }
-}
+Snapshots use the project's `.git/` repository for version history:
+
+- **SnapshotId** values are Git commit hashes
+- **Rollback** uses `git checkout` to restore previous states
+- **Pruning** uses `git gc` and branch management to control repository size
+- **No custom compression** needed - Git handles delta compression natively
+
+The `snapshots` table in SQLite maps logical snapshot IDs to Git commit SHAs for fast lookup:
+
+```sql
+-- Snapshots are Git commits; this table provides fast lookup
+INSERT INTO snapshots (id, parent_snapshot_id, created_utc, reason)
+VALUES (1, NULL, '2026-02-23T00:00:00Z', 'Pre-Generation');
+-- The actual snapshot content is in Git's object store
 ```
 
 ---
@@ -395,6 +397,7 @@ public enum PatchOperationType
     MODIFY_PROPERTY,
     INSERT_USING,
     REMOVE_MEMBER,
+    DELETE_FILE,              // Remove file from project
     UPDATE_XAML_NODE,
     ADD_XAML_ELEMENT,
     MODIFY_XAML_ATTRIBUTE

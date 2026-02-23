@@ -448,11 +448,26 @@ export async function* chatCompletionStream(
     throw new Error("Primary model not configured. Send config via POST /api/config first.");
   }
 
+  // TokenBudget enforcement: Use min of requested tokens or default limit
+  const effectiveMaxTokens = Math.min(
+    options.maxTokens ?? globalConfig.defaultTokenLimit,
+    globalConfig.defaultTokenLimit
+  );
+
   const stream = await primaryClient.chat.completions.create({
     model: primaryModel,
     messages: messages as any,
-    max_tokens: options.maxTokens,
-    temperature: options.temperature,
+    
+    // TokenBudget enforcement
+    max_tokens: effectiveMaxTokens,
+    
+    // Deterministic AI parameters - LOCKED (per §3.Z)
+    // These are enforced even for streaming - caller cannot override
+    temperature: LOCKED_PARAMS.temperature,
+    top_p: LOCKED_PARAMS.top_p,
+    presence_penalty: LOCKED_PARAMS.presence_penalty,
+    frequency_penalty: LOCKED_PARAMS.frequency_penalty,
+    
     stream: true
   });
 
