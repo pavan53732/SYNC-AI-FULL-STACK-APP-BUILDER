@@ -207,6 +207,10 @@ The "Hidden System Prompt" is implemented as **Constraint Documents** that the A
 
 > **The Base Project Template provides EMPTY project structure. AI fills it with user's custom idea.**
 
+**Template Location:** `templates/MinimalKernelBootstrap/`
+
+The template is embedded in the application and copied to new project workspaces during initialization.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  BASE PROJECT TEMPLATE (Minimal Kernel Bootstrap)           │
@@ -454,7 +458,7 @@ Kernel Validates Mutation                  │
 1. **Snapshot Before Mutation** — Non-negotiable
 2. **Atomic Switch** — No partial states
 3. **Hash Verification** — Integrity guaranteed
-4. **Maximum 50 per project** — Automatic pruning
+4. **Git-Based Pruning** — Automatic pruning when repository size exceeds threshold (default 500 MB). See [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) §2.5.
 
 ---
 
