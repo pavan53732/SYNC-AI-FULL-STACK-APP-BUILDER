@@ -12,7 +12,7 @@
 
 1. [Core Principle](#1-core-principle)
 2. [The 6 User-Visible States](#2-the-6-user-visible-states)
-3. [Orchestrator → UI State Mapping](#3-orchestrator--ui-state-mapping)
+3. [Orchestrator → UI State Mapping](#3-orchestrator→ui-state-mapping)
 4. [State Mapping Implementation](#4-state-mapping-implementation)
 5. [State Transition Diagram](#5-state-transition-diagram)
 
@@ -21,7 +21,7 @@
 ## 1. Core Principle
 
 > **UI state ≠ Orchestrator state**
->
+> 
 > The UI abstracts complexity by mapping many backend states into few calm visual states.
 
 **Backend Reality**: 15+ orchestrator states
