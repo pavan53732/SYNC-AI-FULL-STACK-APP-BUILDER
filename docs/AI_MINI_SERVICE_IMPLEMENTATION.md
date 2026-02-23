@@ -1050,13 +1050,6 @@ function requireValidatedConfig() {
     throw new Error("AI_CONFIG_NOT_VALIDATED");
   }
 }
-
-// ENFORCEMENT: Token limit check
-function checkTokenLimit(requestedTokens: number) {
-  if (requestedTokens > globalConfig.defaultTokenLimit) {
-    throw new Error("TOKEN_LIMIT_EXCEEDED");
-  }
-}
 ```
 
 ### 5.2 Logger (utils/logger.ts)

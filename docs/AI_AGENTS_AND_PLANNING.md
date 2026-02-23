@@ -255,8 +255,7 @@ async def orchestrate_generation(spec, task_graph):
         elif result.status == "RETRY":
             # Orchestrator will invoke agent again
             continue
-        elif result.status == "ABORT":
-            break
+        # Note: The system NEVER aborts. It relies on infinite staged retries or user cancellation.
 ```
 
 ---

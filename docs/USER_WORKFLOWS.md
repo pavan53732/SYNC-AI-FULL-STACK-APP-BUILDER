@@ -715,7 +715,7 @@ The system handles 5 categories of errors internally:
 - **Classification**: syntax, type, config, etc.
 - **Action**: Identify root cause
 - **Fix**: Apply targeted fix
-- **Loop**: Recompile, retry up to 5x
+- **Loop**: Recompile, apply staged retry (1-9 AI loops, 10+ System Reset)
 
 #### 4. Deployment Errors
 

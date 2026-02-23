@@ -667,9 +667,9 @@ See [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) for
 
 ---
 
-## 12. Deterministic Configuration Lifecycle (MANDATORY)
+## 10. Deterministic Configuration Lifecycle (MANDATORY)
 
-### 12.1 Health Check Constants
+### 10.1 Health Check Constants
 
 > **INVARIANT**: All health check thresholds MUST be defined as constants for consistent monitoring across the application.
 
@@ -764,6 +764,8 @@ When user updates AI settings:
 Hot model swapping during active construction is FORBIDDEN.
 
 > **KEY PRINCIPLE:** The AI Mini Service must be **completely hidden** from the user. It starts automatically when the main app launches and runs in the background with no visible windows.
+
+## 11. Process Lifecycle Management
 
 ### 11.1 Architecture Overview
 
@@ -1176,7 +1178,7 @@ The `ai-service.exe` is just another asset file:
 
 ---
 
-## 10. Cross-References
+## 12. Cross-References
 
 ### Related Documentation
 
