@@ -483,6 +483,8 @@ export async function* chatCompletionStream(
 
 export interface ImageOptions {
   size?: "1024x1024" | "512x512" | "256x256";
+  seed?: number;           // Deterministic seed for reproducible images
+  deterministic?: boolean; // When true with seed, ensures reproducible results
 }
 
 export async function generateImageFromPrompt(
@@ -493,13 +495,22 @@ export async function generateImageFromPrompt(
     throw new Error("Image model not configured. Send config via POST /api/config first.");
   }
 
-  const response = await imageClient.images.generate({
+  // Build image generation request
+  const requestParams: any = {
     model: imageModel,
     prompt,
     size: options.size || "1024x1024",
     n: 1,
     response_format: "b64_json"
-  });
+  };
+
+  // Add seed for deterministic generation (if provider supports it)
+  // See BRANDING_INFERENCE_HEURISTICS.md §11 for IntentHash → Seed mechanism
+  if (options.seed !== undefined) {
+    requestParams.seed = options.seed;
+  }
+
+  const response = await imageClient.images.generate(requestParams);
 
   const b64 = response.data[0]?.b64_json;
   if (!b64) throw new Error("No image data returned");
@@ -754,6 +765,9 @@ function errorResponse(code: string, message: string, status = 400): Response {
 ```typescript
 /**
  * Image Generation Endpoint (uses imageClient)
+ *
+ * Supports deterministic image generation via seed parameter.
+ * See BRANDING_INFERENCE_HEURISTICS.md §11 for IntentHash → Seed mechanism.
  */
 
 import { generateImageFromPrompt } from "../services/ai-client";
@@ -761,6 +775,8 @@ import { generateImageFromPrompt } from "../services/ai-client";
 interface ImageRequest {
   prompt: string;
   size?: "1024x1024" | "512x512" | "256x256";
+  seed?: number;           // Optional: Deterministic seed for reproducible images
+  deterministic?: boolean; // Optional: When true with seed, ensures reproducible results
 }
 
 export async function handleGenerateImage(request: Request): Promise<Response> {
@@ -772,7 +788,9 @@ export async function handleGenerateImage(request: Request): Promise<Response> {
     }
 
     const b64Image = await generateImageFromPrompt(body.prompt, {
-      size: body.size
+      size: body.size,
+      seed: body.seed,
+      deterministic: body.deterministic
     });
 
     return jsonResponse({

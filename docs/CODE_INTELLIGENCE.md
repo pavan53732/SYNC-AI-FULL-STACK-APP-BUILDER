@@ -603,16 +603,21 @@ Determines affected symbols before a patch is committed.
 ```csharp
 public class ImpactAnalyzer
 {
-    public async Task<ImpactAnalysis> AnalyzeChangeAsync(string symbolName, ChangeType changeType)
+    public async Task<ImpactAnalysis> AnalyzeChangeAsync(
+        string symbolName, 
+        ChangeType changeType,
+        AgentExecutionContext context)
     {
         var analysis = new ImpactAnalysis();
         analysis.AffectedSymbols = await GetAffectedSymbolsAsync(symbolName);
 
         // Block unsafe mutation
-        if (analysis.AffectedSymbols.Count > 50)
+        // NOTE: Threshold is configurable via AgentExecutionContext.MaxAffectedSymbols (default: 50)
+        var maxAffectedSymbols = context?.MaxAffectedSymbols ?? 50;
+        if (analysis.AffectedSymbols.Count > maxAffectedSymbols)
         {
             analysis.IsSafe = false;
-            analysis.Reason = "Change affects too many symbols. Manual review required.";
+            analysis.Reason = $"Change affects {analysis.AffectedSymbols.Count} symbols (max: {maxAffectedSymbols}). Manual review required.";
         }
         return analysis;
     }

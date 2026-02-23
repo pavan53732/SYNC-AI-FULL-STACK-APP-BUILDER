@@ -55,10 +55,46 @@ public record AgentExecutionContext
     // Safety Ceilings
     public int MaxFilesTouchedPerTask { get; init; } = 10;
     public int MaxNodesModifiedPerTask { get; init; } = 500;
+    public int MaxAffectedSymbols { get; init; } = 50;        // Max symbols allowed in impact analysis
 }
 
 > **INVARIANT**: TokenBudget MUST be enforced at the AI Mini Service level.
 > Agents cannot exceed the global token ceiling.
+
+### 2.1 Token Budget Propagation Flow
+
+The TokenBudget flows from the Orchestrator to the AI Mini Service as follows:
+
+```
+Orchestrator (BuilderContext)
+    │
+    ├── ActiveAgentContext.TokenBudget (default: 8000)
+    │
+    ▼
+AI Service Client (C#)
+    │
+    ├── HTTP POST to /api/chat
+    │   {
+    │     "messages": [...],
+    │     "max_tokens": context.TokenBudget  // ← Injected here
+    │   }
+    │
+    ▼
+AI Mini Service (TypeScript)
+    │
+    ├── Receives max_tokens in request body
+    ├── Enforces via LOCKED_PARAMS (see AI_MINI_SERVICE_IMPLEMENTATION.md)
+    ├── effectiveMaxTokens = Math.min(request.max_tokens, LOCKED_PARAMS.max_tokens)
+    │
+    ▼
+OpenAI-compatible Provider
+```
+
+**Key Points:**
+1. The `AgentExecutionContext.TokenBudget` is set by the Orchestrator when creating the context
+2. The AI Service Client includes it as `max_tokens` in the HTTP request
+3. The AI Mini Service enforces it via the `LOCKED_PARAMS` mechanism
+4. If the request exceeds the provider's maximum, the mini-service caps it at the effective limit
 
 public enum AgentRole
 {
@@ -88,10 +124,39 @@ Each agent role has a pre-defined "sandbox" of allowed file operations. Attempts
 | **Backend** | `Services/**/*.cs`, `Controllers/**/*.cs` | `Views/*`, `App.xaml` |
 | **Integration** | `Program.cs`, `App.xaml.cs` (DI wiring) | Core Models, Views |
 | **Capability Inference**| `Package.appxmanifest` ONLY | `*.cs`, `*.xaml` |
-| **Fixer** | *Target File Only* (Scoped to error source) | Anything outside error scope |
+| **Fixer** | *Target File Only* (Scoped to error source via ErrorClassification) | Anything outside error scope |
 
 **Enforcement:**
 The `PatchEngine` validates every `write` operation against the `AllowedFilePatterns` of the active context. If the `PLANNER` agent attempts a write operation, the Kernel instantly throws a `SANDBOX_ESCAPE_ATTEMPT` error.
+
+### 3.1 Fixer Agent Scope Rules
+
+> **INVARIANT**: The Fixer agent is only allowed to modify files that are directly referenced in the error message, as determined by the `ErrorClassification` system defined in [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) Section 6.
+
+The Fixer's allowed write patterns are dynamically determined at runtime based on:
+
+1. **ErrorClassification.FilePath** — The primary file where the error occurred
+2. **ErrorClassification.LineNumber** — Used to identify related code blocks
+3. **Error auto-fix strategy** — May include additional related files (e.g., ViewModel when View has binding error)
+
+**Example ErrorClassification for Fixer Scoping:**
+```csharp
+var classification = new ErrorClassification
+{
+    Type = ErrorType.BUILD_ERROR,
+    Message = "CS0103: The name 'UserViewModel' does not exist in 'MainPage.xaml.cs'",
+    FilePath = "Views/MainPage.xaml.cs",
+    LineNumber = 42,
+    AutoFixStrategy = "Add missing using directive or create ViewModel"
+};
+
+// Fixer is allowed to modify:
+// - Views/MainPage.xaml.cs (primary error source)
+// - ViewModels/UserViewModel.cs (if creation is needed - determined by auto-fix strategy)
+```
+
+**Runtime Enforcement:**
+The `MutationGuard` receives the `ErrorClassification` and builds a temporary `AllowedFilePatterns` list specifically for the Fixer agent's current invocation.
 
 ---
 

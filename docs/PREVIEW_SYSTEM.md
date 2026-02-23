@@ -118,9 +118,10 @@ public class PreviewService
     }
 
     // Mode 3: Full Launch (Compiled App)
-    // Strict Policy:
-    // All full launches execute inside Windows Sandbox isolation.
-    // Direct host execution is forbidden.
+    // Isolation Policy (aligned with WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md §8):
+    // 1. Windows Sandbox (preferred) - Full VM isolation
+    // 2. AppContainer (fallback) - Lightweight isolation when Sandbox unavailable
+    // 3. Direct execution (last resort) - With user warning for capability-requiring apps
     // User consent is required before first launch.
     public async Task<Process> LaunchFullPreviewAsync(string projectPath)
     {
@@ -129,6 +130,7 @@ public class PreviewService
         {
             // FALLBACK: Use AppContainer isolation when Windows Sandbox feature is unavailable
             // This ensures the system works on all Windows 10 22621+ without requiring Sandbox
+            // If AppContainer also fails, falls back to direct execution with warning
             return await LaunchInAppContainerFallbackAsync(projectPath);
         }
 

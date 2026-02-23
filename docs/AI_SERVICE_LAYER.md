@@ -212,7 +212,9 @@ Content-Type: application/json
 ```json
 {
   "prompt": "A modern app icon with blue gradient",
-  "size": "1024x1024"
+  "size": "1024x1024",
+  "seed": 12345678,
+  "deterministic": true
 }
 ```
 
@@ -225,6 +227,17 @@ Content-Type: application/json
 ```
 
 > **Note:** The response returns JSON with base64-encoded image data. This is consistent with other endpoints and easier for debugging. The C# client converts this to `byte[]` via `Convert.FromBase64String()`.
+
+### Deterministic Image Generation
+
+For reproducible brand assets (icons, logos, splash screens), use the `seed` parameter:
+
+- **seed** (optional, integer): A deterministic seed for image generation
+- **deterministic** (optional, boolean): When true with a seed, ensures reproducible results
+
+See [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) §11 for the IntentHash → Seed mechanism used for caching brand assets.
+
+> **INVARIANT**: Same IntentHash = Same Seed = Same Image. This ensures deterministic, reproducible brand assets across rebuilds.
 
 **Supported Sizes:**
 - `1024x1024` (Square)
