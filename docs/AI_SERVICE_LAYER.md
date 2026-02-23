@@ -79,7 +79,7 @@ The `openai` npm SDK is a **Node.js/TypeScript library**, which cannot be used d
 │  Layer 6: Runtime Safety Kernel (ENFORCEMENT LAYER)         │
 │  ─ Validates all mutations, enforces deterministic execution │
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 5: Code Intelligence (Roslyn)                         │
+│  Layer 4: Code Intelligence (Roslyn)                         │
 │  ─ AST parsing, symbol indexing, impact analysis             │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 3: Patch Engine                                       │
@@ -199,6 +199,8 @@ Content-Type: application/json
 - Code generation
 - Error analysis
 - Fix suggestions
+
+> **Note:** AI parameters are locked for deterministic behavior. See [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §3.Z for the complete locked parameter specification (temperature=0.0, top_p=1.0, etc.).
 
 ---
 

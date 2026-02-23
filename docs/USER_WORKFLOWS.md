@@ -308,6 +308,8 @@ When "Improve this app" is clicked:
 
 Every successful build creates a **Snapshot**. Users can browse history like a time machine.
 
+> **Note**: Snapshots are implemented via a hidden Git repository. See [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) §2.5 for Git-based snapshot constraints and pruning behavior.
+
 ### Timeline UI
 
 - **Visual Timeline**: A vertical list of "Generations" and "Refinements".

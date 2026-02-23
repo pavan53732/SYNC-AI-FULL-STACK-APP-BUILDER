@@ -316,6 +316,8 @@ Proceed with MSIX installation or app launch
 
 ### 8.1 Sandbox Availability Detection
 
+> **Note**: The complete sandbox/preview isolation policy is defined in [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) §5, including isolation options priority order and Job Object constraints.
+
 Before attempting sandboxed execution, the system checks:
 
 ```csharp

@@ -32,9 +32,11 @@ The Execution Environment provides the foundational infrastructure for safe, iso
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 7: User Interface (WinUI 3 / XAML)                   │
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 6: Runtime Safety Kernel                             │
+│  Layer 6.5: AI Construction Engine (Primary Brain)          │
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 5: AI Construction Engine                            │
+│  Layer 6.6: AI Service Layer (openai SDK)                   │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 6: Runtime Safety Kernel                             │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 4: Code Intelligence (Roslyn)                        │
 ├─────────────────────────────────────────────────────────────┤
@@ -73,10 +75,9 @@ Each project lives in an isolated workspace:
 ├── Workspaces/
 │   └── {ProjectId}/
 │       ├── src/                    ← Generated code
-│       ├── .snapshots/             ← Version history (compressed diffs)
-│       ├── .diffs/                 ← Patch files for version control
-│       │   ├── diff_001-002.patch
-│       │   └── diff_002-003.patch
+│       ├── .git/                   ← Hidden Git repository for version history
+│       ├── .gitignore              ← Standard Git ignore file
+│       ├── ProjectState.db         ← Maps prompts to commit SHAs
 │       ├── .metadata.json          ← Project metadata
 │       ├── packaging/              ← Manifests & Certificates
 │       │   ├── Package.appxmanifest
@@ -155,69 +156,27 @@ public class FileSystemSandbox
 }
 ```
 
-### 2.4 Banned Directories
+### 2.4 Banned Paths
 
-The following directories are explicitly blocked from AI-generated patches:
+The following paths are explicitly blocked from AI-generated patches:
 
 ```csharp
-private static readonly HashSet<string> BannedDirectories = new()
+private static readonly HashSet<string> BannedPaths = new()
 {
     ".git", ".vs", "bin", "obj",
-    ".metadata.json"
+    ".metadata.json"   // file, not directory
 };
 ```
 
-> **Note:** `*.csproj` files are intentionally excluded from `BannedDirectories` — they must remain accessible for build operations.
+> **Note:** `*.csproj` files are intentionally excluded from `BannedPaths` — they must remain accessible for build operations.
 
-### 2.5 Snapshot Compression Strategy
+### 2.5 Snapshot Constraints (Git-Based)
 
-Snapshots use selective compression with exclusion patterns:
-
-```csharp
-public class SnapshotCompression
-{
-    private static readonly string[] ExcludePatterns = new[]
-    {
-        "bin",
-        "obj",
-        ".vs",
-        "node_modules",
-        "*.tmp",
-        "*.cache"
-    };
-
-    public async Task<string> CreateCompressedSnapshotAsync(string projectPath, string snapshotId)
-    {
-        var snapshotDir = Path.Combine(_snapshotsDir, snapshotId);
-        Directory.CreateDirectory(snapshotDir);
-
-        var snapshotPath = Path.Combine(snapshotDir, "snapshot.zip");
-
-        // Create selective ZIP excluding build artifacts
-        using var archive = ZipFile.Open(snapshotPath, ZipArchiveMode.Create);
-
-        foreach (var file in GetProjectFiles(projectPath, ExcludePatterns))
-        {
-            var relativePath = GetRelativePath(file, projectPath);
-            archive.CreateEntryFromFile(file, relativePath, CompressionLevel.Optimal);
-        }
-
-        _logger.LogInformation("Created compressed snapshot: {SnapshotPath}", snapshotPath);
-        return snapshotPath;
-    }
-}
-```
-
-**Benefits**:
-- **Reduced Size**: Excluding `bin/` and `obj/` reduces snapshot size by 60-80%
-- **Faster Creation**: Less data to compress and write
-- **Faster Restoration**: Smaller archives extract quicker
-
-### 2.6 Snapshot Constraints
-
-- Hard cap: maximum **50 snapshots** per project
+- The system maintains a **Git history** of all successful builds and significant mutations.
+- Old snapshots are automatically pruned when the repository size exceeds a threshold (configurable, default 500 MB).
 - Disk guard: creation blocked if available disk space < **500 MB**
-- Pruning: `SnapshotPruner` archives oldest entries on cap breach
+- Pruning: `SnapshotPruner` uses Git commands to squash or remove old commits, preserving the last N states.
+- `SnapshotId` values are Git commit hashes, enabling deterministic rollback and time-travel.
 
 ---
 

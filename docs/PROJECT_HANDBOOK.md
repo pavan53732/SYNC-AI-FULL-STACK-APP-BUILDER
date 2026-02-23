@@ -80,7 +80,7 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 │   │   │   │       ├── BlueprintDesigner.cs
 │   │   │   │       └── TaskGraphBuilder.cs
 │   │   │   │
-│   │   │   ├── 🟡 Code Intelligence (Layer 5)
+│   │   │   ├── 🟡 Code Intelligence (Layer 4)
 │   │   │   │   ├── RoslynService.cs
 │   │   │   │   ├── CodeIndexer.cs
 │   │   │   │   └── SymbolGraphBuilder.cs
@@ -126,7 +126,7 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 | **Layer 2** | Execution Kernel | MSBuild, NuGet, process management | `Services/🔵 Execution Kernel/` |
 | **Layer 2.5** | Packaging Engine | Manifest, capability inference, MSIX | `Services/🟤 Packaging Engine/` |
 | **Layer 3** | Patch Engine | AST mutations, conflict detection | `Services/🟠 Patch Engine/` |
-| **Layer 5** | Code Intelligence | Roslyn indexing, symbol graph | `Services/🟡 Code Intelligence/` |
+| **Layer 4** | Code Intelligence | Roslyn indexing, symbol graph | `Services/🟡 Code Intelligence/` |
 | **Layer 6** | Runtime Safety Kernel | State machine, retry logic, enforcement | `Services/🔴 Runtime Safety Kernel/` |
 | **Layer 6.5** | AI Construction Engine | Primary brain, code generation | `Services/🟣 AI Construction Engine/` |
 | **Layer 6.6** | **AI Service Layer** | **openai SDK - user-configured providers** | `Assets/ai-service.exe` |
@@ -145,7 +145,7 @@ Layer 7 (UI) ──────────────────→ Layer 6 (
 Layer 6.5 (AI Engine) ←──────── Layer 6 (Orchestrator)
                                    │
                                    ↓
-Layer 5 (Code Intelligence) ←─── Layer 6 (Orchestrator)
+Layer 4 (Code Intelligence) ←─── Layer 6 (Orchestrator)
                                    │
                                    ↓
 Layer 3 (Patch Engine) ←──────── Layer 6 (Orchestrator)
@@ -261,7 +261,7 @@ dotnet build
 - All mutations must be serialized
 
 #### Phase 2: Orchestrator-Aware Layers
-- Layer 5 (Code Intelligence) - Read-only, can run in parallel
+- Layer 4 (Code Intelligence) - Read-only, can run in parallel
 - Layer 3 (Patch Engine) - Serialized through orchestrator
 - Layer 6.5 (AI Agents) - Ask orchestrator before mutation
 

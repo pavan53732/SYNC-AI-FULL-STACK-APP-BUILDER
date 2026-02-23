@@ -108,7 +108,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 │  │ Operation Whitelist  → Only approved operations         ││
 │  └─────────────────────────────────────────────────────────┘│
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 5: Code Intelligence (Roslyn)                         │
+│  Layer 4: Code Intelligence (Roslyn)                         │
 │  ─ AST parsing, symbol indexing, impact analysis             │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 3: Patch Engine                                       │
@@ -210,7 +210,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 
 | Invariant | Description |
 |-----------|-------------|
-| **Capability Inference Mandatory** | Capability scan MUST run before every build. |
+| **Capability Inference Mandatory** | For Release/Packaging builds, capability scan MUST run before the build. Preview builds follow the reactive model defined in `AI_RUNTIME_MODEL.md`. |
 | **Version Authority** | `BuilderContext.ProjectMetadata["AppVersion"]` is the single source of truth. |
 | **Signing Mandatory** | All MSIX packages MUST be signed. |
 | **Atomic Packaging** | Packaging is all-or-nothing. Any failure triggers rollback. |
