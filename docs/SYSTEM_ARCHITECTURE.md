@@ -76,6 +76,28 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 
 ## 2. The 8-Layer Architecture
 
+### 2.1 System Ownership Matrix
+
+> **AI-Primary Model**: The AI Construction Engine proposes. The Runtime Safety Kernel enforces.
+
+| Subsystem | Primary Owner | AI Proposes | Kernel Enforces | Detailed Spec |
+|------------|---------------|-------------|-----------------|---------------|
+| Intent Parsing | AI Construction Engine | ✅ | ❌ | AI_AGENTS_AND_PLANNING.md |
+| Blueprint Design | AI Construction Engine | ✅ | ❌ | AI_AGENTS_AND_PLANNING.md |
+| Code Generation | AI Construction Engine | ✅ | ❌ | AI_AGENTS_AND_PLANNING.md |
+| Code Mutation | Runtime Safety Kernel | ❌ | ✅ | CODE_INTELLIGENCE.md |
+| Snapshot Management | Runtime Safety Kernel | ❌ | ✅ | ORCHESTRATION_ENGINE.md |
+| State Transitions | Runtime Safety Kernel | ❌ | ✅ | ORCHESTRATION_ENGINE.md |
+| Capability Inference | AI Construction Engine | ✅ | ❌ | AI_RUNTIME_MODEL.md |
+| Manifest Generation | Runtime Safety Kernel | ❌ | ✅ | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md |
+| MSIX Packaging | Runtime Safety Kernel | ❌ | ✅ | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md |
+| Certificate Signing | Runtime Safety Kernel | ❌ | ✅ | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md |
+| Asset Generation | AI Construction Engine | ✅ | ❌ | BRANDING_INFERENCE_HEURISTICS.md |
+| Version Authority | Runtime Safety Kernel | ❌ | ✅ | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md |
+| Retry Strategy (1-9) | AI Construction Engine | ✅ | ❌ | AI_RUNTIME_MODEL.md |
+| System Reset (10+) | Runtime Safety Kernel | ❌ | ✅ | ORCHESTRATION_ENGINE.md |
+| Execution Sandbox | Runtime Safety Kernel | ❌ | ✅ | EXECUTION_ENVIRONMENT.md |
+
 > **AI-Primary Architecture:** The AI Construction Engine sits at the top, directing all construction. The Runtime Safety Kernel enforces deterministic guarantees. The AI Service Layer provides AI capabilities via user-configured OpenAI-compatible providers.
 
 ```

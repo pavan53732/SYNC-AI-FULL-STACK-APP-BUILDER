@@ -70,6 +70,17 @@ It generates the XML structure enforcing:
 | Preview build (no mutation) | N/A | ❌ NO | No changes made |
 | Build failure (rollback) | ❌ Rejected | ❌ NO | Changes rolled back |
 
+### Version Precedence Rule (INVARIANT)
+
+If multiple version triggers occur in a single mutation cycle, the highest-order increment MUST win:
+
+Major > Minor > Patch
+
+Example:
+- Code Patch + Capability Injection → Minor
+- Capability Injection + Schema Break → Major
+- Multiple Code Patches → Single Patch increment
+
 ### Version Increment Flow
 
 ```

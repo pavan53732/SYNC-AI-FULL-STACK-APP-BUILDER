@@ -16,7 +16,7 @@ The Preview System provides **three modes** for users to visualize generated Win
 
 > **Invariant**: This sequence is strict. No step may be skipped or reordered.
 
-> **Capability Inference Timing**: See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the definitive two-phase capability model (Reactive vs Proactive timing).
+> **Capability Inference Timing**: This preview pipeline follows the Reactive model defined in AI_RUNTIME_MODEL.md §1.1 (canonical).
 
 ### Preview Pipeline (Debug Configuration)
 

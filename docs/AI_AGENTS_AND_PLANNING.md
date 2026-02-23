@@ -326,6 +326,9 @@ async def fix_agent(error):
 | 1-9 | AI Construction Engine | AI adapts strategy |
 | 10+ | Runtime Safety Kernel | System Reset (Rollback + Amnesia + Retry) |
 
+Retries 1–9 are owned by the AI Construction Engine.
+System-level resets (10+) are owned by the Runtime Safety Kernel. See ORCHESTRATION_ENGINE.md.
+
 > **INVARIANT**: There is NO abort. The system NEVER stops on its own. Only user cancellation ends execution.
 
 ---

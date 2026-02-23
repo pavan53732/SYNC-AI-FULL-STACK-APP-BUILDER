@@ -60,6 +60,8 @@ public record AgentExecutionContext
 
 > **INVARIANT**: TokenBudget MUST be enforced at the AI Mini Service level.
 > Agents cannot exceed the global token ceiling.
+> The global token ceiling defined by the Orchestrator MUST override any per-agent TokenBudget.
+> Agent-level budgets are upper bounds, not guarantees.
 
 ### 2.1 Token Budget Propagation Flow
 

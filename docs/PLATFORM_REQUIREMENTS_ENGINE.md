@@ -324,7 +324,9 @@ User Prompt: "Build a finance tracker with charts"
 
 ---
 
-## 3. Asset Generation Pipeline
+## 3. Asset Generation Pipeline (Delegated Implementation)
+
+This document defines required assets only. Generation logic is defined in BRANDING_INFERENCE_HEURISTICS.md.
 
 > **Asset Generation**: See [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) for the complete asset generation pipeline, including AI-based icon generation, splash screen creation, and fallback strategies.
 >
