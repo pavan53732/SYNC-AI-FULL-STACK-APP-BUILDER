@@ -171,6 +171,36 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 | **Layer 6.6** | **AI Service Layer - openai SDK, user-configured providers** | [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) |
 | **Layer 7** | WinUI 3 shell, user interaction | [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) |
 
+### System Ownership Matrix
+
+> **AI-Primary Ownership Model**: The AI Construction Engine proposes WHAT to build. The Runtime Safety Kernel enforces HOW it's done safely.
+
+| Subsystem | Owner | AI Proposes | Kernel Enforces | Detailed Spec |
+|-----------|-------|-------------|-----------------|---------------|
+| **Intent Parsing** | AI Construction Engine | ✅ | ❌ | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) |
+| **Architecture Design** | AI Construction Engine | ✅ | ❌ | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) |
+| **Code Generation** | AI Construction Engine | ✅ | ❌ | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) |
+| **Code Mutation** | Patch Engine | ❌ | ✅ | [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) |
+| **Build Execution** | Execution Kernel | ❌ | ✅ | [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) |
+| **Capability Inference** | AI Construction Engine | ✅ | ❌ | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
+| **Manifest Generation** | Runtime Safety Kernel | ❌ | ✅ | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
+| **MSIX Packaging** | Runtime Safety Kernel | ❌ | ✅ | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
+| **Certificate Signing** | Runtime Safety Kernel | ❌ | ✅ | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
+| **Snapshot Management** | Runtime Safety Kernel | ❌ | ✅ | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) |
+| **State Transitions** | Runtime Safety Kernel | ❌ | ✅ | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) |
+| **Retry Strategy (1-9)** | AI Construction Engine | ✅ | ❌ | [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) |
+| **System Reset (10+)** | Runtime Safety Kernel | ❌ | ✅ | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) |
+| **Preview Rendering** | Preview System | ❌ | ✅ | [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) |
+| **Asset Generation** | AI Construction Engine | ✅ | ❌ | [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) |
+| **Version Authority** | Runtime Safety Kernel | ❌ | ✅ | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
+
+**Key**:
+- **Owner**: The primary component responsible for this subsystem
+- **AI Proposes**: The AI Construction Engine suggests/creates initial output
+- **Kernel Enforces**: The Runtime Safety Kernel validates, applies, or enforces the result
+
+> **Invariant**: No subsystem has both "AI Proposes" and "Kernel Enforces" as ❌. Every subsystem must have exactly one party responsible.
+
 ---
 
 ## 3. Global Invariants
@@ -210,7 +240,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 
 | Invariant | Description |
 |-----------|-------------|
-| **Capability Inference Mandatory** | For Release/Packaging builds, capability scan MUST run before the build. Preview builds follow the reactive model defined in `AI_RUNTIME_MODEL.md`. |
+| **Capability Inference Mandatory** | For **Release/Packaging builds**, capability scan MUST run before the build as a mandatory first step. **Preview/Debug builds** follow the reactive model defined in `AI_RUNTIME_MODEL.md` (inference runs after build, only on failure). |
 | **Version Authority** | `BuilderContext.ProjectMetadata["AppVersion"]` is the single source of truth. |
 | **Signing Mandatory** | All MSIX packages MUST be signed. |
 | **Atomic Packaging** | Packaging is all-or-nothing. Any failure triggers rollback. |

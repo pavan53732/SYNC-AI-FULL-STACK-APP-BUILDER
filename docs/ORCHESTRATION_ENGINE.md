@@ -1,6 +1,16 @@
 # ORCHESTRATION ENGINE
 
-> **Runtime Safety & Execution Kernel: State Machine, Task Lifecycle, Build System, Retry Logic & Concurrency Safety**
+> **Runtime Safety Kernel – Orchestration: State Machine, Task Lifecycle, Build System, Retry Logic & Concurrency Safety**
+++++++ REPLACE</parameter>
+<task_progress>
+## Apply Developer's Valid Fixes
+
+- [x] Fix ORCHESTRATION_ENGINE.md title
+- [ ] Fix PREVIEW_SYSTEM.md duplicate capability inference
+- [ ] Fix WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md duplicate text
+- [ ] Fix PLATFORM_REQUIREMENTS_ENGINE.md asset generation
+- [ ] Add SYSTEM_ARCHITECTURE.md ownership matrix
+</task_progress>
 >
 > **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
 

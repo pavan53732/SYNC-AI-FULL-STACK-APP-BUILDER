@@ -137,13 +137,9 @@ The CIE analyzes code to determine required OS permissions, preventing runtime c
 
 ### 3.1 Inference Logic
 
-    **Critical Ordering**:
-    1.  **Debug/Preview**: Reactive (Inference runs on failure).
-    2.  **Release/Packaging**: Proactive (Inference runs **BEFORE** `BUILD_RELEASE`).
+> **Capability Inference Timing**: See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the definitive two-phase capability model (Reactive vs Proactive timing).
 
-    **Rule**: For Release packaging, inference MUST execute before build to ensure the manifest is final.
-
-    It triggers after Roslyn indexing:
+It triggers after Roslyn indexing:
 
 1.  **Scan**: Check `api_usage` table in Code Intelligence.
 2.  **Map**: Match Windows API calls to Capabilities.

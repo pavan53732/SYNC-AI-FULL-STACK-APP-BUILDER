@@ -16,14 +16,7 @@ The Preview System provides **three modes** for users to visualize generated Win
 
 > **Invariant**: This sequence is strict. No step may be skipped or reordered.
 
-### Two-Phase Capability Model (Debug/Preview vs Release/Packaging)
-
-The system uses different capability inference timing for Preview vs Packaging:
-
-| Phase | Mode | Capability Inference Timing | Rationale |
-|-------|------|----------------------------|-----------|
-| **Preview (Debug)** | Reactive | After build (on failure) | Fast iteration; only infer if build fails due to missing capability |
-| **Packaging (Release)** | Proactive | Before build | Optimize for success; infer capabilities early to minimize retry cycles |
+> **Capability Inference Timing**: See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the definitive two-phase capability model (Reactive vs Proactive timing).
 
 ### Preview Pipeline (Debug Configuration)
 
