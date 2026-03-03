@@ -38,8 +38,8 @@ The Runtime Safety Kernel (Orchestrator) is the **enforcement layer** that valid
 
 ```text
 ✓ No implicit transitions
-✓ No uncontrolled parallel mutation
-✓ One active task at a time (strict serialization for mutation execution)
+✓ No uncontrolled parallel mutation (Parallel AI generation/planning is allowed, but mutation is serialized)
+✓ One active mutation task at a time (strict serialization for file/state changes)
 ✓ Continuous autonomous refinement (Infinite silent retries with staged escalation)
 ✓ Immutable state transitions (functional programming)
 ✓ Full event log for replay/debug (deterministic replay)
@@ -246,14 +246,15 @@ EXECUTION_PLAN_BUILT
 
 ### Terminal States
 
-| State                 | Type     | Description                            | Recovery                |
+| State | Type | Description | Recovery |
 <<<<<<< Updated upstream
 | :-------------------- | :------- | :------------------------------------- | :---------------------- |
 =======
 | --------------------- | -------- | -------------------------------------- | ----------------------- |
->>>>>>> Stashed changes
-| `PACKAGING_SUCCEEDED` | Success  | Application built, packaged, and ready | None needed             |
-| `CANCELLED`           | Terminal | User explicitly cancelled              | User must restart build |
+
+> > > > > > > Stashed changes
+> > > > > > > | `PACKAGING_SUCCEEDED` | Success | Application built, packaged, and ready | None needed |
+> > > > > > > | `CANCELLED` | Terminal | User explicitly cancelled | User must restart build |
 
 **NOTE**: There is NO `FAILED` state. The system never stops on its own - only user cancellation stops the build.
 
@@ -693,16 +694,17 @@ public enum RetryStage
 
 > **INVARIANT**: Each retry stage has defined escalation behavior. The AI must adapt its strategy as retries progress.
 
-| Retry Range | Stage              | AI Strategy                                                             | Kernel Action                                                             |
+| Retry Range | Stage | AI Strategy | Kernel Action |
 <<<<<<< Updated upstream
 | :---------- | :----------------- | :---------------------------------------------------------------------- | :------------------------------------------------------------------------ |
 =======
 | ----------- | ------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------- |
->>>>>>> Stashed changes
-| **1-3**     | FIX_LEVEL          | Local token repairs, syntax fixes, small adjustments                    | Log retry, allow continuation                                             |
-| **4-6**     | INTEGRATION_LEVEL  | Check DI wiring, service registration, module boundaries                | Log retry, warn if pattern persists                                       |
-| **7-9**     | ARCHITECTURE_LEVEL | Re-evaluate high-level plan, structural changes, alternative approaches | Log retry, prepare for potential reset                                    |
-| **≥10**     | SYSTEM_RESET       | **N/A - AI memory wiped**                                               | Rollback to snapshot, clear context, track failed approach, restart fresh |
+
+> > > > > > > Stashed changes
+> > > > > > > | **1-3** | FIX_LEVEL | Local token repairs, syntax fixes, small adjustments | Log retry, allow continuation |
+> > > > > > > | **4-6** | INTEGRATION_LEVEL | Check DI wiring, service registration, module boundaries | Log retry, warn if pattern persists |
+> > > > > > > | **7-9** | ARCHITECTURE_LEVEL | Re-evaluate high-level plan, structural changes, alternative approaches | Log retry, prepare for potential reset |
+> > > > > > > | **≥10** | SYSTEM_RESET | **N/A - AI memory wiped** | Rollback to snapshot, clear context, track failed approach, restart fresh |
 
 #### Stage Transition Behavior
 
@@ -794,14 +796,15 @@ public class RetryController
 
 ### Retry Governance Contract
 
-| Retry Range | Owner                  | Enforcement            | Behavior                              |
+| Retry Range | Owner | Enforcement | Behavior |
 <<<<<<< Updated upstream
 | :---------- | :--------------------- | :--------------------- | :------------------------------------ |
 =======
 | ----------- | ---------------------- | ---------------------- | ------------------------------------- |
->>>>>>> Stashed changes
-| 1-9         | AI Construction Engine | Strategy flexible      | AI adapts, learns, retries            |
-| 10+         | Runtime Safety Kernel  | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
+
+> > > > > > > Stashed changes
+> > > > > > > | 1-9 | AI Construction Engine | Strategy flexible | AI adapts, learns, retries |
+> > > > > > > | 10+ | Runtime Safety Kernel | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
 
 ---
 
@@ -809,18 +812,19 @@ public class RetryController
 
 ### Named Thread Types
 
-| Thread                    | Color  | Purpose                                      | Concurrency        |
+| Thread | Color | Purpose | Concurrency |
 <<<<<<< Updated upstream
 | :------------------------ | :----- | :------------------------------------------- | :----------------- |
 =======
 | ------------------------- | ------ | -------------------------------------------- | ------------------ |
->>>>>>> Stashed changes
-| 🟢 UI Thread              | Green  | Rendering, user input, never blocks          | Single (main)      |
-| 🔵 Orchestrator Thread    | Blue   | Sequential execution, state machine          | Single             |
-| 🟣 AI Worker Thread Pool  | Purple | AI code generation tasks                     | Max 2 concurrent   |
-| 🟡 Patch Worker Thread    | Yellow | File mutations, requires exclusive file lock | Single-threaded    |
-| 🔴 Build Worker Thread    | Red    | MSBuild compilation, isolated                | Single (per build) |
-| ⚪ Background Maintenance | White  | Low priority cleanup                         | Single             |
+
+> > > > > > > Stashed changes
+> > > > > > > | 🟢 UI Thread | Green | Rendering, user input, never blocks | Single (main) |
+> > > > > > > | 🔵 Orchestrator Thread | Blue | Sequential execution, state machine | Single |
+> > > > > > > | 🟣 AI Worker Thread Pool | Purple | AI code generation tasks | Max 2 concurrent |
+> > > > > > > | 🟡 Patch Worker Thread | Yellow | File mutations, requires exclusive file lock | Single-threaded |
+> > > > > > > | 🔴 Build Worker Thread | Red | MSBuild compilation, isolated | Single (per build) |
+> > > > > > > | ⚪ Background Maintenance | White | Low priority cleanup | Single |
 
 ### Phase Flow
 
@@ -876,17 +880,18 @@ public class SequentialExecutionStrategy
 
 ### Concurrency Matrix
 
-| Operation               | Can Run With        | Cannot Run With      | Lock Type            |
+| Operation | Can Run With | Cannot Run With | Lock Type |
 <<<<<<< Updated upstream
 | :---------------------- | :------------------ | :------------------- | :------------------- |
 =======
 | ----------------------- | ------------------- | -------------------- | -------------------- |
->>>>>>> Stashed changes
-| **Patching (Mutation)** | Nothing             | All other operations | Exclusive Write Lock |
-| **Indexing**            | Read queries        | Mutation, Build      | Exclusive Write Lock |
-| **Building**            | Nothing             | All other operations | Exclusive Build Lock |
-| **Read Queries**        | All read operations | Mutation             | Shared Read Lock     |
-| **AI Generation**       | Other AI Generation | Mutation, Build      | None (stateless)     |
+
+> > > > > > > Stashed changes
+> > > > > > > | **Patching (Mutation)** | Nothing | All other operations | Exclusive Write Lock |
+> > > > > > > | **Indexing** | Read queries | Mutation, Build | Exclusive Write Lock |
+> > > > > > > | **Building** | Nothing | All other operations | Exclusive Build Lock |
+> > > > > > > | **Read Queries** | All read operations | Mutation | Shared Read Lock |
+> > > > > > > | **AI Generation** | Other AI Generation | Mutation, Build | None (stateless) |
 
 ```csharp
 public class ConcurrencyPolicy
@@ -1047,15 +1052,16 @@ public class TransactionRecoveryService
 
 ### Snapshot Creation Points
 
-| Trigger             | State                  | Purpose                                    |
+| Trigger | State | Purpose |
 <<<<<<< Updated upstream
 | :------------------ | :--------------------- | :----------------------------------------- |
 =======
 | ------------------- | ---------------------- | ------------------------------------------ |
->>>>>>> Stashed changes
-| Before PATCHING     | `CREATING_SNAPSHOT`    | Enable rollback on failure or system reset |
-| Before PACKAGING    | `CREATING_SNAPSHOT`    | Enable rollback on packaging failure       |
-| Manual user request | Any non-mutation state | User-initiated checkpoint                  |
+
+> > > > > > > Stashed changes
+> > > > > > > | Before PATCHING | `CREATING_SNAPSHOT` | Enable rollback on failure or system reset |
+> > > > > > > | Before PACKAGING | `CREATING_SNAPSHOT` | Enable rollback on packaging failure |
+> > > > > > > | Manual user request | Any non-mutation state | User-initiated checkpoint |
 
 ### Snapshot Lifecycle
 
@@ -1512,14 +1518,15 @@ AI_SERVICE_UNAVAILABLE State:
 
 ### 15.1 Degraded State Definition and Escalation
 
-| State                    | Trigger                                                                                                     | Behavior                                                                                                                   | Recovery                                                                                                             |
+| State | Trigger | Behavior | Recovery |
 <<<<<<< Updated upstream
 | :----------------------- | :---------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------- |
 =======
 | ------------------------ | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
->>>>>>> Stashed changes
-| `AI_SERVICE_DEGRADED`    | - 3 consecutive health check failures<br>- 3 consecutive request timeouts<br>- 10+ 429 rate‑limit responses | - AI operations continue with exponential backoff<br>- Blueprint generation is **blocked**<br>- UI shows yellow status dot | Auto‑recovery after 1 successful health check; fallback to `AI_SERVICE_UNAVAILABLE` if 10 consecutive failures       |
-| `AI_SERVICE_UNAVAILABLE` | - Health check timeout (5s)<br>- Process not running<br>- Any request returns 5xx error                     | - All AI‑dependent operations are blocked<br>- Orchestrator stays in this state until recovery succeeds                    | Automatic restart of mini‑service, then retry health check; after 3 failed restarts, wait 60s and retry indefinitely |
+
+> > > > > > > Stashed changes
+> > > > > > > | `AI_SERVICE_DEGRADED` | - 3 consecutive health check failures<br>- 3 consecutive request timeouts<br>- 10+ 429 rate‑limit responses | - AI operations continue with exponential backoff<br>- Blueprint generation is **blocked**<br>- UI shows yellow status dot | Auto‑recovery after 1 successful health check; fallback to `AI_SERVICE_UNAVAILABLE` if 10 consecutive failures |
+> > > > > > > | `AI_SERVICE_UNAVAILABLE` | - Health check timeout (5s)<br>- Process not running<br>- Any request returns 5xx error | - All AI‑dependent operations are blocked<br>- Orchestrator stays in this state until recovery succeeds | Automatic restart of mini‑service, then retry health check; after 3 failed restarts, wait 60s and retry indefinitely |
 
 **Transition Rules:**
 
@@ -1819,31 +1826,32 @@ public class AIMiniServiceManager
 
 ## Change Log
 
-| Date       | Change                                                                                                                                                  |
+| Date | Change |
 <<<<<<< Updated upstream
 | :--------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ |
 =======
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
->>>>>>> Stashed changes
-| 2026-02-26 | **Added Section 17: ai-service.exe Package Integrity** - Startup integrity check, hash verification, Authenticode signature validation                  |
-| 2026-02-26 | **Added Section 16: AI E2E Test Suite Specification** - Complete test coverage for LLM, Image Gen, Vision, Search, Error handling, Trace ID propagation |
-| 2026-02-26 | **Added Section 15: AI Service Failure Governance** - Failure detection, fallback strategy, state transitions for AI_SERVICE_UNAVAILABLE/DEGRADED       |
-| 2026-02-26 | **Added Section 14: Trace ID Propagation** - Trace context, HTTP header propagation, AI service request logging with trace ID                           |
-| 2026-02-26 | **Added Section 13: Timeout Granularity Configuration** - Per-operation-type timeouts, timeout enforcement                                              |
-| 2026-02-26 | **Added Section 12: ConstructionTransaction with SDK Version Tracking** - SDK version, commit hash, trace ID, AI operation records for reproducibility  |
-| 2026-02-26 | **Added AI_SERVICE_UNAVAILABLE (31) and AI_SERVICE_DEGRADED (32) states** - New states for AI service failure handling                                  |
-| 2026-02-26 | **Added AI_SERVICE_UNAVAILABLE, AI_SERVICE_TIMEOUT, AI_SERVICE_ERROR, AI_SERVICE_DEGRADED error types**                                                 |
-| 2026-02-25 | **Added Retry Stage Behavior Specification** - Detailed behavior for 1-3/4-6/7-9/≥10 retry stages with AI strategy and Kernel actions                   |
-| 2026-02-25 | **Added Single Active Transaction Runtime Enforcement** - Code-level enforcement with crash recovery explanation                                        |
-| 2026-02-25 | **Added Invariant: Kernel-Exclusive State Mutation** - Explicit statement that only Kernel mutates BuilderState                                         |
-| 2026-02-25 | **Added Invariant: Single Active Transaction** - Exactly one active ConstructionTransaction per Orchestrator                                            |
-| 2026-02-25 | **Added AssetGenerationFailedEvent** - Event for asset generation failures                                                                              |
-| 2026-02-25 | **Added ASSET_GENERATION_FAILED → RETRYING transition** - State machine path for asset retry                                                            |
-| 2026-02-23 | Added ASSET_GENERATION_FAILED, BRANDING_INFERENCE_FAILED, REQUIREMENT_EVALUATION_FAILED error types                                                     |
-| 2026-02-23 | Added Platform Requirements & Asset Generation states (26-29)                                                                                           |
-| 2026-02-23 | Added RequirementsEvaluatedEvent, BrandingInferredEvent, AssetsGeneratedEvent                                                                           |
-| 2026-02-23 | Added state transitions for REQUIREMENT_EVALUATION → BRANDING_INFERENCE → ASSET_GENERATING → ASSETS_READY                                               |
-| 2026-02-21 | Converted to Infinite Silent Retry model - removed FAILED state, added SYSTEM_RESET                                                                     |
-| 2026-02-21 | Added CANCELLED state as only terminal state (user-initiated only)                                                                                      |
-| 2026-02-21 | Added SystemResetEvent and AttemptedApproaches tracking                                                                                                 |
-| 2026-02-21 | Fixed all architectural contradictions (1-7)                                                                                                            |
+
+> > > > > > > Stashed changes
+> > > > > > > | 2026-02-26 | **Added Section 17: ai-service.exe Package Integrity** - Startup integrity check, hash verification, Authenticode signature validation |
+> > > > > > > | 2026-02-26 | **Added Section 16: AI E2E Test Suite Specification** - Complete test coverage for LLM, Image Gen, Vision, Search, Error handling, Trace ID propagation |
+> > > > > > > | 2026-02-26 | **Added Section 15: AI Service Failure Governance** - Failure detection, fallback strategy, state transitions for AI_SERVICE_UNAVAILABLE/DEGRADED |
+> > > > > > > | 2026-02-26 | **Added Section 14: Trace ID Propagation** - Trace context, HTTP header propagation, AI service request logging with trace ID |
+> > > > > > > | 2026-02-26 | **Added Section 13: Timeout Granularity Configuration** - Per-operation-type timeouts, timeout enforcement |
+> > > > > > > | 2026-02-26 | **Added Section 12: ConstructionTransaction with SDK Version Tracking** - SDK version, commit hash, trace ID, AI operation records for reproducibility |
+> > > > > > > | 2026-02-26 | **Added AI_SERVICE_UNAVAILABLE (31) and AI_SERVICE_DEGRADED (32) states** - New states for AI service failure handling |
+> > > > > > > | 2026-02-26 | **Added AI_SERVICE_UNAVAILABLE, AI_SERVICE_TIMEOUT, AI_SERVICE_ERROR, AI_SERVICE_DEGRADED error types** |
+> > > > > > > | 2026-02-25 | **Added Retry Stage Behavior Specification** - Detailed behavior for 1-3/4-6/7-9/≥10 retry stages with AI strategy and Kernel actions |
+> > > > > > > | 2026-02-25 | **Added Single Active Transaction Runtime Enforcement** - Code-level enforcement with crash recovery explanation |
+> > > > > > > | 2026-02-25 | **Added Invariant: Kernel-Exclusive State Mutation** - Explicit statement that only Kernel mutates BuilderState |
+> > > > > > > | 2026-02-25 | **Added Invariant: Single Active Transaction** - Exactly one active ConstructionTransaction per Orchestrator |
+> > > > > > > | 2026-02-25 | **Added AssetGenerationFailedEvent** - Event for asset generation failures |
+> > > > > > > | 2026-02-25 | **Added ASSET_GENERATION_FAILED → RETRYING transition** - State machine path for asset retry |
+> > > > > > > | 2026-02-23 | Added ASSET_GENERATION_FAILED, BRANDING_INFERENCE_FAILED, REQUIREMENT_EVALUATION_FAILED error types |
+> > > > > > > | 2026-02-23 | Added Platform Requirements & Asset Generation states (26-29) |
+> > > > > > > | 2026-02-23 | Added RequirementsEvaluatedEvent, BrandingInferredEvent, AssetsGeneratedEvent |
+> > > > > > > | 2026-02-23 | Added state transitions for REQUIREMENT_EVALUATION → BRANDING_INFERENCE → ASSET_GENERATING → ASSETS_READY |
+> > > > > > > | 2026-02-21 | Converted to Infinite Silent Retry model - removed FAILED state, added SYSTEM_RESET |
+> > > > > > > | 2026-02-21 | Added CANCELLED state as only terminal state (user-initiated only) |
+> > > > > > > | 2026-02-21 | Added SystemResetEvent and AttemptedApproaches tracking |
+> > > > > > > | 2026-02-21 | Fixed all architectural contradictions (1-7) |
