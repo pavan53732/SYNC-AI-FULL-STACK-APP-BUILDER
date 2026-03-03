@@ -46,19 +46,19 @@ Sync AI is an **Autonomous Software Construction System** for Windows Desktop. I
 
 ### Implementation Sequence
 
-**Phase 1A: Orchestrator Foundation (MUST BE FIRST)**
+**Core Orchestrator Components (MUST BE FIRST)**
 1. BuilderReducer.cs - State transitions
 2. TaskSchema.cs - Task types, validation
 3. BuilderContext.cs - State container
 4. BuilderEvent.cs - Event types
 5. RetryController.cs - Retry logic
 
-**Phase 1B: Layer Integration**
+**Layer Integration**
 - All services ask orchestrator permission
 - All state transitions emit events
 - All mutations serialized
 
-**Phase 2-5: Layer Implementation**
+**Layer Implementation**
 - Each layer integrates with orchestrator
 - Follow strict layer boundaries
 - Maintain event logging

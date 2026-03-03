@@ -822,7 +822,7 @@ public class MachineVariabilityHandler
         string projectPath,
         IProgress<BuildPhase>? progress = null)
     {
-        // Phase 1: Verify Embedded Environment
+        // Step 1: Verify Embedded Environment
         if (!_envValidator.ValidateEnvironment())
         {
              return BuildResult.CriticalFailure("Embedded SDK is corrupted.");

@@ -365,7 +365,7 @@ The following names are reserved by the platform and may not be used as entity n
 }
 ```
 
-> **INVARIANT**: The `constraints` object is **always identical** across all Phase 1 specs. It is defined here for explicitness and documentation purposes. Agents must treat it as read-only. Any spec that deviates from these constraints must be rejected by the Runtime Safety Kernel.
+> **INVARIANT**: The `constraints` object is defined for the current supported frameworks. It is defined here for explicitness and documentation purposes. Agents must treat it as read-only.
 
 ---
 
@@ -421,7 +421,6 @@ The Spec Validator enforces the following before dispatching to the Planner Agen
 | --------------------------------------------- | --------------------- |
 | `constraints.databaseEngine` must be `SQLite` | Spec Validator        |
 | `constraints.uiFramework` must be `WinUI3`    | Spec Validator        |
-| No feature category in Phase 1 forbidden list | Spec Validator        |
 | `allowNetworkAccess` must remain `false`      | Runtime Safety Kernel |
 
 ### Failure Behavior

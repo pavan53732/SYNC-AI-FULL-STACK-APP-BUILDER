@@ -1360,7 +1360,7 @@ AI_SERVICE_LAYER.md (this document)
 | Date       | Change                                                                                          |
 | ---------- | ----------------------------------------------------------------------------------------------- |
 | 2026-02-22 | Initial specification for AI Service Layer                                                      |
-| 2026-02-22 | Integrated with 7-layer architecture as Layer 6.6                                               |
+| 2026-02-22 | Integrated with 8-layer architecture as Layer 6.6                                               |
 | 2026-02-22 | Added Section 11: Process Lifecycle Management (Auto-Start)                                     |
 | 2026-02-22 | **Changed to compiled executable ONLY** - removed `bun run dev` scripts approach for production |
 | 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - 3-slot user-configured AI providers   |

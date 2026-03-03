@@ -482,7 +482,7 @@ Kernel Validates Mutation                  │
 
 ## 8. Control Flow Diagram
 
-### Complete Flow (Infinite Silent Retry Model)
+### Complete Flow (Bounded Retry Model)
 
 ```text
 User Prompt
@@ -606,7 +606,7 @@ User Prompt
 | 2026-02-24 | **Added "Base Project Template (Minimal Kernel Bootstrap)" section** - Explains empty structure scaffolding |
 | 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - user-configured providers                         |
 | 2026-02-22 | Added AI Service Layer references (Layer 6.6)                                                               |
-| 2026-02-21 | Converted to Infinite Silent Retry model                                                                    |
+| 2026-02-21 | Converted to Bounded Retry model with SYSTEM_RESET at cycle 10+                                                                    |
 | 2026-02-21 | Replaced "Hard Abort" with "System Reset + Forced Amnesia"                                                  |
 | 2026-02-21 | Added Cancellation Authority section (only way to stop)                                                     |
 | 2026-02-21 | Removed FAILED state from all diagrams                                                                      |

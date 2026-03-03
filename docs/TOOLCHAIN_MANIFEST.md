@@ -214,7 +214,7 @@ These are the **pinned, locked versions** used by Sync AI. They must not be chan
 │   │   ├── microsoft.entityframeworkcore.sqlite\8.0.11\
 │   │   ├── communitytoolkit.mvvm\8.3.2\
 │   │   ├── communitytoolkit.winui.ui.controls\7.1.2\
-│   │   └── ... (all Phase 1 required packages)
+│   │   └── ... (all required packages)
 │   │
 │   ├── dotnet-tools\                  ← .NET global tools bundle
 │   │   └── dotnet-ef.exe              ← EF Core CLI 8.0.11
@@ -367,7 +367,7 @@ The Sync AI installer (`SyncAI-Setup.exe`) acquires all toolchain components at 
 | **Offline Bundle**  | Installer includes everything | Pre-packed inside installer MSI/MSIX                        |
 | **Online Download** | Installer is a bootstrapper   | Downloads each component from official sources during setup |
 
-**Phase 1 Decision**: Offline bundle. The full installer includes all toolchain components pre-packed. This ensures zero internet dependency post-installation.
+**Decision**: Offline bundle. The full installer includes all toolchain components pre-packed. This ensures zero internet dependency post-installation.
 
 ### Installer Size Estimate
 
@@ -475,7 +475,7 @@ On Sync AI Launch:
 
 ## 9. Toolchain Update Policy
 
-### Phase 1 Rules
+### Update Rules
 
 | Rule                        | Description                                                                         |
 | --------------------------- | ----------------------------------------------------------------------------------- |

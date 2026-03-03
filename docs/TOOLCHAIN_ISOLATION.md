@@ -462,7 +462,7 @@ MSBuild and the .NET host occasionally query the Windows Registry for SDK detect
 | `HKLM\SOFTWARE\Microsoft\MSBuild\*`            | MSBuild version detection | Overridden by direct path invocation                       |
 | `HKCU\SOFTWARE\NuGet\*`                        | NuGet client              | Overridden by workspace-level `NuGet.config`               |
 
-> **Phase 1 Approach**: Environment variable overrides are sufficient to prevent registry-based tool detection for the Phase 1 tool set. Full registry virtualization (using mechanisms like `RegCreateKeyEx` redirection) is a Phase 2 consideration for extreme isolation scenarios.
+> **Current Approach**: Environment variable overrides are sufficient to prevent registry-based tool detection for the current tool set. Full registry virtualization (using mechanisms like `RegCreateKeyEx` redirection) is a future consideration for extreme isolation scenarios.
 
 ---
 

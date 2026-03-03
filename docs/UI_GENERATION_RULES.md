@@ -57,7 +57,7 @@ MainWindow.xaml (Shell)
 | Design System       | WinUI 3 built-in Fluent Design — NO external CSS or HTML      |
 | Chart Library       | `CommunityToolkit.WinUI.UI.Controls` or `LiveCharts2` (WinUI) |
 | MVVM Helpers        | `CommunityToolkit.Mvvm` (RelayCommand, ObservableObject)      |
-| No WebView          | `WebView2` is forbidden in Phase 1                            |
+| No WebView          | `WebView2` is forbidden - use native WinUI controls instead    |
 | No Electron/CEF     | Forbidden                                                     |
 
 ---
@@ -534,7 +534,7 @@ The following patterns are **explicitly forbidden** in the generated UI:
 
 | Forbidden Pattern                               | Reason                              | Replacement                                 |
 | ----------------------------------------------- | ----------------------------------- | ------------------------------------------- |
-| `WebView2`                                      | Phase 1 constraint — no web content | Use native WinUI 3 controls                 |
+| `WebView2`                                      | Constraint — no web content | Use native WinUI 3 controls                 |
 | Code-behind business logic                      | Violates MVVM                       | Move to ViewModel                           |
 | `Thread.Sleep()` or `Task.Delay()` in UI thread | Blocks UI                           | Use async/await                             |
 | Hardcoded colors and sizes                      | Breaks theme support                | Use `ThemeResource`                         |

@@ -208,7 +208,7 @@ public enum BuilderState
 }
 ```
 
-### State Diagram (Infinite Silent Retry Model)
+### State Diagram (Bounded Retry Model)
 
 ```text
 IDLE
@@ -902,7 +902,7 @@ public class RetryController
 
 ### Phase Flow
 
-**Phase 1 — Spec Parsing (Orchestrator Thread)**
+**Bounded Retry Model — Spec Parsing (Orchestrator Thread)**
 
 **Phase 2 — Task Graph Construction (Orchestrator Thread)**
 
@@ -1905,7 +1905,7 @@ public class AIMiniServiceManager
 | 2026-02-23    | Added Platform Requirements & Asset Generation states (26-29)                                                                                           |
 | 2026-02-23    | Added RequirementsEvaluatedEvent, BrandingInferredEvent, AssetsGeneratedEvent                                                                           |
 | 2026-02-23    | Added state transitions for REQUIREMENT_EVALUATION → BRANDING_INFERENCE → ASSET_GENERATING → ASSETS_READY                                               |
-| 2026-02-21    | Converted to Infinite Silent Retry model - removed FAILED state, added SYSTEM_RESET                                                                     |
+| 2026-02-21    | Converted to Bounded Retry model - removed FAILED state, added SYSTEM_RESET                                                                     |
 | 2026-02-21    | Added CANCELLED state as only terminal state (user-initiated only)                                                                                      |
 | 2026-02-21    | Added SystemResetEvent and AttemptedApproaches tracking                                                                                                 |
 | 2026-02-21    | Fixed all architectural contradictions (1-7)                                                                                                            |

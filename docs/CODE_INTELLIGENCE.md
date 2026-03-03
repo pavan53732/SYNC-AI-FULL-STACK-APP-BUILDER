@@ -818,7 +818,7 @@ public record AgentExecutionContext
 
 ### 10.2 Guard Failure Escalation Policy
 
-The system uses an Infinite Silent Retry model. If a mutation repeatedly fails the safety guard:
+The system uses a Bounded Retry model with SYSTEM_RESET at cycle 10. If a mutation repeatedly fails the safety guard:
 
 1. **Attempt 1-3 (Soft Rejection)** — Return tailored error (e.g., "Symbol Foo not found") to the Agent.
 2. **Attempt 4-9 (Hard Rejection)** — Return "Breaking Change Detected" with impact path. Agent attempts architectural pivot.

@@ -338,7 +338,7 @@ async def fix_agent(error):
    d. Retries with entirely new approach
 ```
 
-### Retry Governance Contract (Infinite Silent Retry)
+### Retry Governance Contract (Bounded Retry)
 
 | Retry Range | Owner                  | Description                               |
 | ----------- | ---------------------- | ----------------------------------------- |
