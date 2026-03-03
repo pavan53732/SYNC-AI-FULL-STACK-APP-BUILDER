@@ -291,7 +291,111 @@ public class StoreComplianceValidator
 
 ---
 
-## 5. Error Classification
+## 5. MSI/EXE Packaging (Alternative to MSIX)
+
+> **Note**: MSIX is the primary packaging format. MSI/EXE are alternative formats for enterprise deployment or legacy distribution.
+
+### 5.1 Packaging Format Comparison
+
+| Feature | MSIX | MSI | EXE (Bootstrapper) |
+| ------- | ---- | --- | ------------------- |
+| **Installer Technology** | Windows App Installer | Windows Installer | Custom/Third-party |
+| **Code Signing** | Required (Authenticode) | Required (Authenticode) | Optional |
+| **Dependencies** | Windows 10 1809+ | Windows 7+ | Varies |
+| **Repair/Modify** | ✅ Supported | ✅ Supported | Limited |
+| **Silent Install** | ✅ Supported | ✅ Supported | ✅ Supported |
+| **Delta Updates** | ✅ Supported | ⚠️ Limited | ❌ No |
+
+### 5.2 MSI Packaging (WiX Toolset)
+
+Sync AI supports MSI generation using the bundled WiX Toolset:
+
+| Property | Value |
+| -------- | ----- |
+| **Tool** | WiX Toolset v3.14 |
+| **Bundle Path** | `{SyncAIRoot}\toolchain\wix\` |
+| **Compiler** | `candle.exe` |
+| **Linker** | `light.exe` |
+| **Output** | `.msi` Windows Installer package |
+
+**MSI Generation Flow**:
+
+```text
+1. Generate WiX Source (wxs)
+   └── Parse build outputs from build_outputs.json
+   └── Create Component elements for each file
+   └── Define Directory structure
+
+2. Compile WiX Source
+   └── candle.exe input.wxs -o input.wixobj
+   └── Validate against WiX schema
+
+3. Link MSI Package
+   └── light.exe input.wixobj -o output.msi
+   └── Apply cabinet compression
+   └── Generate MSI database
+
+4. Sign MSI (Optional)
+   └── signtool.exe sign /fd sha256 /f cert.pfx output.msi
+```
+
+### 5.3 EXE Bootstrapper Packaging
+
+For self-extracting installers or bootstrapper scenarios:
+
+| Property | Value |
+| -------- | ----- |
+| **Format** | Self-extracting archive or bootstrapper |
+| **Compression** | LZMA or ZIP |
+| **Signing** | Optional (Authenticode recommended) |
+
+**EXE Generation Options**:
+
+| Option | Description | Use Case |
+| ------ | ----------- | -------- |
+| **Portable ZIP** | Simple ZIP with launcher script | Quick distribution |
+| **Self-Extracting** | ZIP archive with embedded launcher | User-friendly install |
+| **Bootstrapper** | EXE that installs prerequisites + app | Complex dependencies |
+
+### 5.4 Portable ZIP Packaging
+
+For simple distribution without installation:
+
+```text
+1. Collect Build Outputs
+   └── Read build_outputs.json
+   └── Copy all output files to staging directory
+
+2. Include Dependencies
+   └── Self-contained .NET runtime (if configured)
+   └── CRT DLLs (for native apps)
+
+3. Create ZIP Archive
+   └── Use System.IO.Compression
+   └── CompressionLevel: Optimal
+
+4. (Optional) Sign EXE
+   └── Wrap ZIP in simple EXE launcher
+   └── Authenticode sign the wrapper
+```
+
+### 5.5 Packaging Format Selection
+
+| Scenario | Recommended Format | Rationale |
+| -------- | ------------------ | --------- |
+| Microsoft Store submission | MSIX | Required by Store |
+| Sideloading (modern) | MSIX | Best UX, auto-update |
+| Enterprise deployment | MSI | Group Policy support |
+| Simple distribution | ZIP | No installation needed |
+| Legacy Windows 7 support | MSI or EXE | Broader compatibility |
+
+### 5.6 Task Types for MSI/EXE
+
+| Task Type | Description | Orchestration State |
+| --------- | ----------- | ------------------- |
+| `BUILD_MSI` | Generate MSI installer using WiX | PACKAGING |
+| `BUILD_EXE_INSTALLER` | Generate EXE bootstrapper | PACKAGING |
+| `BUILD_PORTABLE_ZIP` | Create portable ZIP package | PACKAGING |
 
 | Error Code | Classification      | Description                                      | Auto-Fix                     |
 | :--------- | :------------------ | :----------------------------------------------- | :--------------------------- |

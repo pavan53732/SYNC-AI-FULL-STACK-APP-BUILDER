@@ -55,7 +55,7 @@
 
 > **Sync AI is a Local AI Full-Stack Windows Native App Builder** — a sophisticated desktop application that autonomously designs, generates, compiles, validates, fixes, and packages complete production-ready Windows desktop applications from natural language descriptions by operators or users.
 >
-> Think of it as "the Lovable for desktop apps" or "an AI-powered Visual Studio that builds WinUI 3 applications from plain English descriptions."
+> Think of it as "the Lovable for desktop apps" or "an AI-powered Visual Studio that builds Windows native apps (WinUI3/WPF/WinForms/Console/Win32) from plain English descriptions."
 
 **AI leads the construction. The Runtime Safety Kernel enforces deterministic guarantees.**
 

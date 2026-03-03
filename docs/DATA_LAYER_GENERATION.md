@@ -44,6 +44,8 @@ The **Schema Agent** uses these rules deterministically to generate all C# code 
 
 ## 2. Platform Constraints
 
+> **Scope Note**: This document applies to **WinUI 3 / WPF / WinForms projects only**. For Win32/Console projects, see alternative data storage patterns in [TARGET_APP_ARCHITECTURE.md](./TARGET_APP_ARCHITECTURE.md).
+
 | Constraint        | Value                                             | Rationale                                 |
 | ----------------- | ------------------------------------------------- | ----------------------------------------- |
 | Database engine   | SQLite only                                       | Local-first, no server dependency         |

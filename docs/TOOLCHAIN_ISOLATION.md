@@ -315,8 +315,9 @@ var nativeEnv = new Dictionary<string, string>
         @"{SyncAIRoot}\toolchain\dotnet\shared\Microsoft.NETCore.App\8.0.11"),
     
     // Disable incremental linking for determinism
-    ["CL"] = "/Zi /Gy /Gw /Brepro",
-    ["LINK"] = "/INCREMENTAL:NO /DEBUG:NONE",
+    // Full optimization flags for reproducible builds
+    ["CL"] = "/Zi /Gy /Gw /Brepro /W3 /permissive-",
+    ["LINK"] = "/INCREMENTAL:NO /OPT:REF /OPT:ICF /DEBUG:NONE",
 };
 ```
 
@@ -342,6 +343,8 @@ var nativeEnv = new Dictionary<string, string>
     /LIBPATH:"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\lib\x64" \
     /LIBPATH:"{SyncAIRoot}\toolchain\winsdk\Lib\10.0.22621.0\um\x64" \
     /INCREMENTAL:NO \
+    /OPT:REF \
+    /OPT:ICF \
     /DEBUG:NONE \
     {objfiles}
 ```
@@ -355,6 +358,30 @@ var nativeEnv = new Dictionary<string, string>
 | `/Gy` | Function-level linking (enables /Gw) |
 | `/Gw` | Whole program optimization across translation units |
 | `/INCREMENTAL:NO` | Disable incremental linking for clean builds |
+| `/OPT:REF` | Remove unused functions and data (link-time optimization) |
+| `/OPT:ICF` | Enable identical COMDAT folding (link-time optimization) |
+
+### PDB Determinism Strategy
+
+> **Note**: For full binary reproducibility, PDB files require special handling:
+
+| PDB Type | Reproducibility Approach |
+| -------- | ------------------------ |
+| **Debug Build** | Use `/Brepro` with externally provided debug symbols |
+| **Release Build** | Use `/DEBUG:NONE` — no PDB generated, no timestamp in binary |
+| **Deterministic PDB** | Use `/Brepro /PDBPATH:<path>` to specify reproducible symbol path |
+
+For production releases requiring symbol files, use a deterministic symbol server:
+
+```bash
+# Deterministic symbol publishing
+link.exe /OUT:app.exe /Brepro /PDB:app.pdb /PDBPATH:%SRCROOT%/symbols {objfiles}
+```
+
+**Key Principles**:
+1. **Release builds**: No embedded timestamps via `/Brepro`
+2. **Debug symbols**: Store separately from binaries (symbol server recommended)
+3. **Build reproducibility**: Always use the same toolchain versions (see `toolchain.lock.json`)
 
 ### Resource Compiler Isolation
 

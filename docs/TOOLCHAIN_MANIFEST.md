@@ -395,12 +395,61 @@ Sync AI bundles the following components under their respective redistribution l
 | `MSBuild` (Build Tools)                   | Visual Studio EULA                          | ✅ Yes (subset)             | May redistribute build tools subset                                     |
 | `Windows SDK` (`signtool`, `makeappx`)    | Windows SDK EULA                            | ✅ Yes (listed tools)       | Must be distributed as-is                                               |
 | `VC++ Build Tools`                        | Visual Studio EULA                          | ✅ Yes (subset)             | May redistribute VC++ build tools                                       |
+| `CRT (vcruntime140.dll, msvcp140.dll)`   | Visual Studio EULA                          | ✅ Yes (linked apps)        | May redistribute via app deployment; see CRT Redistribution below      |
 | `EF Core CLI` (`dotnet-ef`)               | MIT                                         | ✅ Yes                      | No conditions                                                           |
 | `NuGet packages`                          | Each package's own license                  | ✅ Yes (all MIT/Apache 2.0) | Include license files                                                   |
 | `CommunityToolkit.Mvvm`                   | MIT                                         | ✅ Yes                      | No conditions                                                           |
 | `CommunityToolkit.WinUI`                  | MIT                                         | ✅ Yes                      | No conditions                                                           |
 | `Windows App SDK Runtime (WinAppRuntime)` | Windows App SDK EULA (MIT for OSS portions) | ✅ Yes (self-contained)     | Must set `WindowsAppSdkSelfContained=true`; runtime bundled inside MSIX |
 | `Microsoft.Windows.SDK.BuildTools` NuGet  | Windows SDK EULA                            | ✅ Yes (headers/libs)       | **Redistribution analysis required** — see below                        |
+| `WiX Toolset v3`                          | BSD License                                 | ✅ Yes                      | No conditions — see WiX Redistribution below                            |
+
+### CRT (C Runtime) Redistribution
+
+The Visual C++ Runtime libraries are required for native C++ applications built with the VC++ compiler. Sync AI supports two redistribution models:
+
+| Model | Description | Use Case |
+| ----- | ----------- | -------- |
+| **Static Linking** | Link CRT statically (`/MT` or `/MTd`) | Single-file deployment, no DLL dependencies |
+| **Dynamic Linking** | Deploy CRT DLLs alongside executable | Smaller binaries, shared runtime across apps |
+
+**DLL Redistribution** (Dynamic Linking):
+
+| DLL | Purpose | Minimum Version |
+| ---- | ------- | ----------------|
+| `vcruntime140.dll` | C runtime library | VS 2022 (14.3x) |
+| `msvcp140.dll` | C++ standard library | VS 2022 (14.3x) |
+| `vcruntime140_1.dll` | Additional C runtime (C++17+) | VS 2022 (14.3x) |
+
+**Redistribution Terms**:
+- The VC++ runtime DLLs MAY be redistributed as part of a deployed application
+- They can be installed in the app's directory or in a shared location (e.g., `%SystemRoot%\System32`)
+- For MSIX packaging, these DLLs should be included in the package as framework packages or appx manifest assets
+- **Self-contained deployment**: When using `/clr:pure` or .NET native compilation, CRT is bundled automatically
+
+**Implementation**:
+- For WinUI3/WPF/WinForms: Use self-contained deployment (CRT not required separately)
+- For Win32/Console with native C++: Include CRT DLLs in output folder or installer package
+
+### WiX Toolset Redistribution
+
+| Property | Value |
+| -------- | ----- |
+| **Version** | `3.14` (latest stable) |
+| **License** | BSD License (OSI approved) |
+| **Bundle Path** | `{SyncAIRoot}\toolchain\wix\` |
+| **Primary Tool** | `candle.exe`, `light.exe` |
+
+**Redistribution Terms**:
+- WiX Toolset is open source under BSD License
+- MAY be redistributed as part of Sync AI's bundled toolchain
+- MAY be used to generate MSI installers for deployed applications
+- No attribution required beyond standard BSD License notice
+
+**Use Cases**:
+- MSI installer generation (alternative to MSIX)
+- Complex installer workflows requiring custom actions
+- Enterprise deployment scenarios requiring traditional Windows Installer
 
 ### Microsoft.Windows.SDK.BuildTools Redistribution Analysis
 
