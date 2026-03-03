@@ -402,6 +402,8 @@ The Runtime Kernel:
 - Forces AI to attempt an entirely new architecture path
 - **Never stops** - always retries with fresh context
 
+> **Convergence Guarantee**: The `AttemptedApproaches` registry (defined in [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §5) ensures SYSTEM_RESET does not reproduce the same failed architecture. The Kernel computes approach fingerprints and injects them into the Architect Agent's context to prevent collision. See [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §7 for the fingerprinting mechanism.
+
 ---
 
 ## 6. Cancellation Authority

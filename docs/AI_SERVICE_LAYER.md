@@ -89,7 +89,7 @@ The `openai` npm SDK is a **Node.js/TypeScript library**, which cannot be used d
 │  ─ Manifest generator, Capability inference, MSIX bundler    │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 2: Execution Kernel                                   │
-│  ─ In-process MSBuild, NuGet restore, app execution          │
+│  ─ Out-of-process MSBuild, NuGet restore, app execution          │
 │  ─ Uses Layer 5 (bundled toolchain) exclusively              │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 5: Build Execution Sandbox (TOOLCHAIN FOUNDATION)    │
@@ -846,6 +846,54 @@ namespace SyncAI.Services
         [DllImport("user32.dll")]
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
+        // Windows API for Job Object containment (EXECUTION_ENVIRONMENT.md §4)
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string lpName);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetInformationJobObject(
+            IntPtr hJob,
+            JobObjectInfoType infoType,
+            ref JOBOBJECT_EXTENDED_LIMIT_INFORMATION lpJobObjectInfo,
+            uint cbJobObjectInfoLength);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetInformationJobObject(
+            IntPtr hJob,
+            JobObjectInfoType infoType,
+            ref JOBOBJECT_CPU_RATE_CONTROL_INFORMATION lpJobObjectInfo,
+            int cbJobObjectInfoLength);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+        private enum JobObjectInfoType
+        {
+            ExtendedLimitInformation = 9,
+            CpuRateControlInformation = 15
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+        {
+            public ulong BasicLimitInformation;
+            public IntPtr IoCompletionPortHandle;
+            public ulong LimitFlags;
+            public UIntPtr ProcessMemoryLimit;
+            public UIntPtr PeakProcessMemoryUsed;
+            public UIntPtr TotalPageFaultCount;
+            public UIntPtr TotalPrivatePageCount;
+            public UIntPtr TotalKernelTime;
+            public UIntPtr TotalUserTime;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JOBOBJECT_CPU_RATE_CONTROL_INFORMATION
+        {
+            public uint ControlFlags;
+            public uint HardCapRatio;
+        }
+
         private const int SW_HIDE = 0;
 
         public AIMiniServiceManager(string servicePath, int port = 3001)
@@ -892,6 +940,12 @@ namespace SyncAI.Services
                 };
 
                 _serviceProcess = new Process { StartInfo = startInfo };
+
+                // CRITICAL: Attach Job Object for resource containment (see EXECUTION_ENVIRONMENT.md §4)
+                // Prevents ai-service.exe from consuming excessive memory or CPU
+                AttachToJobObject(_serviceProcess);
+                SetProcessMemoryLimit(_serviceProcess, 512 * 1024 * 1024); // 512 MB ceiling
+                SetProcessCpuLimit(_serviceProcess, 0.25); // 25% CPU ceiling (1 core on quad-core)
 
                 // Capture output for debugging (logs, not console)
                 _serviceProcess.OutputDataReceived += (s, e) =>
@@ -1045,6 +1099,69 @@ namespace SyncAI.Services
             StopService();
             _healthClient.Dispose();
             _monitorCts?.Dispose();
+        }
+
+        /// <summary>
+        /// Attaches a process to a Job Object for containment (EXECUTION_ENVIRONMENT.md §4)
+        /// </summary>
+        private void AttachToJobObject(Process process)
+        {
+            // Job Object attachment prevents process escape and enforces resource limits
+            // See EXECUTION_ENVIRONMENT.md §4.2 for complete Job Object specification
+            var jobHandle = CreateJobObject(IntPtr.Zero, null);
+            var extendedInfo = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+            extendedInfo.BasicLimitInformation.LimitFlags = 0x2000; // JOB_OBJECT_LIMIT_BREAKAWAY_OK
+            
+            SetInformationJobObject(
+                jobHandle,
+                JobObjectInfoType.ExtendedLimitInformation,
+                ref extendedInfo,
+                sizeof(uint)
+            );
+            
+            AssignProcessToJobObject(jobHandle, process.Handle);
+        }
+
+        /// <summary>
+        /// Sets memory limit for a process (prevents memory leaks)
+        /// </summary>
+        private void SetProcessMemoryLimit(Process process, long maxBytes)
+        {
+            // Enforces 512 MB ceiling to prevent runaway memory consumption
+            var jobHandle = CreateJobObject(IntPtr.Zero, null);
+            var extendedInfo = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+            extendedInfo.BasicLimitInformation.LimitFlags |= 0x00000100; // JOB_OBJECT_LIMIT_PROCESS_MEMORY
+            extendedInfo.ProcessMemoryLimit = (UIntPtr)maxBytes;
+            
+            SetInformationJobObject(
+                jobHandle,
+                JobObjectInfoType.ExtendedLimitInformation,
+                ref extendedInfo,
+                sizeof(uint)
+            );
+            
+            AssignProcessToJobObject(jobHandle, process.Handle);
+        }
+
+        /// <summary>
+        /// Sets CPU limit for a process (prevents CPU hogging)
+        /// </summary>
+        private void SetProcessCpuLimit(Process process, double cpuRatio)
+        {
+            // Enforces 25% CPU ceiling (1 core on quad-core machine)
+            var jobHandle = CreateJobObject(IntPtr.Zero, null);
+            var rateControl = new JOBOBJECT_CPU_RATE_CONTROL_INFORMATION();
+            rateControl.ControlFlags = 0x00000001; // JOB_OBJECT_CPU_RATE_CONTROL_ENABLE
+            rateControl.HardCapRatio = (uint)(cpuRatio * 100); // 25 = 25%
+            
+            SetInformationJobObject(
+                jobHandle,
+                JobObjectInfoType.CpuRateControlInformation,
+                ref rateControl,
+                Marshal.SizeOf(rateControl)
+            );
+            
+            AssignProcessToJobObject(jobHandle, process.Handle);
         }
     }
 }

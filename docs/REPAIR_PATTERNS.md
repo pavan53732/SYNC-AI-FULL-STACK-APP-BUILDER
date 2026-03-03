@@ -66,6 +66,8 @@ Each build error is classified into one of four severity tiers:
 | **T3** | Logic      | Incorrect logic, missing bindings, missing DI registration | 7                             |
 | **T4** | Structural | Architecture violation; requires spec amendment            | 9 (then System Reset)         |
 
+> **Note**: The tier-specific max-retry columns (T1–T4) are fine-grained per-tier budgets. The stage escalation sequence (FIX_LEVEL → INTEGRATION_LEVEL → ARCHITECTURE_LEVEL → SYSTEM_RESET) is governed by [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §8.
+
 ---
 
 ## 3. MSBuild / .csproj Errors
@@ -464,15 +466,18 @@ Then generate a new migration.
 
 **Pattern**: `error APPX0104: Certificate with thumbprint '...' not found.`
 
-**Repair Action**: For development signing, use a self-signed test certificate. In `.csproj`:
+**Root Cause**: The self-signed development certificate is missing or expired.
 
-```xml
-<PropertyGroup>
-    <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
-</PropertyGroup>
+**Repair Action**: Regenerate the self-signed development certificate using `cert-gen.ps1`:
+
+```powershell
+# Execute cert-gen.ps1 in project root
+.\cert-gen.ps1 -Subject "CN={AppName}" -ValidityYears 1
 ```
 
-This is acceptable for local builds. Production packaging enables signing.
+This creates a new self-signed certificate valid for 1 year and updates the `.csproj` with the correct thumbprint.
+
+**DO NOT** use `<AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>` — this violates the signing invariant ([SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §3.4).
 
 **Tier**: T1
 
@@ -644,7 +649,7 @@ The following conditions trigger an escalation to the **Runtime Safety Kernel** 
 
 | Trigger                  | Condition                                                                                  |
 | ------------------------ | ------------------------------------------------------------------------------------------ |
-| **Max retries reached**  | 10+ consecutive failed build attempts on the same task                                     |
+| **Max retries reached**  | 10+ consecutive failed build attempts on the same task (see [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §8 for stage escalation) |
 | **Circular error**       | Same error code appears on retries 5, 7, and 9                                             |
 | **Structural violation** | Fix requires changing the AppSpec architecture (T4 error)                                  |
 | **Corruption detected**  | Generated code produces valid build but incorrect runtime behavior confirmed by validation |

@@ -589,6 +589,42 @@ public class XamlBindingIndexer
         public string Source { get; set; }  // "XML" or "Regex"
         public bool IsAuthoritative { get; set; }
     }
+
+    /// <summary>
+    /// Retrieves binding information for impact analysis.
+    /// CRITICAL: Non-authoritative bindings (regex-derived) MUST be re-verified before use.
+    /// </summary>
+    public async Task<XamlBindingInfo> GetBindingAsync(string xamlPath, string bindingPath)
+    {
+        var binding = await _dbContext.Bindings
+            .FirstOrDefaultAsync(b => b.XamlPath == xamlPath && b.BindingPath == bindingPath);
+        
+        if (binding == null)
+            return null;
+        
+        // ENFORCEMENT: If binding is not authoritative, re-verify before returning
+        if (!binding.IsAuthoritative)
+        {
+            _logger.LogWarning($"Non-authoritative binding detected for {xamlPath}:{bindingPath}. Re-verifying.");
+            
+            // Re-parse the XAML file to verify the binding exists
+            var verifiedBindings = await ExtractBindingsFromXamlAsync(xamlPath);
+            
+            if (!verifiedBindings.ContainsKey(bindingPath))
+            {
+                // Binding no longer exists - remove from index
+                _logger.LogWarning($"Removing stale non-authoritative binding: {xamlPath}:{bindingPath}");
+                await RemoveBindingAsync(xamlPath, bindingPath);
+                return null;
+            }
+            
+            // Update binding to authoritative since we just verified it
+            binding.IsAuthoritative = true;
+            await _dbContext.SaveChangesAsync();
+        }
+        
+        return binding;
+    }
 }
 ```
 
@@ -822,11 +858,14 @@ CREATE INDEX idx_edges_composite ON symbol_edges(from_symbol_id, edge_type, snap
 If corruption detected:
 
 1. Lock Workspace
-2. Create "Safety Snapshot" (backup current state)
-3. **TRUNCATE** graph tables
-4. Perform **Full Re-index** from disk
-5. Validate Integrity
-6. Resume operation
+2. **Request Safety Snapshot from Kernel** — Call `SnapshotService.CreateSnapshot("GraphIntegrityRepair")` via Kernel RPC
+3. Wait for Kernel to confirm snapshot creation (snapshot ID returned)
+4. **TRUNCATE** graph tables
+5. Perform **Full Re-index** from disk
+6. Validate Integrity
+7. Resume operation
+
+> **INVARIANT**: The Graph Integrity Verifier MUST NOT create snapshots directly. All snapshot creation MUST route through the Kernel's `SnapshotService` to maintain state machine consistency ([AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) §7).
 
 ---
 

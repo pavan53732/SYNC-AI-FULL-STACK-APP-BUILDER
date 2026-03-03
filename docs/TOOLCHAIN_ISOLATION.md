@@ -88,6 +88,18 @@ var isolatedEnv = new Dictionary<string, string>
     ["APPDATA"]              = @"{workspace}\{projectId}\.appdata",
     ["PROGRAMDATA"]          = @"{workspace}\{projectId}\.programdata",
 
+    // ── VC++ Compiler Isolation (CRITICAL for cl.exe) ───────────────────────
+    // cl.exe does NOT use PATH to locate headers or libraries. It reads INCLUDE,
+    // LIB, and LIBPATH exclusively. Without these, cl.exe falls back to system-
+    // registered SDK paths (via registry), violating the isolation invariant.
+    // DOTNET_MULTILEVEL_LOOKUP=0 alone does NOT prevent this fallback for native compilation.
+    ["INCLUDE"]              = @"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\include;{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\atlmfc\include;{SyncAIRoot}\toolchain\winsdk\Include\10.0.22621.0\ucrt;{SyncAIRoot}\toolchain\winsdk\Include\10.0.22621.0\shared;{SyncAIRoot}\toolchain\winsdk\Include\10.0.22621.0\um;{SyncAIRoot}\toolchain\winsdk\Include\10.0.22621.0\winrt",
+    ["LIB"]                  = @"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\lib\x64;{SyncAIRoot}\toolchain\winsdk\Lib\10.0.22621.0\ucrt\x64;{SyncAIRoot}\toolchain\winsdk\Lib\10.0.22621.0\um\x64",
+    ["LIBPATH"]              = @"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\lib\x64;{SyncAIRoot}\toolchain\dotnet\shared\Microsoft.NETCore.App\8.0.11",
+    ["WindowsSdkDir"]        = @"{SyncAIRoot}\toolchain\winsdk\",
+    ["WindowsSdkVersion"]    = "10.0.22621.0",
+    ["VCToolsInstallDir"]    = @"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\",
+
     // ── PATH Isolation (see Section 3) ────────────────────────────────────
     ["PATH"]                 = BuildIsolatedPath(),
 
@@ -165,12 +177,22 @@ To prevent this, the following MSBuild properties are set on every build invocat
     /p:RestorePackagesPath={SyncAIRoot}\toolchain\nuget-cache \
     /p:MSBuildSDKsPath={SyncAIRoot}\toolchain\dotnet\sdk\8.0.404\Sdks \
     /p:NuGetPackageRoot={SyncAIRoot}\toolchain\nuget-cache \
+    /p:DirectoryBuildPropsPath=NUL \
+    /p:DirectoryBuildTargetsPath=NUL \
     /nodeReuse:false \             ← prevents node reuse across projects
     /maxcpucount:1 \               ← single-threaded for determinism
     /nologo \
     /verbosity:minimal \
     /binaryLogger:{workspace}\{projectId}\logs\msbuild.binlog
 ```
+
+### Directory.Build.props Mitigation (CRITICAL)
+
+The properties `/p:DirectoryBuildPropsPath=NUL` and `/p:DirectoryBuildTargetsPath=NUL` prevent MSBuild from importing user-defined `Directory.Build.props` and `Directory.Build.targets` files from parent directories.
+
+**Why this is required**: MSBuild automatically imports these files from all parent directories up to the drive root, regardless of environment isolation. If a user has `C:\Users\{user}\Directory.Build.props`, it would be imported into every Sync AI build, potentially breaking builds or introducing unwanted behavior.
+
+By setting these properties to `NUL`, we explicitly tell MSBuild to skip importing these files, ensuring complete build isolation.
 
 ### MSBUILDDISABLENODEREUSE
 
@@ -428,6 +450,18 @@ Assert(pathValue.Contains(@"{SyncAIRoot}\toolchain\dotnet"));
 // Test 5: DOTNET_MULTILEVEL_LOOKUP is 0
 var multilookup = GetChildProcessEnvVar("DOTNET_MULTILEVEL_LOOKUP", testProjectId);
 Assert(multilookup == "0");
+
+// Test 6: INCLUDE environment variable contains bundled VC++ headers
+var includeValue = GetChildProcessEnvVar("INCLUDE", testProjectId);
+Assert(includeValue.Contains(@"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\include"));
+Assert(includeValue.Contains(@"{SyncAIRoot}\toolchain\winsdk\Include\10.0.22621.0\ucrt"));
+Assert(!includeValue.Contains(@"C:\Program Files (x86)\Windows Kits\")); // ← must NOT contain system paths
+
+// Test 7: LIB environment variable contains bundled VC++ libraries
+var libValue = GetChildProcessEnvVar("LIB", testProjectId);
+Assert(libValue.Contains(@"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\lib\x64"));
+Assert(libValue.Contains(@"{SyncAIRoot}\toolchain\winsdk\Lib\10.0.22621.0\ucrt\x64"));
+Assert(!libValue.Contains(@"C:\Program Files (x86)\Windows Kits\")); // ← must NOT contain system paths
 ```
 
 ### Verification Outcomes
@@ -439,6 +473,8 @@ Assert(multilookup == "0");
 | No external NuGet sources  | ✅ Proceed | 🔴 Block builds + alert user      |
 | PATH isolation confirmed   | ✅ Proceed | 🟡 Warn + continue (non-critical) |
 | DOTNET_MULTILEVEL_LOOKUP=0 | ✅ Proceed | 🔴 Block builds + alert user      |
+| INCLUDE isolation          | ✅ Proceed | 🔴 Block builds + alert user      |
+| LIB isolation              | ✅ Proceed | 🔴 Block builds + alert user      |
 
 ---
 

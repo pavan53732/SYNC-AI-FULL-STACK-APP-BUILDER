@@ -763,8 +763,13 @@ RETRY 7-9 (ARCHITECTURE_LEVEL):
 RETRY ≥10 (SYSTEM_RESET):
 ├── AI memory COMPLETELY WIPED
 ├── Previous approach logged to AttemptedApproaches
+├── Approach fingerprint computed and persisted
 ├── State rolled back to PreMutationSnapshotId
 ├── SystemResetCount incremented
+├── Architect Agent receives AttemptedApproaches set with directive:
+│   "The following architectural fingerprints have already been attempted and failed.
+│    Do NOT produce an approach whose fingerprint matches any of these."
+├── If Architect Agent produces colliding fingerprint → Kernel rejects immediately (no retry count)
 └── Fresh attempt with no prior context
 ```
 
@@ -788,14 +793,23 @@ public class RetryController
         // Stage 4: SYSTEM_RESET - Not terminal, just a fresh start
         if (stage == RetryStage.SYSTEM_RESET)
         {
+            // Compute approach fingerprint from failed AppSpec version
+            // Fingerprint = SHA-256 of: {architecturePattern}:{topLevelEntityNames}:{pageCount}:{servicePattern}
+            var failedApproach = failedTask.Description ?? "Unknown approach";
+            var approachFingerprint = ComputeApproachFingerprint(failedTask);
+                    
+            // Append fingerprint to AttemptedApproaches (persists across SYSTEM_RESETs for session lifetime)
+            var newAttemptedApproaches = new List<string>(context.AttemptedApproaches) { approachFingerprint };
+                    
             var resetEvent = new SystemResetEvent
             {
                 TaskId = failedTask.Id,
                 RollbackSnapshotId = context.PreMutationSnapshotId ?? "none",
-                PreviousApproach = failedTask.Description,
-                ResetCount = context.SystemResetCount + 1
+                PreviousApproach = failedApproach,
+                ResetCount = context.SystemResetCount + 1,
+                AttemptedFingerprints = newAttemptedApproaches
             };
-
+                    
             // Emit SystemResetEvent - the system continues, never stops
             return context with
             {

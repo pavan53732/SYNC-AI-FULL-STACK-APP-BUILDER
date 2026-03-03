@@ -174,14 +174,18 @@ Intent Objects
     ↓
 [Architect] → Project structure
     ↓
-[CodeGen Agents] → Frontend code (parallel)
-                → Backend code (parallel)
-                → DB schema (parallel)
+[CodeGen Agents] → Frontend code
+                ↓ (sequential)
+                Backend code
+                ↓ (sequential)
+                DB schema
     ↓
 [Integration] → Wire together (.csproj, API routes, DB migrations)
     ↓
 Generated Files (Real C# / XAML code)
 ```
+
+> **EXECUTION IS SEQUENTIAL**: Despite the appearance of parallel generation in the diagram above, agents execute sequentially as defined in [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) §3. The Orchestrator flattens all tasks to sequential execution to ensure deterministic build order and dependency resolution.
 
 **Validation Pipeline**:
 

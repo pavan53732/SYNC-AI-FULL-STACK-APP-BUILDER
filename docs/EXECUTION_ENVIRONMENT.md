@@ -63,7 +63,7 @@ The Execution Environment provides the foundational infrastructure for safe, iso
 ### Core Responsibilities
 
 1. **Workspace Isolation**: Each project lives in an isolated sandbox
-2. **Build Execution**: In-process MSBuild and NuGet operations
+2. **Build Execution**: Out-of-process MSBuild and NuGet operations with full environment isolation
 3. **Process Containment**: Job Objects and ACL enforcement for preview execution
 4. **Environment Resilience**: Handle machine variability gracefully
 5. **Resource Management**: Monitor and enforce limits
@@ -183,6 +183,62 @@ private static readonly HashSet<string> BannedPaths = new()
 - Disk guard: creation blocked if available disk space < **500 MB**
 - Pruning: `SnapshotPruner` uses Git commands to squash or remove old commits, preserving the last N states.
 - `SnapshotId` values are Git commit hashes, enabling deterministic rollback and time-travel.
+
+### 2.6 Temp Workspace Cleanup Policy
+
+The `{workspace}\{projectId}\tmp` directory is used as the TEMP/TMP override for isolated build operations ([TOOLCHAIN_ISOLATION.md](./TOOLCHAIN_ISOLATION.md) §2).
+
+**Cleanup Triggers**:
+
+| Trigger | Cleanup Action | Failure Handling |
+|---------|---------------|------------------|
+| **Session End** (user closes project) | Delete all files in `tmp\` folder | Log warning, continue with session close |
+| **Project Deletion** | Delete entire workspace including `tmp\` | Block project deletion if cleanup fails (files may be in use) |
+| **Crash Recovery** | Attempt cleanup on recovery startup | If cleanup fails, rename to `tmp.corrupted.{timestamp}` and create fresh `tmp\` |
+| **Disk Space Pressure** (>90% full) | Aggressive cleanup of all project tmp folders | Force delete with retry; alert user if deletion fails after 3 retries |
+
+**Implementation Pattern** (`WorkspaceCleanupService.cs`):
+
+```csharp
+public async Task CleanupTempFolderAsync(string projectId, bool aggressive = false)
+{
+    var tmpPath = Path.Combine(_workspaceRoot, projectId, "tmp");
+    
+    try
+    {
+        if (!Directory.Exists(tmpPath))
+            return;
+            
+        // Retry logic for file-in-use scenarios
+        for (int i = 0; i < 3; i++)
+        {
+            try
+            {
+                Directory.Delete(tmpPath, recursive: true);
+                Directory.CreateDirectory(tmpPath); // Recreate empty tmp folder
+                return;
+            }
+            catch (IOException ex) when (i < 2)
+            {
+                // Wait and retry (files may be locked by background processes)
+                await Task.Delay(1000 * (i + 1));
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        _logger.LogWarning(ex, $"Failed to cleanup tmp folder for {projectId}. Renaming to corrupted.");
+        
+        // Rename to corrupted and create fresh tmp folder
+        var corruptedName = $"tmp.corrupted.{DateTime.UtcNow:yyyyMMddHHmmss}";
+        var corruptedPath = Path.Combine(_workspaceRoot, projectId, corruptedName);
+        Directory.Move(tmpPath, corruptedPath);
+        Directory.CreateDirectory(tmpPath);
+    }
+}
+```
+
+> **INVARIANT**: Temp folder cleanup failures MUST NOT block normal operation. The system logs warnings and continues, isolating corrupted temp folders with timestamped renaming.
 
 ---
 

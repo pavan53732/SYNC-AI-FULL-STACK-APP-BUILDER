@@ -149,7 +149,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 │  ─ Manifest generator, Capability inference, MSIX bundler    │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 2: Execution Kernel                                   │
-│  ─ In-process MSBuild, NuGet restore, app execution          │
+│  ─ Out-of-process MSBuild, NuGet restore, app execution          │
 │  ─ Uses Layer 5 toolchain exclusively (no host SDK)          │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 5: Build Execution Sandbox (TOOLCHAIN FOUNDATION)    │
@@ -388,6 +388,67 @@ public enum AIConfigState
 | `frequency_penalty` | `0.0`        | No frequency-based repetition penalty        |
 
 > **INVARIANT**: Agents CANNOT override these locked values. Any request passing different values MUST be rejected by the AI Mini Service.
+
+### 3.Z.1 Provider Compliance Verification (REQUIRED for Production Use)
+
+**Problem**: OpenAI-compatible API providers are not required to implement `temperature=0.0` identically. Some providers may have non-deterministic behavior even at temperature=0.0 due to floating-point differences, model serving optimizations, or backend sharding.
+
+**Solution**: Before using an AI provider for production builds, the system MUST run a provider compliance test suite.
+
+**Compliance Test Suite**:
+
+```text
+1. Send identical prompt 100 times to the provider with temperature=0.0
+2. Collect all 100 responses
+3. Compute SHA-256 hash of each response
+4. Verify ALL 100 hashes are identical
+5. If ANY hash differs → Provider FAILS compliance test → Block usage
+```
+
+**Implementation** (`ProviderComplianceVerifier.cs`):
+
+```csharp
+public class ProviderComplianceVerifier
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+    
+    public async Task<ComplianceResult> VerifyDeterminismAsync(
+        string providerEndpoint,
+        string apiKey,
+        string model,
+        int iterations = 100)
+    {
+        var testPrompt = "Generate a C# method: public static int Add(int a, int b) => a + b;";
+        var hashes = new HashSet<string>();
+        
+        for (int i = 0; i < iterations; i++)
+        {
+            var response = await SendAiRequestAsync(providerEndpoint, apiKey, model, testPrompt);
+            var hash = ComputeSha256(response.Content);
+            hashes.Add(hash);
+            
+            if (hashes.Count > 1)
+            {
+                return new ComplianceResult
+                {
+                    IsCompliant = false,
+                    Reason = $"Non-deterministic output detected: {hashes.Count} unique responses from {iterations} requests",
+                    UniqueResponseCount = hashes.Count
+                };
+            }
+        }
+        
+        return new ComplianceResult
+        {
+            IsCompliant = true,
+            Reason = "All responses identical - provider is deterministic",
+            UniqueResponseCount = 1
+        };
+    }
+}
+```
+
+**Enforcement**: The AI Mini Service runs this verification on first startup and caches the result. Non-compliant providers are blocked with error: `AI_PROVIDER_NON_DETERMINISTIC — Provider failed compliance verification. Switch to a compliant provider or risk non-reproducible builds.`
 
 ---
 
@@ -821,6 +882,21 @@ The AI Construction Engine has full flexibility to adapt, retry, and escalate du
 | ----- | ---------------------- | ---------------------- | ------------------------------------- |
 | 1-9   | AI Construction Engine | Strategy flexible      | AI adapts, learns, retries            |
 | 10+   | Runtime Safety Kernel  | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
+
+### 8.2.1 Canonical Retry Ceiling
+
+The following table defines the authoritative retry stage model for code mutation cycles:
+
+| Retry Range | Stage                | AI Agent          | Kernel Action              |
+| ----------- | -------------------- | ----------------- | -------------------------- |
+| 1–3         | FIX_LEVEL            | Fix Agent         | Log                        |
+| 4–6         | INTEGRATION_LEVEL    | Integration Agent | Log + warn                 |
+| 7–9         | ARCHITECTURE_LEVEL   | Architect Agent   | Log + prepare reset        |
+| ≥ 10        | SYSTEM_RESET         | Memory wiped      | Rollback + amnesia + retry |
+
+> **AUTHORITATIVE SOURCE**: All other documents MUST reference this table. Do not restate it elsewhere.
+>
+> **Note on Stopping Conditions**: The "NO hard ceiling abort" invariant in §8.5 applies only to `AI_SERVICE_UNAVAILABLE` and `AI_SERVICE_DEGRADED` errors (see [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §7), not to mutation retries. Mutation retries follow the staged escalation above, transitioning to SYSTEM_RESET at cycle 10+.
 
 ### 8.3 AI Retry Strategy (Cycles 1-9)
 

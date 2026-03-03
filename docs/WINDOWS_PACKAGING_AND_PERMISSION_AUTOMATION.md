@@ -193,9 +193,59 @@ It triggers after Roslyn indexing:
 2. **MakePri**: Generate `resources.pri` using bundled `makepri.exe` (Package Resource Index).
 3. **MakeAppx Pack**: Bundle into `.msix` using bundled `makeappx.exe pack`.
 4. **MakeAppx Verify**: Validate the package integrity using bundled `makeappx.exe verify`.
-5. **Artifact Hash Verification**: Compare output hashes against build_outputs.json; FAIL if any hash differs.
-6. **Sign**: Apply certificate using bundled `signtool.exe sign`.
-6. **Signature Verification**: Verify the applied signature using `signtool.exe verify /pa /v {app.msix}` to ensure trust.
+5. **Store Schema Validation** (MANDATORY for Store submissions): Validate MSIX against Microsoft Store schema requirements using Windows App Certification Kit (WACK) or `makeappx.exe` validation mode. FAIL if schema violations detected.
+6. **Artifact Hash Verification**: Compare output hashes against `build_outputs.json`; FAIL if any hash differs. The hash values compared here are the `sha256` fields in `build_outputs.json`. See [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §9 for the full schema.
+7. **Sign**: Apply certificate using bundled `signtool.exe sign`.
+8. **Signature Verification**: Verify the applied signature using `signtool.exe verify /pa /v {app.msix}` to ensure trust.
+
+### 4.1.1 Store Schema Validation Requirements
+
+The following Microsoft Store schema requirements MUST be validated before submission:
+
+| Requirement | Validation Method | Failure Action |
+|-------------|------------------|----------------|
+| **Manifest Schema Compliance** | `makeappx.exe validate /m {manifest.xml}` | Block packaging, report schema errors |
+| **Capability Declarations** | WACK test: `Microsoft.Windows.Capabilities` | Block packaging, list undeclared capabilities |
+| **Identity Validity** | WACK test: `Microsoft.Windows.AppIdentity` | Block packaging, report identity mismatches |
+| **Package Structure** | `makeappx.exe verify /p {app.msix}` | Re-package if structure invalid |
+| **Resource PRI Validity** | `makepri.exe verify /pr {resources.pri}` | Regenerate PRI if corrupted |
+
+**Implementation Pattern** (`StoreComplianceValidator.cs`):
+
+```csharp
+public class StoreComplianceValidator
+{
+    public async Task<ValidationResult> ValidateForStoreSubmissionAsync(
+        string msixPath, 
+        string manifestPath)
+    {
+        var errors = new List<string>();
+        
+        // 1. Manifest schema validation
+        var manifestValid = await RunMakeAppxValidationAsync(manifestPath);
+        if (!manifestValid)
+            errors.Add("Manifest schema validation failed");
+        
+        // 2. Package structure validation
+        var packageValid = await RunMakeAppxVerifyAsync(msixPath);
+        if (!packageValid)
+            errors.Add("Package structure validation failed");
+        
+        // 3. Run WACK tests (Windows App Certification Kit)
+        var wackResults = await RunWackTestsAsync(msixPath);
+        errors.AddRange(wackResults.Failures);
+        
+        return new ValidationResult
+        {
+            IsCompliant = !errors.Any(),
+            Errors = errors,
+            WackReportPath = wackResults.ReportPath
+        };
+    }
+}
+```
+
+> **INVARIANT**: An MSIX package cannot be marked as "Store Ready" without passing all Store schema validation tests. The packaging pipeline emits a `StoreComplianceCertificate` artifact only when validation passes.
 
 ### 4.2 Certificate Policy (Mandatory)
 

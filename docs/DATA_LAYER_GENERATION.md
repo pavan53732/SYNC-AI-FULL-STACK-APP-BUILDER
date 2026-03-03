@@ -214,10 +214,56 @@ services.AddDbContext<AppDbContext>(options =>
 // After DI container is built and before first use, call:
 using var scope = _serviceProvider.CreateScope();
 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-await db.Database.MigrateAsync(); // Apply all pending migrations
-// Enable WAL mode for SQLite
+
+// CRITICAL: Wrap migration in transaction-like pattern for rollback on failure
+try
+{
+    // Get list of pending migrations BEFORE applying any
+    var pendingMigrations = await db.Database.GetPendingMigrationsAsync();
+    
+    if (pendingMigrations.Any())
+    {
+        _logger.LogInformation($"Applying {pendingMigrations.Count()} pending migrations...");
+        
+        // Apply migrations with error handling
+        await db.Database.MigrateAsync();
+        
+        _logger.LogInformation("Migrations completed successfully");
+    }
+}
+catch (Exception ex) when (ex.Message.Contains("disk full") || ex.Message.Contains("I/O error"))
+{
+    // CRITICAL: Migration failed mid-execution - database may be partially migrated
+    _logger.LogError(ex, "Migration failed - attempting rollback to last known good state");
+    
+    // Rollback strategy: Migrate DOWN to the last applied migration
+    var lastAppliedMigration = await db.Database.GetAppliedMigrationsAsync()
+        .OrderByDescending(m => m)
+        .FirstOrDefaultAsync();
+    
+    if (!string.IsNullOrEmpty(lastAppliedMigration))
+    {
+        _logger.LogInformation($"Rolling back to migration: {lastAppliedMigration}");
+        await db.Database.MigrateAsync(lastAppliedMigration); // Downgrade to this migration
+    }
+    else
+    {
+        // No migrations applied yet - drop all tables
+        _logger.LogWarning("No previous migrations found - dropping all tables");
+        await db.Database.EnsureDeletedAsync();
+    }
+    
+    // Re-throw to trigger higher-level recovery
+    throw new MigrationException(
+        $"Database migration failed. Database rolled back to last known good state. Error: {ex.Message}", 
+        ex);
+}
+
+// Enable WAL mode for SQLite (only after successful migration)
 await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
 ```
+
+> **INVARIANT**: `MigrateAsync()` MUST be wrapped in try-catch with rollback logic. Partial migration failures leave the database in an inconsistent state. The rollback strategy migrates DOWN to the last successfully applied migration, or drops all tables if no prior migration exists.
 
 ---
 
