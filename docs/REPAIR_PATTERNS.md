@@ -1,13 +1,12 @@
 # REPAIR PATTERNS
 
-> **WinUI 3 + MSBuild + EF Core Error Repair Strategies: Deterministic Build Failure Recovery**
+> **Multi-Framework Build Error Repair Strategies: WinUI3, WPF, WinForms, Win32, WinRT**
 >
 > **Related Core Documents:**
 >
+> - [PROJECT_ARCHETYPE_RESOLUTION.md](./PROJECT_ARCHETYPE_RESOLUTION.md) — Framework selection context
 > - [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) — Fix Agent that applies these patterns
 > - [TARGET_APP_ARCHITECTURE.md](./TARGET_APP_ARCHITECTURE.md) — Solution structure context for repair
-> - [DATA_LAYER_GENERATION.md](./DATA_LAYER_GENERATION.md) — EF Core rules (violated errors found here)
-> - [UI_GENERATION_RULES.md](./UI_GENERATION_RULES.md) — XAML rules (violated XAML errors found here)
 > - [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) — Retry controller that invokes the Fix Agent
 
 ---
@@ -48,6 +47,9 @@ The **Fix Agent** uses these patterns to identify, classify, and repair build an
 | MSBuild / project file  | `NETSDK`, `MSB`      | Low (config fix)           |
 | C# compiler             | `CS`                 | Medium (code fix)          |
 | WinUI 3 / XAML compiler | `WMC`, `MC`, `XBF`   | Medium (XAML fix)          |
+| C++ compiler            | `C1`, `C2`, `C9`    | Medium (native code fix)   |
+| C++ linker              | `LNK`                | Medium (linker fix)        |
+| Resource compiler       | `RC`                 | Low (resource fix)         |
 | EF Core design-time     | `EF Core:` messages  | Medium (model/context fix) |
 | MSIX / App manifest     | `AppxMan`, `APPX`    | Low (manifest fix)         |
 | NuGet package restore   | `NU`                 | Low (package version fix)  |

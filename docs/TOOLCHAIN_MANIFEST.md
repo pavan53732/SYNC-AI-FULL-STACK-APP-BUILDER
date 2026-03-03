@@ -143,13 +143,40 @@ These are the **pinned, locked versions** used by Sync AI. They must not be chan
 | Property            | Value                                                                     |
 | ------------------- | ------------------------------------------------------------------------- |
 | **Version**         | `14.41.34120` (Visual Studio Build Tools 2022 Update 1)                   |
-| **Architecture**    | `x64` (primary), `arm64` (secondary)                                      |
+| **Architecture**    | `x64` (primary), `arm64` (secondary), `x86` (legacy)                      |
 | **Type**            | `build-tools`                                                             |
 | **Download Source** | `https://visualstudio.microsoft.com/visual-cpp-build-tools/`              |
 | **Redistributable** | ✅ Yes — under Visual Studio redistribution terms                         |
 | **Bundle Path**     | `{SyncAIRoot}\toolchain\vc++\`                                            |
 | **Primary Binary**  | `VC\Tools\MSVC\14.41.34120\bin\Hostx64\x64\cl.exe`                        |
 | **ARM64 Support**   | Requires `Microsoft.VisualStudio.Workload.VCTools` + ARM64 targeting pack |
+
+#### Native Toolchain Components
+
+| Tool | Purpose | Bundle Path |
+| ---- | ------- | ----------- |
+| **cl.exe** | C/C++ Compiler | `VC\Tools\MSVC\14.41.34120\bin\Hostx64\x64\cl.exe` |
+| **link.exe** | Native Linker | `VC\Tools\MSVC\14.41.34120\bin\Hostx64\x64\link.exe` |
+| **lib.exe** | Library Manager | `VC\Tools\MSVC\14.41.34120\bin\Hostx64\x64\lib.exe` |
+| **rc.exe** | Resource Compiler | `VC\Tools\MSVC\14.41.34120\bin\Hostx64\x64\rc.exe` |
+| **mt.exe** | Manifest Tool | `VC\Tools\MSVC\14.41.34120\bin\Hostx64\x64\mt.exe` |
+| **vcvarsall.bat** | Environment Setup | `VC\Tools\MSVC\14.41.34120\Auxiliary\Build\vcvarsall.bat` |
+
+#### Windows SDK for Native
+
+| Component | Purpose | Bundle Path |
+| --------- | ------- | ----------- |
+| **Headers** | C++ Win32 headers | `{SyncAIRoot}\toolchain\winsdk\Include\` |
+| **Libraries** | Win32 import libs | `{SyncAIRoot}\toolchain\winsdk\Lib\` |
+| **CRT** | C Runtime libraries | `VC\Tools\MSVC\14.41.34120\ucrt\` |
+
+### Toolchain Profiles
+
+| Profile | .NET SDK | MSBuild | MSVC | Windows SDK | Use Case |
+| -------- | -------- | -------- | ---- | ----------- | -------- |
+| **ManagedOnly** | ✅ | ✅ | ❌ | ⚠️ Optional | WinUI3, WPF, WinForms, Console |
+| **NativeOnly** | ❌ | ❌ | ✅ | ✅ | Win32, WinRT |
+| **Hybrid** | ✅ | ✅ | ✅ | ✅ | C# + C++ interop |
 
 ---
 
@@ -197,20 +224,38 @@ These are the **pinned, locked versions** used by Sync AI. They must not be chan
 │   │       ├── bin\Hostx64\x64\       ← x64 compiler tools
 │   │       │   ├── cl.exe             ← C/C++ compiler
 │   │       │   ├── lib.exe            ← Library manager
-│   │       │   └── link.exe            ← Linker
+│   │       │   ├── link.exe            ← Linker
+│   │       │   ├── rc.exe             ← Resource compiler
+│   │       │   └── mt.exe             ← Manifest tool
 │   │       ├── bin\Hostx64\arm64\     ← ARM64 cross-compiler tools
+│   │       │   ├── cl.exe
+│   │       │   ├── lib.exe
+│   │       │   └── link.exe
+│   │       ├── bin\Hostx64\x86\       ← x86 compiler tools
 │   │       │   ├── cl.exe
 │   │       │   ├── lib.exe
 │   │       │   └── link.exe
 │   │       ├── lib\x64\               ← x64 CRT and STL libraries
 │   │       │   ├── ucrt\              ← Universal C Runtime
 │   │       │   └── stdcpp\            ← C++ Standard Library
-│   │       └── lib\arm64\             ← ARM64 CRT and STL libraries
-│   │           ├── ucrt\              ← Universal C Runtime
-│   │           └── stdcpp\            ← C++ Standard Library
+│   │       ├── lib\arm64\             ← ARM64 CRT and STL libraries
+│   │       │   ├── ucrt\              ← Universal C Runtime
+│   │       │   └── stdcpp\            ← C++ Standard Library
 │   │       └── include\               ← C/C++ headers
-│   │           └── ucrt\              ← CRT headers
-│   │           └── stdlib\            ← STL headers
+│   │           ├── ucrt\              ← CRT headers
+│   │           ├── stdlib\            ← STL headers
+│   │           └── windows\            ← Win32 headers
+│   │
+│   ├── winsdk\                        ← Windows SDK (subset for native)
+│   │   ├── Include\                   ← SDK headers
+│   │   │   └── 10.0.22621.0\         ← Windows 10 headers
+│   │   │       ├── um\               ← User-mode headers
+│   │   │       └── shared\            ← Shared headers
+│   │   └── Lib\                       ← SDK import libraries
+│   │       └── 10.0.22621.0\         ← Windows 10 libs
+│   │           ├── x64\
+│   │           ├── arm64\
+│   │           └── x86\
 │   │
 │   └── certs\                         ← Certificate management
 │       ├── sync-ai-dev.pfx            ← Dev signing certificate template
