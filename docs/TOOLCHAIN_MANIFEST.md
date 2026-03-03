@@ -482,10 +482,53 @@ All redistributed licenses must be stored at:
 ├── msbuild.txt
 ├── windows-sdk.txt
 ├── ef-core.txt
-└── nuget-packages.txt
+├── nuget-packages.txt
+├── vc-build-tools.txt
+└── wix-toolset.txt
 ```
 
 And must be accessible from the Sync AI "About" / "Legal" screen.
+
+#### EULA Excerpts for Common Components
+
+**.NET SDK (MIT + Microsoft .NET Library License)**
+
+> "Microsoft .NET Library License" 
+> 
+> This license governs use of the .NET SDK. You may use the .NET SDK to develop, test, and validate your applications. You may also redistribute the .NET SDK as part of your application, subject to the terms of this license.
+
+**Visual Studio EULA (MSBuild, VC++ Build Tools)**
+
+> "MICROSOFT SOFTWARE LICENSE TERMS"
+> 
+> MICROSOFT VISUAL STUDIO BUILD TOOLS FOR WINDOWS
+> 
+> You may install and use copies of the software on any number of devices for designing, developing, testing, and demonstrating your programs. You may also redistribute the software, in object code form only, as part of your application.
+
+**Windows SDK EULA (signtool, makeappx, makepri)**
+
+> "MICROSOFT WINDOWS SDK FOR WINDOWS"
+> 
+> You may use the software to develop applications using the Windows APIs. You may copy and distribute the software in object code form only as part of your application.
+
+**WiX Toolset (BSD License)**
+
+> "WiX Toolset is licensed under the BSD Open Source License."
+> 
+> Copyright (c) 2005-2024 .NET Foundation
+> All rights reserved.
+> 
+> Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met.
+
+**EF Core (MIT License)**
+
+> "MIT License"
+> 
+> Copyright (c) .NET Foundation and contributors
+> 
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software to deal in the software without restriction.
+
+> **Legal Review Note**: These excerpts are provided for reference. Consult the full license texts at `{SyncAIRoot}\toolchain\licenses\` for complete terms. Consult with legal counsel for production use.
 
 ---
 

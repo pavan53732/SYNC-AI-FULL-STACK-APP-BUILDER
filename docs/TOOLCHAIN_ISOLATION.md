@@ -360,6 +360,63 @@ var nativeEnv = new Dictionary<string, string>
 | `/INCREMENTAL:NO` | Disable incremental linking for clean builds |
 | `/OPT:REF` | Remove unused functions and data (link-time optimization) |
 | `/OPT:ICF` | Enable identical COMDAT folding (link-time optimization) |
+| `/DEBUG:NONE` | Disable debug information in release builds for smaller binaries |
+
+#### Additional Linker Flags for Advanced Scenarios
+
+| Flag | Purpose | Use Case |
+| ---- | ------- | -------- |
+| `/LTCG` | Link-time code generation | Whole-program optimization |
+| `/PROFILE` | Generate profile data for profiler | Performance profiling |
+| `/DYNAMICBASE` | Enable ASLR (default) | Security |
+| `/FIXED` | Disable ASLR | Static base address |
+| `/MACHINE:X64` | Specify target architecture | Explicit platform |
+
+### Timestamp Neutralization for Signed Binaries
+
+> **CRITICAL**: When binaries are signed with Authenticode, the signature includes a timestamp from the signing certificate authority (CA). This creates a reproducibility challenge because timestamps cannot be controlled by the signer.
+
+#### Solutions for Timestamp Reproducibility
+
+| Approach | Description | Limitations |
+| -------- | ----------- | ------------ |
+| **Non-Timestamped Signing** | Sign without `/tr` timestamp flag | Certificate expiry cannot be verified |
+| **Fixed Timestamp Authority** | Use a specific, reproducible TSA | Requires same TSA for all builds |
+| **Timestamp-Agnostic Verification** | Verify signature without timestamp | Modern Windows accepts both |
+
+#### Recommended Signing Command for Reproducibility
+
+```bash
+# Sign WITHOUT timestamp for reproducible builds
+# (Note: Certificate will not be verifiable after expiration)
+{SyncAIRoot}\toolchain\winsdk\bin\10.0.22621.0\x64\signtool.exe sign \
+    /fd sha256 \
+    /f {certificate.pfx} \
+    /p {password} \
+    /d "{AppName}" \
+    "{output}.exe"
+
+# Alternative: Sign WITH reproducible timestamp (requires consistent TSA)
+# WARNING: Using public TSA (e.g., DigiCert) creates non-deterministic output
+{SyncAIRoot}\toolchain\winsdk\bin\10.0.22621.0\x64\signtool.exe sign \
+    /fd sha256 \
+    /tr http://timestamp.digicert.com \
+    /td sha256 \
+    /f {certificate.pfx} \
+    /p {password} \
+    "{output}.exe"
+```
+
+#### Reproducibility Strategy by Build Type
+
+| Build Type | Signing | Timestamp Strategy |
+| ---------- | ------- | ----------------- |
+| **Development** | Self-signed | No timestamp |
+| **CI/CD Release** | Trusted CA | Fixed TSA URL |
+| **Store Submission** | Trusted CA | Microsoft Store accepts both |
+| **Archive/Reproducible** | Optional | No timestamp |
+
+> **Key Insight**: For true reproducible builds, skip timestamping. Accept that certificate expiration verification will not work. This is acceptable for internal/archived builds where reproducibility is paramount.
 
 ### PDB Determinism Strategy
 
