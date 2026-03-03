@@ -196,8 +196,13 @@ public enum BuilderState
     MSI_BUILD_FAILED = 36,
 
     // === PLATFORM REQUIREMENTS & ASSET GENERATION ===
-    REQUIREMENT_EVALUATION = 26, // Evaluate platform requirements (NO TEMPLATES)
-    BRANDING_INFERENCE = 27,     // Derive brand identity from intent
+    REQUIREMENT_EVALUATION = 37, // Evaluate platform requirements (NO TEMPLATES)
+    BRANDING_INFERENCE = 38,     // Derive brand identity from intent
+    ASSET_GENERATION = 39,       // Generate icons, logos, splash screens
+    
+    // === DETERMINISM VALIDATION ===
+    HASH_COMPUTE = 40,                    // Compute SHA-256 for all artifacts
+    DETERMINISM_VALIDATION = 41,          // Verify reproducibility across builds
     ASSET_GENERATING = 28,       // Generate icons, logos, splash screens via AI
     ASSETS_READY = 29,           // All assets generated successfully
     ASSET_GENERATION_FAILED = 30,// Asset generation failed (triggers retry)
@@ -918,6 +923,116 @@ public class RetryController
 8. VALIDATING - Check integrity
 
 **Phase 4 — Finalization (Orchestrator Thread)**
+
+After `BUILD_SUCCEEDED`, the determinism validation pipeline runs:
+
+```
+BUILD_SUCCEEDED (state 15)
+    ↓
+HASH_COMPUTE (state 40)       → Compute SHA-256 for all artifacts
+    ↓
+DETERMINISM_VALIDATION (41)   → Verify reproducibility across builds
+    ↓
+PACKAGING (state 18)          → Begin MSIX/MSI/EXE packaging
+```
+
+**Determinism Validation Implementation**:
+
+```csharp
+public class DeterminismValidator
+{
+    private readonly BuildArtifactHasher _hasher;
+    
+    public async Task<DeterminismResult> ValidateAsync(
+        string buildOutputPath, 
+        string previousBuildHash,
+        CancellationToken ct)
+    {
+        // Step 1: Compute hashes for all artifacts
+        var artifactHashes = new Dictionary<string, string>();
+        
+        foreach (var file in Directory.EnumerateFiles(buildOutputPath, "*.*", SearchOption.AllDirectories))
+        {
+            if (IsBuildArtifact(file))
+            {
+                artifactHashes[file] = await _hasher.ComputeHashAsync(file, ct);
+            }
+        }
+        
+        // Step 2: Compute aggregate hash
+        var aggregateHash = ComputeAggregateHash(artifactHashes);
+        
+        // Step 3: Compare with previous build (if exists)
+        var isDeterministic = previousBuildHash == null || aggregateHash == previousBuildHash;
+        
+        return new DeterminismResult
+        {
+            ArtifactHashes = artifactHashes,
+            AggregateHash = aggregateHash,
+            IsDeterministic = isDeterministic,
+            TimestampNeutralized = true
+        };
+    }
+    
+    private bool IsBuildArtifact(string filePath)
+    {
+        var ext = Path.GetExtension(filePath).ToLowerInvariant();
+        return ext switch
+        {
+            ".exe" or ".dll" or ".winmd" => true,  // Compiled binaries
+            ".xaml" or ".xbf" => true,              // XAML files
+            ".png" or ".jpg" or ".resw" => true,    // Resources
+            ".g.i.cs" or ".g.cs" => true,           // Generated code
+            ".xml" when filePath.Contains("manifest") => true, // Manifests
+            _ => false
+        };
+    }
+}
+```
+
+**Build Manifest Storage**:
+
+All determinism data is stored in an immutable build manifest tied to toolchain version:
+
+```json
+{
+  "specId": "{guid}",
+  "specHash": "sha256:...",
+  "toolchainVersion": "8.0.404",
+  "buildTimestampNeutralized": true,
+  "artifactHashes": {
+    "MyApp.exe": "sha256:a1b2c3...",
+    "MyApp.dll": "sha256:d4e5f6...",
+    "MainPage.xaml": "sha256:g7h8i9..."
+  },
+  "aggregateHash": "sha256:j0k1l2...",
+  "crossMachineVerification": {
+    "machine1": "sha256:j0k1l2...",
+    "machine2": "sha256:j0k1l2...",
+    "deterministic": true
+  }
+}
+```
+
+### Replay Validation Mode
+
+The Orchestrator supports replay mode for cross-machine determinism verification:
+
+```csharp
+public async Task<bool> ReplayBuildAsync(
+    string specPath, 
+    string referenceHash,
+    CancellationToken ct)
+{
+    // Rebuild from same spec
+    var result = await BuildAsync(specPath, ct);
+    
+    // Compare aggregate hash
+    return result.AggregateHash == referenceHash;
+}
+```
+
+If hashes don't match, the system logs a **determinism violation** and triggers `SYSTEM_RESET`.
 
 **Phase 5 — Packaging & Signing (Mandatory)**
 

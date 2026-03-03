@@ -54,12 +54,30 @@ It is not just a UI prototyping tool; it is a full-cycle software construction e
 | :-------------------------------- | :---------------------------------------------------------------- | :-------------------------------------------------- |
 | **Natural Language Construction** | Build full apps by describing them in plain English.              | Semantic Intent Parsing → Multi-Agent Orchestration |
 | **Silent Auto-Fix Loop**          | Compiler errors are detected and fixed without user intervention. | MSBuild Log Parsing + Roslyn Code Fix Providers     |
-| **Live Native Preview**           | See changes reflected quickly via shadow copy launch.             | Shadow Copy Launch / Window Hosting                 |
+| **Live Native Preview**           | See changes reflected quickly via framework-specific preview (XAML/Code/Full Launch). | Shadow Copy Launch / Window Hosting (see [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md)) |
 | **Project Time Travel**           | Undo/redo entire generations or specific refinement steps.        | Snapshot System (Git-based under the hood)          |
-| **Installer Generation**          | Every successful build produces a signed MSIX bundle.             | Windows App SDK Build Tools + MSIX                  |
+| **Installer Generation**          | Every successful build produces a signed MSIX/MSI/EXE bundle.             | Windows App SDK Build Tools + WiX Toolset           |
 | **Permission Automation**         | APIs like Location/Camera are auto-detected and declared.         | Roslyn AST Scanning → Capability Injection          |
-| **Real Code Ownership**           | You own the C# and XAML. It's not a closed platform.              | Standard .csproj format, no proprietary lock-in     |
+| **Real Code Ownership**           | You own the C#/C++ code. It's not a closed platform.              | Standard .csproj/.vcxproj format, no proprietary lock-in     |
 | **Image Generation**              | Generate app icons and visual assets.                             | openai SDK Image Gen - user-configured              |
+
+### Framework-Neutral UX Invariant
+
+> **CRITICAL**: This documentation MUST NOT imply XAML-first or WinUI-centric behavior.
+>
+> All user workflows MUST branch based on `targetPlatform.frameworkFamily`:
+>
+> | Framework | Preview Mode | Packaging Options | User Experience |
+>|-----------|--------------|-------------------|----------------|
+> | **WinUI 3** | Embedded XAML + Code + Full Launch | MSIX | Modern Windows 11 UX |
+> | **WPF** | XAML Preview (WPF parser) + Code + Full Launch | MSI/MSIX/EXE | Classic .NET desktop |
+> | **WinForms** | Code View + Full Launch only | MSI/EXE | Imperative UI |
+> | **Console** | Stdout capture + Code View + Full Launch | EXE | Terminal-based |
+> | **Win32** | Code View + Full Launch only | EXE | Native C++ desktop |
+> | **WinRT** | XAML Preview + Code + Full Launch | MSIX | Modern C++/WinRT |
+> | **Hybrid** | XAML (managed) + Code (C#/C++) + Full Launch | MSIX/EXE | Interop scenarios |
+
+The system adapts its UX to the selected framework — there is no privileged "default" framework.
 
 ### The "No-Code" Illusion
 

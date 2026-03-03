@@ -260,7 +260,231 @@ public class {FeatureName}Service : I{FeatureName}Service
 
 ---
 
-## 5. Project: Data (EF Core + SQLite)
+## 6. Canonical Native (Win32) Solution Layout
+
+> **INVARIANT**: This Win32 solution layout MUST receive equal documentation weight as the managed (.NET) layouts above.
+
+### Solution Structure
+
+```text
+{AppName}.sln
+└── {AppName}.vcxproj                ← Single native C++ project
+    ├── main.cpp                     ← Application entry point (WinMain)
+    ├── resource.h                   ← Resource header (icons, dialogs)
+    ├── resource.rc                  ← Windows resource file
+    ├── app.manifest                 ← Application manifest (DPI awareness, UAC)
+    ├── {AppName}.h                  ← Main application header
+    ├── {AppName}.cpp                ← Main application implementation
+    ├── MainWindow.h                 ← Window procedure header
+    ├── MainWindow.cpp               ← Window procedure implementation
+    ├── inc/                         ← Additional headers
+    │   ├── AppBase.h
+    │   └── Utilities.h
+    ├── src/                         ← Additional sources
+    │   ├── CommandHandler.cpp
+    │   └── DialogProc.cpp
+    └── libs/                        ← Static library dependencies (if any)
+        └── common.lib
+```
+
+### .vcxproj Template
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{GENERATE-DETERMINISTIC-GUID}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>$(AppName)</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.22621.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)bin\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(Platform)\$(Configuration)\</IntDir>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <!-- DETERMINISTIC BUILD FLAGS -->
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>user32.lib;gdi32.lib;shell32.lib;comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="{AppName}.cpp" />
+    <ClCompile Include="MainWindow.cpp" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="{AppName}.h" />
+    <ClInclude Include="MainWindow.h" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <ResourceCompile Include="resource.rc" />
+  </ItemGroup>
+  
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
+```
+
+### main.cpp Entry Point Pattern
+
+```cpp
+#include "main.h"
+#include "MainWindow.h"
+
+#define MAX_LOADSTRING 100
+
+// Global variables
+HINSTANCE hInst;                                // current instance
+WCHAR szTitle[MAX_LOADSTRING];                  // The title bar text
+WCHAR szWindowClass[MAX_LOADSTRING];            // the main window class name
+
+// Forward declarations
+ATOM                MyRegisterClass(HINSTANCE hInstance);
+BOOL                InitInstance(HINSTANCE, int);
+LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
+
+int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
+                      _In_opt_ HINSTANCE hPrevInstance,
+                      _In_ LPWSTR    lpCmdLine,
+                      _In_ int       nCmdShow)
+{
+    UNREFERENCED_PARAMETER(hPrevInstance);
+    UNREFERENCED_PARAMETER(lpCmdLine);
+
+    // Initialize global strings
+    LoadStringW(hInstance, IDC_APPNAME, szWindowClass, MAX_LOADSTRING);
+    MyRegisterClass(hInstance);
+
+    // Perform application initialization
+    if (!InitInstance(hInstance, nCmdShow))
+    {
+        return FALSE;
+    }
+
+    HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_APPNAME));
+    MSG msg;
+
+    // Main message loop
+    while (GetMessage(&msg, nullptr, 0, 0))
+    {
+        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
+        {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+    }
+
+    return (int)msg.wParam;
+}
+```
+
+### Window Procedure Pattern
+
+```cpp
+// MainWindow.cpp
+#include "MainWindow.h"
+
+LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    switch (message)
+    {
+    case WM_CREATE:
+        // Initialize window resources
+        return 0;
+        
+    case WM_PAINT:
+        {
+            PAINTSTRUCT ps;
+            HDC hdc = BeginPaint(hWnd, &ps);
+            FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_WINDOW + 1));
+            EndPaint(hWnd, &ps);
+        }
+        break;
+        
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        break;
+        
+    default:
+        return DefWindowProc(hWnd, message, wParam, lParam);
+    }
+    return 0;
+}
+```
+
+### Resource File Pattern
+
+```rc
+// resource.rc
+#include "resource.h"
+
+IDC_APPNAME ICON "app.ico"
+IDR_MAINFRAME MENU
+BEGIN
+    POPUP "&File"
+    BEGIN
+        MENUITEM "E&xit", ID_FILE_EXIT
+    END
+END
+
+IDD_ABOUTBOX DIALOGEX 0, 0, 230, 75
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About {AppName}"
+FONT 9, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,195,6,30,11
+    LTEXT           "About {AppName}",IDC_STATIC,14,14,100,8
+END
+```
+
+### Packaging for Win32
+
+| Aspect | Implementation |
+|--------|----------------|
+| **Executable** | `{AppName}.exe` in `bin\x64\Release\` |
+| **Dependencies** | Bundle VC++ runtime (`vcruntime140.dll`, `msvcp140.dll`) or use static linking (`/MT`) |
+| **Installer Format** | EXE bootstrapper or MSI via WiX Toolset |
+| **Determinism** | ProductCode from SHA256(specId + toolchainVersion) |
+
+See [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) §5 for MSI packaging details.
+
+---
+
+## 7. Project: Data (EF Core + SQLite)
 
 ### .csproj Template
 

@@ -246,13 +246,14 @@ public async Task CleanupTempFolderAsync(string projectId, bool aggressive = fal
 
 ### 3.1 Purpose
 
-The Execution Kernel wraps the .NET SDK tools (MSBuild, NuGet) into a managed API. It **never** launches `dotnet.exe` processes, preferring in-process libraries for speed, reliability, and structured error handling.
+The Execution Kernel wraps the .NET SDK tools (MSBuild, NuGet) and VC++ toolchain (cl.exe, link.exe) into managed APIs. It **never** launches processes directly, preferring in-process libraries for speed, reliability, and structured error handling.
 
 ### 3.2 Key Responsibilities
 
 - **MSBuild Localization**: Uses `Microsoft.Build.Locator` to find the correct SDK without user PATH configuration.
 - **NuGet Cache Management**: Maintains a local package cache to avoid redownloading common packages.
 - **Build Logger**: Implementation of `ILogger` that captures MSBuild events and converts them into structured definitions.
+- **Native Compiler Orchestration**: Invokes `cl.exe` and `link.exe` from bundled VC++ toolchain with deterministic flags.
 
 ### 3.3 Implementation
 
@@ -393,6 +394,124 @@ private class StructuredLogger : ILogger
     public string? Parameters { get; set; }
 }
 ```
+
+---
+
+## 3.5 Native Compilation Contract
+
+> **INVARIANT**: All native C++ builds MUST use deterministic compiler and linker invocation contracts.
+
+### cl.exe Invocation Contract
+
+```csharp
+public class NativeCompilerInvoker
+{
+    private readonly string _clExePath;
+    private readonly string _linkExePath;
+    
+    public NativeCompilerInvoker(string toolchainRoot)
+    {
+        // MANDATORY: Use bundled VC++ compiler from isolated toolchain
+        _clExePath = Path.Combine(toolchainRoot, "vc", "Tools", "MSVC", GetVCVersion(), "bin", "Hostx64", "x64", "cl.exe");
+        _linkExePath = Path.Combine(toolchainRoot, "vc", "Tools", "MSVC", GetVCVersion(), "bin", "Hostx64", "x64", "link.exe");
+    }
+    
+    public async Task<BuildResult> CompileAsync(string[] sourceFiles, string outputPath, CancellationToken ct)
+    {
+        // DETERMINISTIC COMPILER FLAGS (MANDATORY)
+        var compilerFlags = new[]
+        {
+            "/Z7",      // Debug info in object files (deterministic PDB)
+            "/Gy",      // Function-level linking
+            "/Gw",      // Whole-program function linking
+            "/FC",      // Full path in error messages (reproducible output)
+            "/Brepro",  // **MANDATORY** - timestamp-neutral, hash-based build
+            "/c"        // Compile only
+        };
+        
+        var args = compilerFlags.Concat(sourceFiles).Append($"/Fo{outputPath}").ToArray();
+        
+        return await ExecuteCompilerAsync(_clExePath, args, ct);
+    }
+    
+    public async Task<BuildResult> LinkAsync(string[] objectFiles, string exePath, CancellationToken ct)
+    {
+        // DETERMINISTIC LINKER FLAGS (MANDATORY)
+        var linkerFlags = new[]
+        {
+            "/INCREMENTAL:NO",  // Disable incremental linking (clean, reproducible)
+            "/OPT:REF",         // Remove unused functions/data
+            "/OPT:ICF",         // COMDAT folding (identical function merging)
+            "/Brepro",          // **MANDATORY** - reproducible binary
+            "/DYNAMICBASE",     // ASLR support
+            "/MACHINE:X64"      // Target architecture
+        };
+        
+        var args = linkerFlags.Concat(objectFiles).Append($"/OUT:{exePath}").ToArray();
+        
+        return await ExecuteCompilerAsync(_linkExePath, args, ct);
+    }
+    
+    private async Task<BuildResult> ExecuteCompilerAsync(string exePath, string[] args, CancellationToken ct)
+    {
+        // ISOLATION: Clear system environment, use only bundled toolchain
+        var psi = new ProcessStartInfo
+        {
+            FileName = exePath,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+        
+        foreach (var arg in args)
+            psi.ArgumentList.Add(arg);
+        
+        // ENVIRONMENT ISOLATION (CRITICAL FOR DETERMINISM)
+        psi.Environment["PATH"] = Path.GetDirectoryName(exePath)!;
+        psi.Environment["INCLUDE"] = Path.Combine(Path.GetDirectoryName(exePath)!, "..", "..", "include");
+        psi.Environment["LIB"] = Path.Combine(Path.GetDirectoryName(exePath)!, "..", "..", "lib", "x64");
+        
+        // DISABLE system SDK discovery outside bundled SDK
+        psi.Environment["WindowsSDKVersion"] = "10.0.22621.0"; // Bundled version
+        psi.Environment["WindowsSdkDir"] = Path.Combine(Path.GetDirectoryName(exePath)!, "..", "..", "..", "Windows Kits", "10");
+        
+        var process = Process.Start(psi)!;
+        var output = await process.StandardOutput.ReadToEndAsync();
+        var errors = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync(ct);
+        
+        return new BuildResult
+        {
+            Success = process.ExitCode == 0,
+            Output = output,
+            Errors = errors,
+            ExitCode = process.ExitCode
+        };
+    }
+}
+```
+
+### Determinism Enforcement Rules
+
+| Requirement | Implementation |
+|------------|----------------|
+| **`/Brepro` flag** | MANDATORY for both compiler and linker - eliminates timestamp embedding |
+| **`/Z7` debug format** | Debug info stored in .obj files (not separate PDB during build) |
+| **`/INCREMENTAL:NO`** | Prevents incremental build artifacts that vary between machines |
+| **Environment isolation** | `PATH`, `INCLUDE`, `LIB` point ONLY to bundled toolchain |
+| **SDK version pinning** | `WindowsSDKVersion` explicitly set to bundled version |
+| **Architecture targeting** | `/MACHINE:X64` explicit (no auto-detection) |
+
+### Failure Mode
+
+Failure to include these flags invalidates the determinism guarantee. The Orchestrator MUST:
+
+1. Verify `/Brepro` presence in build command line
+2. Reject builds without deterministic flags
+3. Log non-deterministic build attempts to audit trail
+
+See [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §8.5 for complete native build policy specification.
 
 ---
 

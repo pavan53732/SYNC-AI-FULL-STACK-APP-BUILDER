@@ -725,6 +725,79 @@ rc.exe /nologo [resources.rc]
 
 > **INVARIANT**: All build artifacts MUST be reproducible from identical inputs using locked toolchain versions.
 
+### EULA Acknowledgement Requirement
+
+> **CRITICAL FOR ENTERPRISE DEPLOYMENT**: The installer MUST require explicit user acceptance of third-party license terms before installation completes.
+
+#### Mandatory License Acceptances
+
+| Component | License | Acceptance Mechanism |
+|-----------|---------|---------------------|
+| **Microsoft Build Tools** | [Microsoft Software License Terms](https://visualstudio.microsoft.com/license-terms/vs2022/) | Click-through EULA in installer |
+| **Windows SDK** | [Windows SDK License](https://learn.microsoft.com/en-us/legal/windows-sdk/license) | Click-through EULA in installer |
+| **VC++ Runtime** | [Microsoft Visual C++ Redistributable Terms](https://learn.microsoft.com/en-us/visualstudio/releases/2019/redistribution) | Logged acceptance stored in registry |
+| **.NET SDK** | [.NET Library License](https://github.com/dotnet/runtime/blob/main/LICENSE.TXT) | Displayed during setup wizard |
+| **WiX Toolset** | [MS-RL License](https://github.com/wixtoolset/wix3/blob/master/LICENSE.txt) | Included in about dialog |
+
+#### Implementation Contract
+
+```csharp
+public class EulaAcceptanceService
+{
+    public async Task<bool> RequireAcceptanceAsync()
+    {
+        // Check if already accepted
+        if (IsAccepted("BuildToolsEULA"))
+            return true;
+        
+        // Display EULA dialog
+        var result = await ShowEulaDialogAsync();
+        
+        if (result == DialogResult.Accept)
+        {
+            // Log acceptance with timestamp and machine ID
+            LogAcceptance("BuildToolsEULA", Environment.MachineName, DateTime.UtcNow);
+            
+            // Store in registry for enterprise deployment auditing
+            SaveToRegistry(
+                @"HKEY_CURRENT_USER\SOFTWARE\SyncAI\EULA",
+                "BuildToolsAccepted", 
+                "1",
+                RegistryValueKind.String);
+            
+            return true;
+        }
+        
+        return false; // User declined - block installation
+    }
+    
+    private void LogAcceptance(string eulaName, string machineName, DateTime timestamp)
+    {
+        // Audit trail for enterprise compliance
+        _logger.LogInformation(
+            "EULA {EulaName} accepted on {MachineName} at {Timestamp}",
+            eulaName, machineName, timestamp);
+    }
+}
+```
+
+#### Enterprise Deployment Requirements
+
+For silent/unattended installations (enterprise scenarios):
+
+```bash
+# Silent install with pre-acceptance flag
+SyncAISetup.exe /quiet /accept-eula
+
+# Or via Group Policy / SCCM
+msiexec /i SyncAI.msi /quiet ACCEPT_EULA=1
+```
+
+**Audit Trail**: All EULA acceptances are logged to:
+- Windows Event Log (Application > Sync AI)
+- Local log file: `%ProgramData%\SyncAI\logs\eula_acceptance.log`
+- Optional: Telemetry endpoint for enterprise customers
+
 ### Reproducibility Requirements
 
 | Requirement | Description | Implementation |
