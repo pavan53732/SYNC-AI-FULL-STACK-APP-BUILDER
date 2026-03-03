@@ -7,7 +7,8 @@
 > **Related Specification Documents:**
 >
 > - [STRUCTURED_SPEC_FORMAT.md](./STRUCTURED_SPEC_FORMAT.md) — The Application Spec that Code Intelligence reads to understand the project entity model
-> - [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) — Bundled Roslyn/compiler versions used for analysis
+> - [PROJECT_ARCHETYPE_RESOLUTION.md](./PROJECT_ARCHETYPE_RESOLUTION.md) — Framework selection affecting code analysis
+> - [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) — Bundled Roslyn/MSVC versions used for analysis
 > - [TOOLCHAIN_ISOLATION.md](./TOOLCHAIN_ISOLATION.md) — Isolation contract for any toolchain analysis processes
 >
 > _The Code Intelligence layer provides knowledge to the AI Construction Engine. The Runtime Safety Kernel enforces mutation boundaries._
@@ -18,8 +19,10 @@
 
 1. [Core Principle: No Raw File Writes](#1-core-principle-no-raw-file-writes)
 2. [Indexing Architecture](#2-indexing-architecture)
+2.1. [Lightweight Indexing](#21-lightweight-indexing)
 3. [Roslyn Compilation Model](#3-roslyn-compilation-model)
 4. [Code Indexer & Symbol Graph](#4-code-indexer--symbol-graph)
+4.1. [Native Code Intelligence (C++)](#41-native-code-intelligence-c)
 5. [Database Schema](#5-database-schema)
 6. [Patch Engine](#6-patch-engine)
 7. [Conflict Detection](#7-conflict-detection)
@@ -253,6 +256,110 @@ Triggered by `FileSystemWatcher` or IDE event:
 5. Insert Symbols (`symbol_nodes`).
 6. Resolve & Insert Edges (`symbol_edges`).
 7. Commit transaction (Atomic Switch).
+
+---
+
+## 4.1 Native Code Intelligence (C++)
+
+> **NOTE**: Native code intelligence applies to Win32, WinRT, and Hybrid projects. For pure .NET projects (WinUI3, WPF, WinForms), only Roslyn-based analysis is required.
+
+### C++ Symbol Extraction
+
+For native C++ projects, the system uses a simplified symbol extractor based on regex patterns (not full AST):
+
+```csharp
+public class NativeSymbolExtractor
+{
+    // C++ class detection
+    private static readonly Regex ClassRegex = new(@"class\s+(\w+)\s*[:{]", RegexOptions.Compiled);
+    
+    // C++ method detection  
+    private static readonly Regex MethodRegex = new(@"(\w+)\s+(\w+)\s*\([^)]*\)\s*[{;]", RegexOptions.Compiled);
+    
+    // Header include detection
+    private static readonly Regex IncludeRegex = new(@"#include\s+[<""]([^>""]+)[>""]", RegexOptions.Compiled);
+    
+    // Win32 API detection
+    private static readonly Regex WinApiRegex = new(@"\b(CreateWindow|DestroyWindow|MessageBox)\b", RegexOptions.Compiled);
+
+    public async Task<NativeSymbolIndex> ExtractSymbolsAsync(string sourcePath)
+    {
+        var symbols = new NativeSymbolIndex();
+        
+        // Extract headers
+        var includes = IncludeRegex.Matches(await File.ReadAllTextAsync(sourcePath));
+        foreach (Match match in includes)
+            symbols.Includes.Add(match.Groups[1].Value);
+            
+        // Extract classes
+        var classes = ClassRegex.Matches(await File.ReadAllTextAsync(sourcePath));
+        foreach (Match match in classes)
+            symbols.Classes.Add(match.Groups[1].Value);
+            
+        // Extract methods
+        var methods = MethodRegex.Matches(await File.ReadAllTextAsync(sourcePath));
+        foreach (Match match in methods)
+            symbols.Methods.Add(new NativeMethod 
+            { 
+                ReturnType = match.Groups[1].Value,
+                Name = match.Groups[2].Value 
+            });
+            
+        // Detect Win32 APIs used
+        var winapis = WinApiRegex.Matches(await File.ReadAllTextAsync(sourcePath));
+        foreach (Match match in winapis)
+            symbols.Win32Apis.Add(match.Value);
+            
+        return symbols;
+    }
+}
+
+public class NativeSymbolIndex
+{
+    public List<string> Includes { get; set; } = new();
+    public List<string> Classes { get; set; } = new();
+    public List<NativeMethod> Methods { get; set; } = new();
+    public List<string> Win32Apis { get; set; } = new();
+}
+```
+
+### Resource File (.rc) Parsing
+
+Native Windows applications use resource files:
+
+```csharp
+public class ResourceFileParser
+{
+    // Icon resource
+    private static readonly Regex IconRegex = new(@"ICON\s+""([^""]+)""", RegexOptions.Compiled);
+    
+    // Bitmap resource
+    private static readonly Regex BitmapRegex = new(@"BITMAP\s+""([^""]+)""", RegexOptions.Compiled);
+    
+    // String table
+    private static readonly Regex StringTableRegex = new(@"STRINGTABLE\s+BEGIN(.+?)END", RegexOptions.Compiled | RegexOptions.Singleline);
+
+    public async Task<ResourceIndex> ParseResourceFileAsync(string rcPath)
+    {
+        var content = await File.ReadAllTextAsync(rcPath);
+        return new ResourceIndex
+        {
+            Icons = IconRegex.Matches(content).Select(m => m.Groups[1].Value).ToList(),
+            Bitmaps = BitmapRegex.Matches(content).Select(m => m.Groups[1].Value).ToList(),
+            StringTables = ParseStringTables(content)
+        };
+    }
+}
+```
+
+### Native Build Integration
+
+When the target platform is Win32, WinRT, or Hybrid:
+
+1. **Symbol Extraction**: Use `NativeSymbolExtractor` for .cpp/.h files
+2. **Resource Parsing**: Use `ResourceFileParser` for .rc files
+3. **Dependency Graph**: Build header dependency graph from includes
+4. **Linker Input**: Track .obj files for linker invocation
 
 ---
 
