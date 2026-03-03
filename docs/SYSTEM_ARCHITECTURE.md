@@ -870,11 +870,14 @@ All version references MUST derive from this value:
 
 ## 8. Retry Governance
 
-### 8.1 Retry Philosophy (Infinite Silent Retry)
+### 8.1 Retry Philosophy (Bounded Retry)
 
 > **AI owns the retry strategy. The Kernel enforces system resets.**
+> **INVARIANT**: Retry is BOUNDED per Retry Budget Contract. Infinite retry is FORBIDDEN except for approved error classes.
 
 The AI Construction Engine has full flexibility to adapt, retry, and escalate during cycles 1-9. The Runtime Safety Kernel initiates a System Reset at cycle 10+ - rolling back, clearing memory, and retrying with a fresh approach.
+
+> **EXCEPTION**: `AI_SERVICE_UNAVAILABLE` and `AI_SERVICE_DEGRADED` are permitted infinite retry - these depend on external service availability.
 
 ### 8.2 Retry Ownership
 
@@ -917,14 +920,16 @@ The Runtime Safety Kernel initiates a SYSTEM RESET:
 - Emits `SystemResetEvent`
 - Forces AI to attempt an entirely new architecture path
 
-### 8.5 Stopping Conditions (User Cancellation Only)
+### 8.5 Stopping Conditions
 
-The system ONLY stops when:
+The system stops when:
 
 1. **Success** — Build passes, packaging completes
-2. **User Cancellation** — Explicit cancel request
+2. **Retry Ceiling Reached** — SYSTEM_RESET at cycle 10+ triggers bounded retry exhaustion
+3. **User Cancellation** — Explicit cancel request
+4. **Operator Escalation** — After 3 consecutive SYSTEM_RESET events
 
-> **INVARIANT**: There is NO hard ceiling abort. The system retries infinitely until success or user cancellation.
+> **INVARIANT**: Per Retry Budget Contract (see ORCHESTRATION_ENGINE.md), retry is BOUNDED. Only AI_SERVICE_UNAVAILABLE/DEGRADED have infinite retry (external dependency).
 
 **Detailed Retry Logic:** See [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §7 and [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) §5
 

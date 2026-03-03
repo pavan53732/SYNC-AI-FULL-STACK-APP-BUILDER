@@ -214,7 +214,7 @@ To prevent state leakage, memory is cleared according to the following determini
 
 ### 4.2 Retry Cycle Memory Rules (CRITICAL)
 
-> **INVARIANT**: Memory lifecycle during retries is strictly defined to prevent state leakage across retry attempts. The system uses **Infinite Silent Retry** - there is NO ABORT state, only SYSTEM_RESET which clears memory and retries with a fresh approach.
+> **INVARIANT**: Memory lifecycle during retries is strictly defined to prevent state leakage across retry attempts. Per Retry Budget Contract, retry is BOUNDED. SYSTEM_RESET at cycle 10+ clears memory and retries with a fresh approach.
 
 | Retry Stage              | AGENT_SCOPED               | TASK_SCOPED  | RETRY_SCOPED               |
 | ------------------------ | -------------------------- | ------------ | -------------------------- |
@@ -243,7 +243,7 @@ SYSTEM RESET (Cycle 10+):
 │ 5. Restart task with entirely new plan  │
 └─────────────────────────────────────────┘
 
-NOTE: There is NO ABORT. The system ALWAYS retries with a fresh approach.
+NOTE: Per Retry Budget Contract (see ORCHESTRATION_ENGINE.md), retry is BOUNDED. SYSTEM_RESET at cycle 10+ enforces the ceiling. Only AI_SERVICE_UNAVAILABLE/DEGRADED have infinite retry.
 Only user cancellation stops execution.
 ```
 
