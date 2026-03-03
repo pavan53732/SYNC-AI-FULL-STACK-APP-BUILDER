@@ -56,6 +56,7 @@ The Runtime Safety Kernel (Orchestrator) is the **enforcement layer** that valid
 ```csharp
 public enum TaskType
 {
+    // .NET Project Tasks
     CREATE_PROJECT,
     MIGRATE_SCHEMA,
     ADD_DEPENDENCY,
@@ -72,7 +73,26 @@ public enum TaskType
     CONFIGURE_PACKAGING,
     GENERATE_CERTIFICATE,
     SIGN_PACKAGE,
-    BUILD_MSIX
+    BUILD_MSIX,
+    
+    // Native (C++) Project Tasks
+    GENERATE_VCXPROJ,
+    ADD_CPP_SOURCE,
+    ADD_CPP_HEADER,
+    ADD_RESOURCE_FILE,
+    COMPILE_NATIVE,
+    LINK_NATIVE,
+    GENERATE_NATIVE_MANIFEST,
+    BUILD_NATIVE_EXE,
+    
+    // Hybrid Project Tasks (C# + C++)
+    GENERATE_HYBRID_SOLUTION,
+    CONFIGURE_NATIVE_INTEROP,
+    
+    // Packaging Variants
+    BUILD_MSI,
+    BUILD_EXE_INSTALLER,
+    BUILD_PORTABLE_ZIP
 }
 
 public enum TaskStatus
@@ -157,6 +177,23 @@ public enum BuilderState
     SIGNING = 23,
     SIGNATURE_VALIDATION = 24,
     ENVIRONMENT_RECOVERY = 25,
+
+    // === NATIVE (C++) BUILD PHASE ===
+    NATIVE_COMPILING = 26,        // cl.exe compilation
+    NATIVE_LINKING = 27,          // link.exe linking
+    NATIVE_BUILD_SUCCEEDED = 28,
+    NATIVE_BUILD_FAILED = 29,
+    
+    // === HYBRID BUILD PHASE ===
+    HYBRID_COMPILING = 30,        // Native + Managed compilation
+    HYBRID_LINKING = 31,
+    HYBRID_BUILD_SUCCEEDED = 32,
+    HYBRID_BUILD_FAILED = 33,
+    
+    // === ALTERNATE PACKAGING ===
+    MSI_BUILDING = 34,
+    MSI_BUILD_SUCCEEDED = 35,
+    MSI_BUILD_FAILED = 36,
 
     // === PLATFORM REQUIREMENTS & ASSET GENERATION ===
     REQUIREMENT_EVALUATION = 26, // Evaluate platform requirements (NO TEMPLATES)
