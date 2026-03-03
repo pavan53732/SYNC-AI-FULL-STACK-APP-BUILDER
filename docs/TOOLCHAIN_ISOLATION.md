@@ -268,16 +268,19 @@ public static async Task<BuildResult> LaunchToolProcess(
         psi.Environment[key] = value;
 
     // Job Object enforcement (from EXECUTION_ENVIRONMENT.md §4 — Process Isolation)
-    // Ensures process is killed if Build Executor crashes. Uses fallback if Job Objects fail.
+    // FAIL-CLOSED: Block execution if Job Object cannot be established
     using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-    process.Start();
-
+    
     if (!AttachToJobObject(process))
     {
-        // Fallback: Track standard process handle if sandbox creation fails
-        LogWarning("Job Object unavailable. Falling back to simple process tracking for isolation.");
-        ProcessTracker.Add(process);
+        // FAIL-CLOSED: Do not allow execution without proper isolation
+        throw new IsolationException(
+            "Job Object attachment failed. Execution blocked for safety. " +
+            "Capability-requiring runs MUST have Job Object isolation.");
     }
+    
+    process.Start();
+    ProcessTracker.Add(process);
     var stdout = await process.StandardOutput.ReadToEndAsync();
     var stderr = await process.StandardError.ReadToEndAsync();
     await process.WaitForExitAsync();

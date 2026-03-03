@@ -661,12 +661,15 @@ See [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) for
 ### 9.2 Encryption Specification
 
 > **AI configuration encryption is defined centrally in [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) Section 3.W.**
+> **CANONICAL PATH**: `%USERPROFILE%\.syncai\Config\ai.config.enc`
 
 | Aspect            | Specification                                   |
 | ----------------- | ----------------------------------------------- |
 | **Algorithm**     | Windows DPAPI (DataProtectionScope.CurrentUser) |
-| **Storage Path**  | `{SyncAIRoot}\config\ai.config.enc`             |
+| **Storage Path**  | `%USERPROFILE%\.syncai\Config\ai.config.enc`   |
 | **No Plain Text** | Plain JSON configuration files are FORBIDDEN    |
+
+**Migration Note**: Legacy configurations at `{SyncAIRoot}\config\ai.config.enc` should be migrated to the canonical path `%USERPROFILE%\.syncai\Config\ai.config.enc`.
 
 **See:** [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §3.W for full encryption specification.
 

@@ -113,19 +113,28 @@ public class PreviewService
 
     // Mode 3: Full Launch (Compiled App)
     // Isolation Policy (aligned with WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md §8):
-    // 1. Windows Sandbox (preferred) - Full VM isolation
-    // 2. AppContainer (fallback) - Lightweight isolation when Sandbox unavailable
-    // 3. Direct execution (last resort) - With user warning for capability-requiring apps
-    // User consent is required before first launch.
+    // FAIL-CLOSED: Block execution when proper isolation cannot be established
+    // - For capability-requiring apps: MUST have Windows Sandbox or AppContainer
+    // - For read-only preview: Allow degraded mode with hard capability restrictions
     public async Task<Process> LaunchFullPreviewAsync(string projectPath)
     {
-        // SECURITY STEP 1: Verify Windows Sandbox is available
-        if (!IsWindowsSandboxAvailable())
+        var capabilities = await DetectCapabilitiesAsync(projectPath);
+        var hasCapabilities = capabilities.Any();
+
+        // SECURITY STEP 1: Verify isolation is available
+        if (!IsWindowsSandboxAvailable() && !IsAppContainerAvailable())
         {
-            // FALLBACK: Use AppContainer isolation when Windows Sandbox feature is unavailable
-            // This ensures the system works on all Windows 10 22621+ without requiring Sandbox
-            // If AppContainer also fails, falls back to direct execution with warning
-            return await LaunchInAppContainerFallbackAsync(projectPath);
+            if (hasCapabilities)
+            {
+                // FAIL-CLOSED: Block capability-requiring apps without isolation
+                throw new IsolationException(
+                    "Execution blocked: Windows Sandbox and AppContainer unavailable. " +
+                    "Capability-requiring apps require isolation.");
+            }
+            
+            // DEGRADED MODE: Allow read-only preview with restrictions
+            _logger.LogWarning("Isolation unavailable. Running in degraded mode for read-only preview.");
+            return await LaunchInDegradedModeAsync(projectPath);
         }
 
         // SECURITY STEP 2: Show consent dialog

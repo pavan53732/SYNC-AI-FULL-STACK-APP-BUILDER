@@ -75,11 +75,7 @@ It completes this by operating as a system that autonomously designs and constru
 The system uses fundamentally different capability inference timing for Preview vs Packaging:
 
 | Phase                   | Mode      | Capability Inference Timing   | Rationale                                                               |
-<<<<<<< Updated upstream
-| :---------------------- | :-------- | :---------------------------- | :---------------------------------------------------------------------- |
-=======
 | ----------------------- | --------- | ----------------------------- | ----------------------------------------------------------------------- |
->>>>>>> Stashed changes
 | **Preview (Debug)**     | Reactive  | After build (on failure only) | Fast iteration; only infer if build fails due to missing capability     |
 | **Packaging (Release)** | Proactive | Before build                  | Optimize for success; infer capabilities early to minimize retry cycles |
 
@@ -271,11 +267,7 @@ The template is embedded in the application and copied to new project workspaces
 
 ## 3. Runtime Safety Kernel
 
-<<<<<<< Updated upstream
-### 3.1 Role
-=======
 ### Role
->>>>>>> Stashed changes
 
 **Enforcement Layer** — Guarantees deterministic, safe execution
 
@@ -342,21 +334,12 @@ AI Engine                    Runtime Kernel
 
 ### Boundary Rules
 
-<<<<<<< Updated upstream
-| Rule                             | Entity  | Authority | Responsibility                         |
-| :------------------------------- | :------ | :-------- | :------------------------------------- |
-| **AI proposes, Kernel disposes** | **ACE** | Proposer  | Proposing code mutations               |
-| **No direct file access**        | **RSK** | Enforcer  | Validating and executing mutations     |
-| No bypass                        | N/A     | Kernel    | Even internal agents go through Kernel |
-| Full audit trail                 | N/A     | Kernel    | Every mutation logged                  |
-=======
 | Rule                         | Enforcement                            |
 | ---------------------------- | -------------------------------------- |
 | AI proposes, Kernel disposes | All mutations pass through Kernel      |
 | No direct file access        | AI never touches filesystem directly   |
 | No bypass                    | Even internal agents go through Kernel |
 | Full audit trail             | Every mutation logged                  |
->>>>>>> Stashed changes
 
 ---
 
@@ -365,6 +348,8 @@ AI Engine                    Runtime Kernel
 ### Division of Authority
 
 The retry process is split between AI and Kernel:
+
+> **CANONICAL DEFINITION**: See [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §8 for the authoritative retry governance model.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -592,19 +577,6 @@ User Prompt
 
 ### The Contract
 
-<<<<<<< Updated upstream
-```text
-Sync-AI > deploy --isolated --sign --verify
-[SCAN] 14 capabilities detected...
-[MANIFEST] Updated Package.appxmanifest...
-[BUILD] Release build successful...
-[SIGN] Code signature applied...
-[VERIFY] Signature integrity verified.
-[SUCCESS] Application ready for distribution.
-```
-
-=======
->>>>>>> Stashed changes
 > AI proposes, Kernel validates.
 > AI adapts, Kernel enforces.
 > AI creates, Kernel guarantees.

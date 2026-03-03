@@ -125,19 +125,6 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 
 ### The 8-Layer Architecture (Infrastructure-Up Model)
 
-<<<<<<< Updated upstream
-| Layer         | Name                        | Responsibility                             | Directory                             |
-| :------------ | :-------------------------- | :----------------------------------------- | :------------------------------------ |
-| **Layer 1**   | Filesystem Sandbox + SQLite | Isolated storage, snapshots                | `Services/🟢 Filesystem Sandbox/`     |
-| **Layer 2**   | Execution Kernel            | MSBuild, NuGet, process management         | `Services/🔵 Execution Kernel/`       |
-| **Layer 2.5** | Packaging Engine            | Manifest, capability inference, MSIX       | `Services/🟤 Packaging Engine/`       |
-| **Layer 3**   | Patch Engine                | AST mutations, conflict detection          | `Services/🟠 Patch Engine/`           |
-| **Layer 4**   | Code Intelligence           | Roslyn indexing, symbol graph              | `Services/🟡 Code Intelligence/`      |
-| **Layer 6**   | Runtime Safety Kernel       | State machine, retry logic, enforcement    | `Services/🔴 Runtime Safety Kernel/`  |
-| **Layer 6.5** | AI Construction Engine      | Primary brain, code generation             | `Services/🟣 AI Construction Engine/` |
-| **Layer 6.6** | **AI Service Layer**        | **openai SDK - user-configured providers** | `Assets/ai-service.exe`               |
-| **Layer 7**   | User Interface              | WinUI 3 shell                              | `UI/`                                 |
-=======
 | Layer         | Name                        | Responsibility                                                                 | Directory / Spec                                                                   |
 | ------------- | --------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
 | **Layer 1**   | Filesystem Sandbox + SQLite | Isolated storage, snapshots                                                    | `Services/🟢 Filesystem Sandbox/`                                                  |
@@ -150,7 +137,6 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 | **Layer 6.5** | AI Construction Engine      | Primary brain, code generation                                                 | `Services/🟣 AI Construction Engine/`                                              |
 | **Layer 6.6** | **AI Service Layer**        | **openai SDK - user-configured providers**                                     | `Assets/ai-service.exe`                                                            |
 | **Layer 7**   | User Interface              | WinUI 3 shell                                                                  | `UI/`                                                                              |
->>>>>>> Stashed changes
 
 > **Layer 6.6 (AI Service Layer)**: Provides AI capabilities via user-configured OpenAI-compatible providers.
 > The compiled `ai-service.exe` runs as a hidden background process on localhost:3001.
@@ -190,11 +176,7 @@ Layer 1 (Filesystem) ←────────── Layer 6 (Orchestrator)
 > **This is what the "Hidden System Prompt" defines - the FRAMEWORK RULES.**
 
 | Technology  | Purpose        | Why Fixed                    |
-<<<<<<< Updated upstream
-| :---------- | :------------- | :--------------------------- |
-=======
 | ----------- | -------------- | ---------------------------- |
->>>>>>> Stashed changes
 | **WinUI 3** | UI Framework   | Modern Windows native UI     |
 | **C# 12**   | Language       | .NET 8 ecosystem             |
 | **XAML**    | UI Markup      | WinUI 3 standard             |
@@ -245,7 +227,7 @@ Layer 1 (Filesystem) ←────────── Layer 6 (Orchestrator)
 | Component    | Technology         |
 | ------------ | ------------------ |
 | **Database** | SQLite 3.x         |
-| **ORM**      | Dapper (micro-ORM) |
+| **ORM**      | EF Core 8.x        |
 
 ---
 

@@ -305,7 +305,9 @@ Proceed with MSIX installation or app launch
 | **MAKEAPPX_DISK**      | Prompt user + wait + retry | Pause with user guidance - disk space/I/O issue, retry after user action     |
 | **SIGNING_ERROR**      | Prompt user + wait + retry | Pause with user guidance - certificate or key issue, retry after user action |
 | **CAPABILITY_MISSING** | Auto-inject + retry        | Inject capability + rebuild manifest (continuous retry)                      |
-| **MANIFEST_INVALID**   | Auto-regenerate + retry    | Regenerate from template (continuous retry)                                  |
+| **MANIFEST_INVALID**   | **BLOCKED - Re-generate**  | **Zero-template doctrine: Block packaging, force asset re-generation per [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md)** |
+
+> **INVARIANT**: Per zero-template doctrine defined in [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md), placeholder asset generation is FORBIDDEN. When manifest is invalid due to missing assets, the system must block and force deterministic regeneration rather than using placeholder fallbacks.
 
 **Continuous Retry Principle**: All errors trigger continuous retry until success or user cancellation. User-action-required errors (disk, certificate) pause the retry loop and show guidance. Once the user resolves the issue, retry continues automatically. The system NEVER gives up on its own - only user cancellation stops the process.
 

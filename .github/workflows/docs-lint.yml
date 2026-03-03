@@ -1,0 +1,40 @@
+name: Documentation Lint
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**/*.md'
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**/*.md'
+
+jobs:
+  check-conflicts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for merge conflict markers
+        run: |
+          # Check for merge conflict markers in markdown files
+          CONFLICTS=$(grep -r "^<<<<<<<\|^=======$\|^>>>>>>>" docs/ --include="*.md" || true)
+          if [ -n "$CONFLICTS" ]; then
+            echo "❌ Merge conflict markers found in documentation:"
+            echo "$CONFLICTS"
+            echo ""
+            echo "Please resolve all merge conflict markers before merging."
+            exit 1
+          fi
+          echo "✅ No merge conflict markers found"
+
+      - name: Check for TODO markers
+        run: |
+          # Check for unresolved TODO markers (optional)
+          TODOS=$(grep -r "^<!-- TODO" docs/ --include="*.md" || true)
+          if [ -n "$TODOS" ]; then
+            echo "⚠️ Unresolved TODO markers found (warning only):"
+            echo "$TODOS"
+          fi
