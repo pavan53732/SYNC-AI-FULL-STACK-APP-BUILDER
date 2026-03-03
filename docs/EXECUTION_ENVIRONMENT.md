@@ -29,7 +29,7 @@
 
 ## 1. Overview
 
-The Execution Environment provides the foundational infrastructure for safe, isolated, and deterministic code execution. It bridges Layer 1 (Filesystem) and Layer 2 (Execution Kernel) of the 7-layer architecture.
+The Execution Environment provides the foundational infrastructure for safe, isolated, and deterministic code execution. It bridges Layer 1 (Filesystem) and Layer 2 (Execution Kernel) of the 8-layer architecture.
 
 ### Architectural Position
 

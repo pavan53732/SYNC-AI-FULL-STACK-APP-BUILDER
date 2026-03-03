@@ -1995,7 +1995,7 @@ public class BuildMonitorViewModel : ObservableObject
 
 ## References
 
-- [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 7-layer overview, deployment model
+- [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 8-layer overview, deployment model
 - [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) — State machine, build system, retry logic
 - [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) — Roslyn integration, patch engine
 - [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) — Preview rendering
