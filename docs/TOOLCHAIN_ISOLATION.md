@@ -8,6 +8,7 @@
 >
 > - [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) — Pinned tool versions and folder layout
 > - [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — Layer 5: Build Execution Sandbox
+> - [PROJECT_ARCHETYPE_RESOLUTION.md](./PROJECT_ARCHETYPE_RESOLUTION.md) — Framework selection affecting toolchain
 > - [REPAIR_PATTERNS.md](./REPAIR_PATTERNS.md) — Build error repair using isolated tools
 
 ---
@@ -19,6 +20,7 @@
 3. [PATH Isolation](#3-path-isolation)
 4. [MSBuild Isolation](#4-msbuild-isolation)
 5. [NuGet Isolation](#5-nuget-isolation)
+5.1. [Native Toolchain (MSVC) Isolation](#51-native-toolchain-msvc-isolation)
 6. [Process Launch Contract](#6-process-launch-contract)
 7. [Registry Isolation](#7-registry-isolation)
 8. [Workspace Isolation](#8-workspace-isolation)
@@ -263,6 +265,116 @@ At install time, Sync AI's installer runs a package hydration step:
 
 # Lock down to offline after hydration
 # (NuGet.config in workspace projects will have <clear/> + local only)
+```
+
+---
+
+## 5.1 Native Toolchain (MSVC) Isolation
+
+> **CRITICAL**: Native C++ builds (Win32, WinRT, Hybrid) require special isolation beyond .NET builds. The MSVC compiler does NOT use PATH for header/library discovery — it relies exclusively on INCLUDE, LIB, and LIBPATH environment variables, plus registry-based SDK detection.
+
+### MSVC Environment Setup
+
+For native builds, the Build Executor invokes `vcvarsall.bat` equivalent logic manually:
+
+```csharp
+// Native Build Executor: SetupNativeEnvironment()
+var nativeEnv = new Dictionary<string, string>
+{
+    // VC++ Tools
+    ["VCToolsInstallDir"] = @"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\",
+    ["VCToolsVersion"] = "14.41.34120",
+    
+    // Windows SDK
+    ["WindowsSdkDir"] = @"{SyncAIRoot}\toolchain\winsdk\",
+    ["WindowsSdkVersion"] = "10.0.22621.0",
+    ["WindowsSDKVersion"] = "10.0.22621.0",
+    
+    // Include paths (CRITICAL - cl.exe reads this exclusively)
+    ["INCLUDE"] = String.Join(";",
+        @"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\include",
+        @"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\atlmfc\include",
+        @"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\crt\src",
+        @"{SyncAIRoot}\toolchain\winsdk\Include\10.0.22621.0\ucrt",
+        @"{SyncAIRoot}\toolchain\winsdk\Include\10.0.22621.0\shared",
+        @"{SyncAIRoot}\toolchain\winsdk\Include\10.0.22621.0\um",
+        @"{SyncAIRoot}\toolchain\winsdk\Include\10.0.22621.0\winrt"),
+    
+    // Library paths (CRITICAL - link.exe reads this exclusively)
+    ["LIB"] = String.Join(";",
+        @"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\lib\x64",
+        @"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\lib\arm64",
+        @"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\atlmfc\lib\x64",
+        @"{SyncAIRoot}\toolchain\winsdk\Lib\10.0.22621.0\ucrt\x64",
+        @"{SyncAIRoot}\toolchain\winsdk\Lib\10.0.22621.0\um\x64",
+        @"{SyncAIRoot}\toolchain\winsdk\Lib\10.0.22621.0\winrt\x64"),
+    
+    // Library manager paths
+    ["LIBPATH"] = String.Join(";",
+        @"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\lib\x64",
+        @"{SyncAIRoot}\toolchain\dotnet\shared\Microsoft.NETCore.App\8.0.11"),
+    
+    // Disable incremental linking for determinism
+    ["CL"] = "/Zi /Gy /Gw /Brepro",
+    ["LINK"] = "/INCREMENTAL:NO /DEBUG:NONE",
+};
+```
+
+### MSVC Compiler Invocation
+
+```bash
+# Native C++ build invocation (Win32/WinRT/Hybrid)
+{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\bin\Hostx64\x64\cl.exe \
+    /c \
+    /Fo"{workspace}\{projectId}\build\{filename}.obj" \
+    /Zi \
+    /Gy \
+    /Gw \
+    /Brepro \
+    /W3 \
+    /permissive- \
+    /std:c++20 \
+    "{sourcefile}.cpp"
+
+# Native linker invocation
+{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\bin\Hostx64\x64\link.exe \
+    /OUT:"{workspace}\{projectId}\build\{appname}.exe" \
+    /LIBPATH:"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\lib\x64" \
+    /LIBPATH:"{SyncAIRoot}\toolchain\winsdk\Lib\10.0.22621.0\um\x64" \
+    /INCREMENTAL:NO \
+    /DEBUG:NONE \
+    {objfiles}
+```
+
+### Deterministic Native Build Flags
+
+| Flag | Purpose |
+| ---- | ------- |
+| `/Brepro` | Produce reproducible binaries (timestamp neutral) |
+| `/Zi` | Full debug information (not /Z7 which embeds in OBJ) |
+| `/Gy` | Function-level linking (enables /Gw) |
+| `/Gw` | Whole program optimization across translation units |
+| `/INCREMENTAL:NO` | Disable incremental linking for clean builds |
+
+### Resource Compiler Isolation
+
+```bash
+# RC.exe for native resource compilation
+{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\bin\Hostx64\x64\rc.exe \
+    /r \
+    /fo"{output}.res" \
+    "{input}.rc"
+```
+
+### Registry Isolation for Native
+
+The MSVC compiler searches the Windows Registry for SDK locations. We must block this:
+
+```csharp
+// Registry isolation is handled at process launch:
+// - CreateProcess() with restricted registry view
+// - Or redirect HKLM/HKCU to empty hive
+// See Section 7 for full registry isolation details.
 ```
 
 ---
