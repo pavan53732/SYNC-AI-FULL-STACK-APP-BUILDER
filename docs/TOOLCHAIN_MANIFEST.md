@@ -73,7 +73,7 @@ These are the **pinned, locked versions** used by Sync AI. They must not be chan
 
 | Property              | Value                                                                 |
 | --------------------- | --------------------------------------------------------------------- |
-| **Version**           | `17.11.*` (ships with Build Tools for VS 2022)                        |
+| **Version**           | `17.11.3` (Visual Studio Build Tools 2022 Update 1)                  |
 | **Source**            | Visual Studio Build Tools 2022 (workload: `.NET desktop build tools`) |
 | **Architecture**      | x64                                                                   |
 | **Required Workload** | `.NET SDK Build Tools`                                                |
@@ -87,7 +87,7 @@ These are the **pinned, locked versions** used by Sync AI. They must not be chan
 | Property                 | Value                                                            |
 | ------------------------ | ---------------------------------------------------------------- |
 | **Version**              | `1.5.250211001`                                                  |
-| **NuGet Package**        | `Microsoft.WindowsAppSDK` `1.5.*`                                |
+| **NuGet Package**        | `Microsoft.WindowsAppSDK` `1.5.250211001`                        |
 | **Build Tools Package**  | `Microsoft.Windows.SDK.BuildTools` `10.0.22621.756`              |
 | **XAML Compiler**        | Included in `Microsoft.WindowsAppSDK` NuGet                      |
 | **Runtime**              | Must be installed on user's machine OR bundled as self-contained |
@@ -129,13 +129,27 @@ These are the **pinned, locked versions** used by Sync AI. They must not be chan
 
 ### MSIX Packaging Tools
 
-| Property            | Value                                                             |
-| ------------------- | ----------------------------------------------------------------- |
-| **Tool**            | `makeappx.exe`                                                    |
-| **Source**          | Windows 11 SDK `10.0.22621.0`                                     |
-| **Bundle Path**     | `{SyncAIRoot}\toolchain\winsdk\bin\10.0.22621.0\x64\makeappx.exe` |
-| **Purpose**         | MSIX package creation from app manifest + binaries                |
-| **Redistributable** | ✅ Yes — Windows SDK redistribution terms                         |
+| Property            | Value                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| **Tool**            | `makeappx.exe`, `makepri.exe`                                                      |
+| **Source**          | Windows 11 SDK `10.0.22621.0`                                                       |
+| **Version**         | `10.0.22621.3235`                                                                   |
+| **Bundle Path**     | `{SyncAIRoot}\toolchain\winsdk\bin\10.0.22621.0\x64\`                               |
+| **Purpose**         | MSIX package creation (`makeappx`) and resource PRI generation (`makepri`)         |
+| **Redistributable** | ✅ Yes — Windows SDK redistribution terms                                           |
+
+### VC++ Build Tools
+
+| Property            | Value                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| **Version**         | `14.41.34120` (Visual Studio Build Tools 2022 Update 1)                              |
+| **Architecture**    | `x64` (primary), `arm64` (secondary)                                                  |
+| **Type**            | `build-tools`                                                                         |
+| **Download Source** | `https://visualstudio.microsoft.com/visual-cpp-build-tools/`                         |
+| **Redistributable** | ✅ Yes — under Visual Studio redistribution terms                                     |
+| **Bundle Path**     | `{SyncAIRoot}\toolchain\vc++\`                                                        |
+| **Primary Binary** | `VC\Tools\MSVC\14.41.34120\bin\Hostx64\x64\cl.exe`                                    |
+| **ARM64 Support**   | Requires `Microsoft.VisualStudio.Workload.VCTools` + ARM64 targeting pack            |
 
 ---
 
@@ -177,6 +191,26 @@ These are the **pinned, locked versions** used by Sync AI. They must not be chan
 │   │
 │   ├── dotnet-tools\                  ← .NET global tools bundle
 │   │   └── dotnet-ef.exe              ← EF Core CLI 8.0.11
+│   │
+│   ├── vc++\                          ← VC++ Build Tools 14.41.34120
+│   │   └── VC\Tools\MSVC\14.41.34120\
+│   │       ├── bin\Hostx64\x64\       ← x64 compiler tools
+│   │       │   ├── cl.exe             ← C/C++ compiler
+│   │       │   ├── lib.exe            ← Library manager
+│   │       │   └── link.exe            ← Linker
+│   │       ├── bin\Hostx64\arm64\     ← ARM64 cross-compiler tools
+│   │       │   ├── cl.exe
+│   │       │   ├── lib.exe
+│   │       │   └── link.exe
+│   │       ├── lib\x64\               ← x64 CRT and STL libraries
+│   │       │   ├── ucrt\              ← Universal C Runtime
+│   │       │   └── stdcpp\            ← C++ Standard Library
+│   │       └── lib\arm64\             ← ARM64 CRT and STL libraries
+│   │           ├── ucrt\              ← Universal C Runtime
+│   │           └── stdcpp\            ← C++ Standard Library
+│   │       └── include\               ← C/C++ headers
+│   │           └── ucrt\              ← CRT headers
+│   │           └── stdlib\            ← STL headers
 │   │
 │   └── certs\                         ← Certificate management
 │       ├── sync-ai-dev.pfx            ← Dev signing certificate template
@@ -238,6 +272,21 @@ Every project workspace generated by Sync AI contains a `toolchain.lock.json` fi
       "version": "10.0.22621.3235",
       "path": "toolchain/winsdk/bin/10.0.22621.0/x64/makeappx.exe",
       "sha256": "e7f8a9b0..."
+    },
+    "makepri": {
+      "version": "10.0.22621.3235",
+      "path": "toolchain/winsdk/bin/10.0.22621.0/x64/makepri.exe",
+      "sha256": "f1a2b3c4..."
+    },
+    "nuget": {
+      "version": "6.11.0",
+      "path": "toolchain/nuget/nuget.exe",
+      "sha256": "d4e5f6a7..."
+    },
+    "vcBuildTools": {
+      "version": "14.41.34120",
+      "path": "toolchain/vc++/VC/Tools/MSVC/14.41.34120/bin/Hostx64/x64/cl.exe",
+      "sha256": "b1c2d3e4..."
     }
   },
   "nugetPackages": {
@@ -290,6 +339,7 @@ Sync AI bundles the following components under their respective redistribution l
 | `.NET 8 SDK`                           | MIT + Microsoft .NET Library License | ✅ Yes                      | Include attribution in installer    |
 | `MSBuild` (Build Tools)                | Visual Studio EULA                   | ✅ Yes (subset)             | May redistribute build tools subset |
 | `Windows SDK` (`signtool`, `makeappx`) | Windows SDK EULA                     | ✅ Yes (listed tools)       | Must be distributed as-is           |
+| `VC++ Build Tools`                     | Visual Studio EULA                   | ✅ Yes (subset)             | May redistribute VC++ build tools    |
 | `EF Core CLI` (`dotnet-ef`)            | MIT                                  | ✅ Yes                      | No conditions                       |
 | `NuGet packages`                       | Each package's own license           | ✅ Yes (all MIT/Apache 2.0) | Include license files               |
 | `CommunityToolkit.Mvvm`                | MIT                                  | ✅ Yes                      | No conditions                       |

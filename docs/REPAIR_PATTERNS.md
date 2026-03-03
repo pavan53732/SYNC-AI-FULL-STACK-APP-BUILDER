@@ -108,8 +108,8 @@ Each build error is classified into one of four severity tiers:
 **Repair Action**: Verify `Microsoft.WindowsAppSDK` package reference version and re-add if missing:
 
 ```xml
-<PackageReference Include="Microsoft.WindowsAppSDK" Version="1.5.*" />
-<PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.22621.*" />
+<PackageReference Include="Microsoft.WindowsAppSDK" Version="1.5.250211001" />
+<PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.22621.756" />
 ```
 
 **Tier**: T1

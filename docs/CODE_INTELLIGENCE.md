@@ -35,7 +35,20 @@
 
 ---
 
-## 1. Core Principle: No Raw File Writes
+## 1. Core Principle: No Unstructured Code Manipulation
+
+> **INVARIANT**: Sync AI must NEVER perform unstructured string manipulation of source code. All code modifications MUST use Roslyn AST transformations or XML parsing.
+
+### What This Means
+
+The invariant **"No Raw File Writes"** specifically prohibits:
+- Direct string replacement (`string.Replace()`)
+- Regex-based code modification (`Regex.Replace()` on C# source)
+- Direct file overwrite with LLM-generated code
+
+The invariant **PERMITS**:
+- Roslyn AST transformation followed by `Formatter.Format()` → `File.WriteAllTextAsync()`
+- XML parsing of XAML followed by `XDocument.Save()` or `File.WriteAllTextAsync()`
 
 ### ❌ FORBIDDEN Operations
 
@@ -50,11 +63,11 @@ var code = File.ReadAllText("MyClass.cs");
 code = Regex.Replace(code, pattern, replacement);
 File.WriteAllText("MyClass.cs", code);
 
-// ❌ NEVER DO THIS - Direct file overwrite
+// ❌ NEVER DO THIS - Direct file overwrite with LLM output
 File.WriteAllText("MyClass.cs", llmGeneratedCode);
 ```
 
-### ✅ REQUIRED Approach
+### ✅ REQUIRED Approach (Roslyn AST Transformation)
 
 ```csharp
 // ✅ ALWAYS DO THIS - Roslyn AST transformation
@@ -64,10 +77,12 @@ var root = await tree.GetRootAsync();
 // Apply transformation
 var newRoot = root.ReplaceNode(oldNode, newNode);
 
-// Format and write
+// Format and write - THIS IS PERMITTED
 var formatted = Formatter.Format(newRoot, workspace);
-File.WriteAllText("MyClass.cs", formatted.ToFullString());
+File.WriteAllTextAsync("MyClass.cs", formatted.ToFullString());
 ```
+
+> **Why This Is Permitted**: The `File.WriteAllTextAsync()` call writes the output of `Formatter.Format()`, which produces deterministic, syntax-verified C# code. This is NOT unstructured string manipulation — it is the final step of a structured AST transformation pipeline.
 
 ---
 
@@ -501,6 +516,8 @@ Special layer for WinUI 3:
 - Dependency properties
 - Resource dictionary references
 
+> **INVARIANT**: XML parsing is the AUTHORITATIVE method for XAML binding extraction. Regex is a FALLBACK-ONLY method used when XML parsing fails. Regex results MUST be deduplicated against XML results when both methods succeed.
+
 ```csharp
 public class XamlBindingIndexer
 {
@@ -511,16 +528,9 @@ public class XamlBindingIndexer
     public async Task IndexXamlFileAsync(string xamlPath)
     {
         var xaml = await File.ReadAllTextAsync(xamlPath);
+        var extractedBindings = new Dictionary<string, XamlBindingSource>();
 
-        // 1. Try robust Regex extraction first (for speed and resilience)
-        var regexBindings = XBindRegex.Matches(xaml).Concat(BindingRegex.Matches(xaml));
-        foreach (Match match in regexBindings)
-        {
-            var path = match.Groups["path"].Value;
-            await IndexBindingAsync(xamlPath, path, "Regex");
-        }
-
-        // 2. Try precise XML parsing (for depth)
+        // 1. Try precise XML parsing FIRST (authoritative)
         try
         {
             var doc = XDocument.Parse(xaml);
@@ -531,13 +541,51 @@ public class XamlBindingIndexer
 
             foreach (var binding in xmlBindings)
             {
-                await IndexBindingAsync(xamlPath, binding.Path, "XML");
+                // XML results are authoritative - mark as such
+                extractedBindings[binding.Path] = new XamlBindingSource 
+                { 
+                    Path = binding.Path, 
+                    Source = "XML",
+                    IsAuthoritative = true 
+                };
             }
         }
         catch (XmlException)
         {
-            // Fallback to regex-only results if XML is broken
+            // XML parsing failed - will rely on regex fallback below
         }
+
+        // 2. Regex fallback - only if XML failed or to fill gaps
+        var regexBindings = XBindRegex.Matches(xaml).Concat(BindingRegex.Matches(xaml));
+        foreach (Match match in regexBindings)
+        {
+            var path = match.Groups["path"].Value;
+            
+            // Deduplicate: If XML already found this binding, skip regex result
+            if (extractedBindings.ContainsKey(path))
+                continue;
+
+            // Regex results are NOT authoritative - mark as fallback
+            extractedBindings[path] = new XamlBindingSource
+            {
+                Path = path,
+                Source = "Regex",
+                IsAuthoritative = false
+            };
+        }
+
+        // 3. Index all unique bindings
+        foreach (var binding in extractedBindings.Values)
+        {
+            await IndexBindingAsync(xamlPath, binding.Path, binding.Source);
+        }
+    }
+
+    private class XamlBindingSource
+    {
+        public string Path { get; set; }
+        public string Source { get; set; }  // "XML" or "Regex"
+        public bool IsAuthoritative { get; set; }
     }
 }
 ```

@@ -294,9 +294,17 @@ The enforcement mechanisms follow the AI-Primary model:
 | File sandbox      | Runtime Safety Kernel        | Hard rejection if violated                       |
 | Mutation ceilings | Runtime Safety Kernel        | Hard limits enforced before commit               |
 | Token budget      | Runtime Safety Kernel        | Hard timeout if exceeded                         |
+| Code manipulation | Runtime Safety Kernel        | No unstructured string manipulation (see NOTE)  |
 | Retry strategy    | AI Construction Engine       | Agents decide how to adapt                       |
 | Error recovery    | AI Construction Engine       | Agents decide fix approach                       |
 | AI capabilities   | AI Service Layer (Layer 6.6) | LLM, Vision, Image Gen, Search - user-configured |
+
+> **NOTE: No Unstructured Code Manipulation**: All code modifications MUST use structured transformations:
+> - **C#**: Roslyn AST transformation + `Formatter.Format()` → `File.WriteAllTextAsync()`
+> - **XAML**: XML parsing (`XDocument`) → modification → `XDocument.Save()` or `File.WriteAllTextAsync()`
+> 
+> Direct string replacement, regex-based code modification, or LLM output written directly to files is FORBIDDEN.
+> See [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) §1 for the complete invariant definition.
 
 ### 5.2 The Sandbox Guard
 

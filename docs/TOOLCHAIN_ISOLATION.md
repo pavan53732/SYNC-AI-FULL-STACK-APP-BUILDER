@@ -117,6 +117,7 @@ private static string BuildIsolatedPath()
         @"{SyncAIRoot}\toolchain\winsdk\bin\10.0.22621.0\x64", // signtool, makeappx
         @"{SyncAIRoot}\toolchain\nuget",               // nuget.exe
         @"{SyncAIRoot}\toolchain\dotnet-tools",        // dotnet-ef.exe
+        @"{SyncAIRoot}\toolchain\vc++\VC\Tools\MSVC\14.41.34120\bin\Hostx64\x64", // VC++ x64 compiler tools
         @"C:\Windows\System32",                        // Required for basic Win32 APIs
         @"C:\Windows",                                 // Required for basic Win32 APIs
     };

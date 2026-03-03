@@ -610,24 +610,64 @@ The preview should remain functional even if AI service has issues, as long as t
 
 ### XAML Injection Prevention
 
+> **INVARIANT**: XAML sanitization MUST use XML parsing, not string matching. String-based detection is prone to bypasses (e.g., XML encoding, whitespace manipulation).
+
 ```csharp
-// Sanitize XAML before rendering
+// Sanitize XAML before rendering using XML parsing
 public string SanitizeXaml(string xaml)
 {
-    // Remove potentially dangerous elements
-    var dangerous = new[] { "WebView", "Process", "FileIO" };
-
-    foreach (var tag in dangerous)
+    // Define dangerous element types that should not be rendered in preview
+    var dangerousElements = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        if (xaml.Contains($"<{tag}"))
-        {
-            throw new SecurityException($"Unsafe element detected: {tag}");
-        }
-    }
+        "WebView",
+        "WebView2",
+        "Process",
+        "FileOpenPicker",
+        "FileSavePicker",
+        "FolderPicker"
+    };
 
-    return xaml;
+    // Define dangerous attribute patterns
+    var dangerousAttributes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "DataContext"  // Prevent ViewModel injection
+    };
+
+    try
+    {
+        var doc = XDocument.Parse(xaml);
+        
+        // Check for dangerous elements
+        foreach (var element in doc.Descendants())
+        {
+            if (dangerousElements.Contains(element.Name.LocalName))
+            {
+                throw new SecurityException($"Unsafe element detected: {element.Name.LocalName}");
+            }
+            
+            // Check for dangerous attributes
+            foreach (var attr in element.Attributes())
+            {
+                if (dangerousAttributes.Contains(attr.Name.LocalName))
+                {
+                    throw new SecurityException($"Unsafe attribute detected: {attr.Name.LocalName}");
+                }
+            }
+        }
+
+        return doc.ToString();
+    }
+    catch (XmlException ex)
+    {
+        throw new SecurityException($"Invalid XAML: {ex.Message}");
+    }
 }
 ```
+
+> **Why XML Parsing Is Required**: 
+> - String matching (`xaml.Contains("<WebView")`) can be bypassed with encoding (`<x:WebView/>`) or whitespace
+> - XML parsing interprets XAML as a structured document, catching all variations
+> - The sanitized output is the parsed-and-reserialized XAML, ensuring well-formedness
 
 ### Process Isolation
 
