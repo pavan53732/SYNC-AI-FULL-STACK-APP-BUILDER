@@ -1160,6 +1160,67 @@ public interface IOrchestrator
 
 ---
 
+## 11.5 Build Artifact Hash Invariant
+
+> **INVARIANT**: All build output artifacts MUST be hashed with SHA-256 for integrity verification and cache invalidation.
+
+### Hash Computation Scope
+
+| Artifact Type | Hash Purpose |
+|--------------|-------------|
+| **Compiled Binaries** (.exe, .dll, .winmd) | Cache key determination, incremental build optimization |
+| **XAML Files** (.xaml, .xbf) | Change detection, UI invalidation |
+| **Resource Files** (.png, .jpg, .resw) | Asset pipeline caching |
+| **Generated Code** (.g.i.cs, .g.cs) | Source generator output validation |
+| **Manifest Files** (AppxManifest.xml, .vcxproj) | Configuration change detection |
+
+### Implementation Contract
+
+```csharp
+public class BuildArtifactHasher
+{
+    private readonly SHA256 _sha256 = SHA256.Create();
+    
+    public string ComputeHash(string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        var hashBytes = _sha256.ComputeHash(stream);
+        return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+    }
+    
+    public async Task<string> ComputeHashAsync(string filePath, CancellationToken ct)
+    {
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true);
+        var hashBytes = await _sha256.ComputeHashAsync(stream, ct);
+        return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+    }
+}
+```
+
+### Cache Key Generation
+
+Cache keys are computed as:
+
+```
+cacheKey = $"{artifactType}:{relativePath}:{sha256Hash}:{toolchainVersion}"
+```
+
+Example:
+```
+dll:MyApp.ViewModels.MainViewModel.dll:A1B2C3D4E5F6...:8.0.404
+```
+
+### Determinism Verification
+
+After build completion, the Orchestrator MUST:
+
+1. Compute SHA-256 for all output artifacts in `bin\` and `obj\` directories
+2. Store hashes in `build_outputs.json` alongside artifact paths
+3. On subsequent builds, compare hashes to detect changes
+4. Skip unchanged artifacts during packaging (incremental optimization)
+
+**Security Note**: Hash computation MUST occur AFTER successful compilation but BEFORE packaging to ensure only validated artifacts are included.
+
 ## 12. ConstructionTransaction with Provider/Model Tracking
 
 > **INVARIANT**: Every ConstructionTransaction MUST record the AI provider and model used. This ensures reproducibility of AI-generated artifacts.

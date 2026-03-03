@@ -322,22 +322,32 @@ Sync AI supports MSI generation using the bundled WiX Toolset:
 
 ```text
 1. Generate WiX Source (wxs)
-   └── Parse build outputs from build_outputs.json
-   └── Create Component elements for each file
-   └── Define Directory structure
+   ├── Parse build outputs from build_outputs.json
+   ├── Create Component elements for each file
+   ├── Define Directory structure
+   └── Generate ProductCode deterministically: SHA256(specId + toolchainVersion).Substring(0, 32)
 
 2. Compile WiX Source
-   └── candle.exe input.wxs -o input.wixobj
+   ├── candle.exe input.wxs -o input.wixobj
    └── Validate against WiX schema
 
 3. Link MSI Package
-   └── light.exe input.wixobj -o output.msi
-   └── Apply cabinet compression
+   ├── light.exe input.wixobj -o output.msi
+   ├── Apply cabinet compression
    └── Generate MSI database
 
-4. Sign MSI (Optional)
-   └── signtool.exe sign /fd sha256 /f cert.pfx output.msi
+4. Sign MSI (Optional but Recommended)
+   └── signtool.exe sign /fd sha256 /f cert.pfx /tr http://timestamp.digicert.com output.msi
 ```
+
+**MSI Determinism Invariants**:
+
+| Invariant | Implementation |
+|-----------|----------------|
+| **ProductCode** | Generated deterministically from SHA256(specId + toolchainVersion) — ensures same spec produces same ProductCode |
+| **UpgradeCode** | Fixed per project (stored in spec.json) — all versions of same app share UpgradeCode |
+| **Component GUIDs** | Generated from deterministic hash of component path + version |
+| **Signing Required** | All MSI packages MUST be signed before distribution |
 
 ### 5.3 EXE Bootstrapper Packaging
 

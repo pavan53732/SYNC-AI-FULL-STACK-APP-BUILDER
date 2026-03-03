@@ -327,6 +327,30 @@ Sync AI generates applications across multiple Windows frameworks:
 | **Automatic Startup**         | Desktop app starts AI service if not running            |
 | **Health Monitoring**         | Desktop app monitors AI service health                  |
 
+### 3.6 Framework Parity Invariant
+
+> **CRITICAL**: All supported frameworks MUST satisfy identical quality guarantees.
+>
+> No framework receives preferential treatment. Every framework MUST provide:
+
+| Requirement | Implementation |
+|------------|----------------|
+| **Deterministic Build** | Framework-specific compiler/linker flags enforced (see [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §8.5 for native, §6 for .NET) |
+| **Structured Mutation Enforcement** | C# → Roslyn AST; C++ → Clang AST (no raw file writes) |
+| **Toolchain Isolation** | Complete environment isolation with `DOTNET_MULTILEVEL_LOOKUP=0` and `Environment.Clear()` |
+| **Packaging Determinism** | MSI/MSIX metadata generated from deterministic hashes |
+| **Legal Redistribution Compliance** | All bundled toolchains include EULA excerpts (see [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §9) |
+
+**Supported Frameworks**:
+
+| Framework Family | Examples | Packaging Formats |
+|-----------------|----------|-------------------|
+| **Managed (.NET)** | WinUI 3, WPF, WinForms, Console | MSIX, MSI, EXE |
+| **Native (C++)** | Win32, WinRT | EXE, MSIX |
+| **Hybrid** | C# + C++ interop | MSIX, EXE |
+
+> **INVARIANT**: This system MUST NOT exhibit WinUI 3 bias. All frameworks are first-class citizens with identical safety guarantees.
+
 ### 3.X Global AI Configuration Invariant (NEW)
 
 > INVARIANT: AI configuration is GLOBAL to the installation.

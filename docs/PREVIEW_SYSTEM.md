@@ -407,6 +407,125 @@ public sealed partial class PreviewPanel : UserControl
 
 ---
 
+## Framework-Specific Preview Strategies
+
+> **CRITICAL**: Different frameworks require different preview approaches. This system MUST adapt preview mode based on `targetPlatform.frameworkFamily`.
+
+### Managed Frameworks (.NET)
+
+| Framework | Embedded Preview | Code View | Full Launch | Notes |
+|-----------|-----------------|-----------|-------------|-------|
+| **WinUI 3** | ✅ XAML via `XamlReader.Load()` | ✅ C#/XAML | ✅ `Process.Start(exePath)` | Full support for all three modes |
+| **WPF** | ⚠️ Limited (requires WPF-specific parser) | ✅ C#/XAML | ✅ `Process.Start(exePath)` | Use `System.Windows.Markup.XamlReader` for WPF XAML preview |
+| **WinForms** | ❌ Not supported | ✅ C#/Designer.cs | ✅ `Process.Start(exePath)` | WinForms uses imperative code, not XAML; Code View + Full Launch only |
+| **Console** | ❌ Not applicable | ✅ C# | ✅ `Process.Start(exePath)` with stdout capture | Capture stdout/stderr for text-based preview |
+
+### Native Frameworks (C++)
+
+| Framework | Embedded Preview | Code View | Full Launch | Notes |
+|-----------|-----------------|-----------|-------------|-------|
+| **Win32** | ❌ Not supported | ✅ C++/H | ✅ `Process.Start(exePath)` | No declarative UI; requires full compilation and execution |
+| **WinRT** | ⚠️ XAML subset (same as WinUI 3) | ✅ C++/H | ✅ `Process.Start(exePath)` | C++/WinRT XAML can use same `XamlReader.Load()` |
+| **Hybrid** | ⚠️ XAML only (managed part) | ✅ C#/C++ | ✅ `Process.Start(exePath)` | Preview managed XAML; full launch required for interop testing |
+
+### Preview Mode Selection Logic
+
+```csharp
+public enum PreviewModeAvailability
+{
+    FullySupported,
+    PartiallySupported,
+    NotSupported
+}
+
+public class PreviewStrategyFactory
+{
+    public IPreviewStrategy GetStrategy(FrameworkFamily framework)
+    {
+        return framework switch
+        {
+            FrameworkFamily.WinUI3 => new XamlPreviewStrategy(),
+            FrameworkFamily.WPF => new WpfXamlPreviewStrategy(),
+            FrameworkFamily.WinForms => new CodeOnlyPreviewStrategy(),
+            FrameworkFamily.Console => new ConsoleOutputPreviewStrategy(),
+            FrameworkFamily.Win32 => new CodeOnlyPreviewStrategy(),
+            FrameworkFamily.WinRT => new XamlPreviewStrategy(),
+            FrameworkFamily.Hybrid => new HybridPreviewStrategy(),
+            _ => throw new ArgumentOutOfRangeException(nameof(framework), framework, null)
+        };
+    }
+}
+```
+
+### Implementation Notes by Framework
+
+#### WinUI 3 / WPF / WinRT (XAML-based)
+
+```text
+Embedded Preview Flow:
+1. Extract XAML content from generated .xaml files
+2. Parse with framework-specific XamlReader:
+   - WinUI 3: Windows.UI.Xaml.Markup.XamlReader
+   - WPF: System.Windows.Markup.XamlReader
+   - WinRT: Windows.UI.Xaml.Markup.XamlReader
+3. Render resulting UIElement in preview container
+4. Limitations:
+   - No code-behind execution
+   - No ViewModel data binding
+   - No custom controls requiring compilation
+```
+
+#### WinForms
+
+```text
+Code View Only Flow:
+1. Display .cs files with syntax highlighting
+2. Show Designer.cs files side-by-side
+3. Highlight event handler wiring
+4. Full Launch required to see actual UI
+```
+
+#### Console
+
+```text
+Stdout Capture Flow:
+1. Build console application
+2. Start process with redirected stdout/stderr
+3. Capture text output in real-time
+4. Display in terminal-like control within builder
+5. Support interactive input if app reads stdin
+```
+
+#### Win32 / Native C++
+
+```text
+Full Launch Required:
+1. No embedded preview possible (imperative Win32 API calls)
+2. Code View shows C++ source with syntax highlighting
+3. Full Launch compiles and runs native executable
+4. Monitor process for exit codes and crashes
+```
+
+#### Hybrid (C# + C++ Interop)
+
+```text
+Multi-Stage Preview:
+1. Embedded XAML preview for managed UI parts
+2. Code View for both C# and C++ sources
+3. Full Launch required for interop testing
+4. Special handling for P/Invoke and COM interop
+```
+
+### Fallback Strategy Matrix
+
+| Primary Mode | If Fails → | Final Fallback |
+|--------------|-----------|----------------|
+| **Embedded XAML** (WinUI/WPF/WinRT) | Code View with error highlight | Full Launch |
+| **Code View** (all frameworks) | N/A (always works) | Full Launch |
+| **Full Launch** | Show build errors + diagnostics | N/A (user must fix errors) |
+
+> **INVARIANT**: The preview system MUST clearly indicate which modes are available for the current framework and gracefully degrade to the next best available option.
+
 ### Embedded XAML Preview Limitations
 
 > **IMPORTANT**: `XamlReader.Load()` can only parse **simple XAML** without compiled dependencies.

@@ -363,6 +363,16 @@ When the target platform is Win32, WinRT, or Hybrid:
 
 ---
 
+### Native Mutation Safety Invariant
+
+> **CRITICAL**: For C++ code, all source transformations MUST operate on Clang AST (libclang).
+> 
+> - Regex or string replacement on .cpp/.h files is **FORBIDDEN**.
+> - Patch engine must support structured C++ AST transformations.
+> - Direct file writes with LLM-generated C++ code are **PROHIBITED**.
+>
+> This ensures C++ mutation safety parity with Roslyn-enforced C# mutations.
+
 ## 5. Database Schema
 
 ### Project Graph Database (project_graph.db)
