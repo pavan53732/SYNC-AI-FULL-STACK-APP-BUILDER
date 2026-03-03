@@ -96,7 +96,7 @@ The system uses fundamentally different capability inference timing for Preview 
    └── IF build failed with capability-related error:
        ├── Run FULL Capability Inference scan
        ├── Inject missing capabilities to manifest
-       └── Rebuild (continuous retry until success or user cancellation)
+       └── Rebuild (bounded retry per Retry Budget Contract - see ORCHESTRATION_ENGINE.md)
 
 5. MANIFEST EVALUATION (Post-Build)
    └── IF manifest changed during build → Inject → Rebuild
@@ -583,7 +583,7 @@ User Prompt
 > AI proposes, Kernel validates.
 > AI adapts, Kernel enforces.
 > AI creates, Kernel guarantees.
-> **System never stops - only user cancellation ends execution.**
+> **Retry is BOUNDED per Retry Budget Contract. Only AI_SERVICE_UNAVAILABLE/DEGRADED have infinite retry. SYSTEM_RESET triggers at retry ceiling.**
 
 ---
 

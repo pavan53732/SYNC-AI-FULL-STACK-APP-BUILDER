@@ -194,9 +194,10 @@ It triggers after Roslyn indexing:
 3. **MakeAppx Pack**: Bundle into `.msix` using bundled `makeappx.exe pack`.
 4. **MakeAppx Verify**: Validate the package integrity using bundled `makeappx.exe verify`.
 5. **Store Schema Validation** (MANDATORY for Store submissions): Validate MSIX against Microsoft Store schema requirements using Windows App Certification Kit (WACK) or `makeappx.exe` validation mode. FAIL if schema violations detected.
-6. **Artifact Hash Verification**: Compare output hashes against `build_outputs.json`; FAIL if any hash differs. The hash values compared here are the `sha256` fields in `build_outputs.json`. See [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §9 for the full schema.
+6. **Artifact Hash Verification** (MANDATORY): Compare output hashes against `build_outputs.json`; FAIL if any hash differs. The hash values compared here are the `sha256` fields in `build_outputs.json`. See [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §9 for the full schema.
 7. **Sign**: Apply certificate using bundled `signtool.exe sign`.
-8. **Signature Verification**: Verify the applied signature using `signtool.exe verify /pa /v {app.msix}` to ensure trust.
+8. **Post-Sign Hash Verification** (MANDATORY): Re-compute SHA-256 of signed MSIX; compare against expected hash from `build_outputs.json`. FAIL if hash differs after signing (indicates signing altered the artifact).
+9. **Signature Verification**: Verify the applied signature using `signtool.exe verify /pa /v {app.msix}` to ensure trust.
 
 ### 4.1.1 Store Schema Validation Requirements
 

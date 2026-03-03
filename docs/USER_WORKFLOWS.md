@@ -733,9 +733,9 @@ The system handles 5 categories of errors internally:
 - **User message**: "This is taking longer than expected. Optimizing…"
 - **Action**: User can cancel and modify prompt
 - **Safety**: Preserve work (auto-save)
-- **Continuous retry**: System keeps trying until success or cancellation
+- **Bounded retry**: Per Retry Budget Contract - see [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md)
 
-> **Note**: There are no "Unrecoverable Errors" from the system's perspective. All errors trigger continuous retry. Only user cancellation stops the process.
+> **Note**: Code mutation retry is bounded per [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §8. SYSTEM_RESET triggers at retry ceiling. Only environment recovery loops are unbounded.
 
 ### Automatic Error Detection & Fixing
 
@@ -756,11 +756,11 @@ The system handles 5 categories of errors internally:
 - Fix method signatures
 - Add missing properties
 
-**Retry Logic**: Continuous retry with exponential backoff until success or user cancellation
+**Retry Logic**: Bounded retry per [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) Retry Budget Contract — staged escalation with SYSTEM_RESET at ceiling.
 
 **Fix Success Tracking**: Remember solutions for future errors
 
-> **Note**: The system never stops retrying on its own. The only terminal states are success or user-initiated cancellation.
+> **Note**: Per [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §8, retry is BOUNDED. SYSTEM_RESET triggers at cycle 10+. Only environment recovery loops (SDK install, disk space) are unbounded.
 
 ---
 
