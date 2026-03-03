@@ -8,7 +8,7 @@
 
 ## The "Lovable" for Desktop Experience
 
-Sync AI is a **Local AI Full-Stack Windows App Builder**:
+Sync AI is a **Local AI Full-Stack Windows Native App Builder** — a sophisticated desktop application that autonomously builds complete Windows desktop applications from natural language descriptions by operators or users:
 
 1. **AI-Primary Construction**: The AI Construction Engine is the Primary Brain. The user describes intent, AI designs and builds.
 2. **No IDE Required**: Zero exposure to Visual Studio, `.csproj` files, or terminals.
@@ -26,8 +26,8 @@ Sync AI is a **Local AI Full-Stack Windows App Builder**:
 | **Live Native Preview**           | See changes reflected quickly via shadow copy launch.             |
 | **Project Time Travel**           | Undo/redo entire generations or specific refinement steps.        |
 | **Installer Generation**          | Every successful build produces a signed MSIX bundle.             |
-| **Permission Automation**         | APIs like Location/Camera are auto-detected and declared.        |
-| **Real Code Ownership**           | You own the C# and XAML. It's not a closed platform.             |
+| **Permission Automation**         | APIs like Location/Camera are auto-detected and declared.         |
+| **Real Code Ownership**           | You own the C# and XAML. It's not a closed platform.              |
 | **Image Generation**              | Generate app icons and visual assets.                             |
 
 ---
@@ -47,6 +47,6 @@ The system does not allow blueprint generation without validated AI configuratio
 
 ## Change Log
 
-| Date | Change |
-|------|--------|
+| Date       | Change                           |
+| ---------- | -------------------------------- |
 | 2026-02-23 | Extracted from USER_WORKFLOWS.md |

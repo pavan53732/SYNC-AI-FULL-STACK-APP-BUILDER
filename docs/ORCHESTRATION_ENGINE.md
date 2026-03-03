@@ -1,8 +1,8 @@
 # ORCHESTRATION ENGINE
 
-> **Runtime Safety Kernel – Orchestration: State Machine, Task Lifecycle, Build System, Retry Logic & Concurrency Safety**
+> **Sync AI is a Local AI Full-Stack Windows Native App Builder** — a sophisticated desktop application that autonomously designs, generates, compiles, validates, fixes, and packages complete production-ready Windows desktop applications from natural language descriptions by operators or users.
 >
-> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
+> _This document specifies the Runtime Safety Kernel (Orchestrator) of Sync AI._
 
 ---
 
@@ -36,7 +36,7 @@ The Runtime Safety Kernel (Orchestrator) is the **enforcement layer** that valid
 
 ### Core Principles
 
-```
+```text
 ✓ No implicit transitions
 ✓ No uncontrolled parallel mutation
 ✓ One active task at a time (strict serialization for mutation execution)
@@ -130,7 +130,7 @@ public enum BuilderState
     BLUEPRINT_READY = 2,
     EXECUTION_PLAN_BUILDING = 3,
     EXECUTION_PLAN_BUILT = 4,
-    
+
     // === TASK EXECUTION PIPELINE (FIXED ORDER) ===
     AI_GENERATING = 5,           // AI generates code
     CREATING_SNAPSHOT = 6,       // Snapshot BEFORE mutation (MANDATORY)
@@ -140,14 +140,14 @@ public enum BuilderState
     CAPABILITY_SCAN = 10,        // Capability inference BEFORE build (for Release)
     BUILDING = 11,               // MSBuild compilation
     VALIDATING = 12,             // Final integrity check
-    
+
     // === RETRY & RESULT ===
     RETRYING = 13,
     EXECUTING_TASK = 14,
     BUILD_SUCCEEDED = 15,
     CANCELLED = 16,              // Terminal state ONLY via user cancellation
     SYSTEM_RESET = 17,           // Reset with rollback + memory wipe
-    
+
     // === PACKAGING PHASE ===
     PACKAGING = 18,
     PACKAGING_SUCCEEDED = 19,
@@ -157,14 +157,14 @@ public enum BuilderState
     SIGNING = 23,
     SIGNATURE_VALIDATION = 24,
     ENVIRONMENT_RECOVERY = 25,
-    
+
     // === PLATFORM REQUIREMENTS & ASSET GENERATION ===
     REQUIREMENT_EVALUATION = 26, // Evaluate platform requirements (NO TEMPLATES)
     BRANDING_INFERENCE = 27,     // Derive brand identity from intent
     ASSET_GENERATING = 28,       // Generate icons, logos, splash screens via AI
     ASSETS_READY = 29,           // All assets generated successfully
     ASSET_GENERATION_FAILED = 30,// Asset generation failed (triggers retry)
-    
+
     // === AI SERVICE FAILURE STATES (NEW) ===
     AI_SERVICE_UNAVAILABLE = 31, // AI mini-service not responding
     AI_SERVICE_DEGRADED = 32     // AI service partially available (fallback mode)
@@ -173,10 +173,10 @@ public enum BuilderState
 
 ### State Diagram (Infinite Silent Retry Model)
 
-```
+```text
 IDLE
   ↓ (blueprint request arrives)
-  
+
 // AI Config Guard - Block unless validated
 if (AIConfigState != AIConfigState.VALIDATED)
 {
@@ -192,7 +192,7 @@ EXECUTION_PLAN_BUILDING
   ↓ (plan complete)
 EXECUTION_PLAN_BUILT
   ↓ (execute next task)
-  
+
   ╔═══════════════════════════════════════════════════════════════╗
   ║  TASK EXECUTION PIPELINE (STRICT ORDER)                      ║
   ╠═══════════════════════════════════════════════════════════════╣
@@ -246,10 +246,10 @@ EXECUTION_PLAN_BUILT
 
 ### Terminal States
 
-| State | Type | Description | Recovery |
-|-------|------|-------------|----------|
-| `PACKAGING_SUCCEEDED` | Success | Application built, packaged, and ready | None needed |
-| `CANCELLED` | Terminal | User explicitly cancelled | User must restart build |
+| State                 | Type     | Description                            | Recovery                |
+| :-------------------- | :------- | :------------------------------------- | :---------------------- |
+| `PACKAGING_SUCCEEDED` | Success  | Application built, packaged, and ready | None needed             |
+| `CANCELLED`           | Terminal | User explicitly cancelled              | User must restart build |
 
 **NOTE**: There is NO `FAILED` state. The system never stops on its own - only user cancellation stops the build.
 
@@ -477,11 +477,11 @@ public class BuilderReducer
 
             // === SNAPSHOT CREATION ===
             (BuilderState.CREATING_SNAPSHOT, SnapshotCreatedEvent e) =>
-                context with 
-                { 
-                    State = BuilderState.MUTATION_GUARD, 
+                context with
+                {
+                    State = BuilderState.MUTATION_GUARD,
                     PreMutationSnapshotId = e.SnapshotId,
-                    EventLog = [..context.EventLog, @event] 
+                    EventLog = [..context.EventLog, @event]
                 },
 
             // === MUTATION PIPELINE ===
@@ -521,11 +521,11 @@ public class BuilderReducer
                 HandleSystemResetWithRollback(context, e),
 
             (BuilderState.SYSTEM_RESET, SystemResetEvent e) =>
-                context with 
-                { 
+                context with
+                {
                     State = BuilderState.AI_GENERATING,
                     SystemResetCount = e.ResetCount,
-                    EventLog = [..context.EventLog, @event] 
+                    EventLog = [..context.EventLog, @event]
                 },
 
             // === COMPLETION ===
@@ -562,9 +562,9 @@ public class BuilderReducer
         // 4. Retry with completely new strategy
 
         var failedApproach = context.TaskMap[@event.TaskId]?.Description ?? "Unknown approach";
-        
+
         var newAttemptedApproaches = new List<string>(context.AttemptedApproaches) { failedApproach };
-        
+
         var resetEvent = new SystemResetEvent
         {
             TaskId = @event.TaskId,
@@ -647,12 +647,12 @@ public enum ErrorType
     RUNTIME_PREVIEW_ERROR,
     SANDBOX_ESCAPE_ATTEMPT,
     PROCESS_CRASH,
-    
+
     // === ASSET GENERATION ERRORS ===
     ASSET_GENERATION_FAILED,       // Image generation failed
     BRANDING_INFERENCE_FAILED,     // Could not derive brand identity
     REQUIREMENT_EVALUATION_FAILED, // Could not evaluate platform requirements
-    
+
     // === AI SERVICE ERRORS (NEW) ===
     AI_SERVICE_UNAVAILABLE,        // AI mini-service not responding
     AI_SERVICE_TIMEOUT,            // AI request exceeded timeout
@@ -685,16 +685,16 @@ public enum RetryStage
 
 > **INVARIANT**: Each retry stage has defined escalation behavior. The AI must adapt its strategy as retries progress.
 
-| Retry Range | Stage | AI Strategy | Kernel Action |
-|-------------|-------|-------------|---------------|
-| **1-3** | FIX_LEVEL | Local token repairs, syntax fixes, small adjustments | Log retry, allow continuation |
-| **4-6** | INTEGRATION_LEVEL | Check DI wiring, service registration, module boundaries | Log retry, warn if pattern persists |
-| **7-9** | ARCHITECTURE_LEVEL | Re-evaluate high-level plan, structural changes, alternative approaches | Log retry, prepare for potential reset |
-| **≥10** | SYSTEM_RESET | **N/A - AI memory wiped** | Rollback to snapshot, clear context, track failed approach, restart fresh |
+| Retry Range | Stage              | AI Strategy                                                             | Kernel Action                                                             |
+| :---------- | :----------------- | :---------------------------------------------------------------------- | :------------------------------------------------------------------------ |
+| **1-3**     | FIX_LEVEL          | Local token repairs, syntax fixes, small adjustments                    | Log retry, allow continuation                                             |
+| **4-6**     | INTEGRATION_LEVEL  | Check DI wiring, service registration, module boundaries                | Log retry, warn if pattern persists                                       |
+| **7-9**     | ARCHITECTURE_LEVEL | Re-evaluate high-level plan, structural changes, alternative approaches | Log retry, prepare for potential reset                                    |
+| **≥10**     | SYSTEM_RESET       | **N/A - AI memory wiped**                                               | Rollback to snapshot, clear context, track failed approach, restart fresh |
 
 #### Stage Transition Behavior
 
-```
+```text
 RETRY 1-3 (FIX_LEVEL):
 ├── AI attempts local fixes (token-level, syntax)
 ├── Error context preserved
@@ -748,13 +748,13 @@ public class RetryController
                 PreviousApproach = failedTask.Description,
                 ResetCount = context.SystemResetCount + 1
             };
-            
+
             // Emit SystemResetEvent - the system continues, never stops
-            return context with 
-            { 
+            return context with
+            {
                 State = BuilderState.SYSTEM_RESET,
                 SystemResetCount = context.SystemResetCount + 1,
-                EventLog = [..context.EventLog, resetEvent] 
+                EventLog = [..context.EventLog, resetEvent]
             };
         }
 
@@ -782,10 +782,10 @@ public class RetryController
 
 ### Retry Governance Contract
 
-| Retry Range | Owner | Enforcement | Behavior |
-|-------------|-------|-------------|----------|
-| 1-9 | AI Construction Engine | Strategy flexible | AI adapts, learns, retries |
-| 10+ | Runtime Safety Kernel | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
+| Retry Range | Owner                  | Enforcement            | Behavior                              |
+| :---------- | :--------------------- | :--------------------- | :------------------------------------ |
+| 1-9         | AI Construction Engine | Strategy flexible      | AI adapts, learns, retries            |
+| 10+         | Runtime Safety Kernel  | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
 
 ---
 
@@ -793,14 +793,14 @@ public class RetryController
 
 ### Named Thread Types
 
-| Thread | Color | Purpose | Concurrency |
-|--------|-------|---------|-------------|
-| 🟢 UI Thread | Green | Rendering, user input, never blocks | Single (main) |
-| 🔵 Orchestrator Thread | Blue | Sequential execution, state machine | Single |
-| 🟣 AI Worker Thread Pool | Purple | AI code generation tasks | Max 2 concurrent |
-| 🟡 Patch Worker Thread | Yellow | File mutations, requires exclusive file lock | Single-threaded |
-| 🔴 Build Worker Thread | Red | MSBuild compilation, isolated | Single (per build) |
-| ⚪ Background Maintenance | White | Low priority cleanup | Single |
+| Thread                    | Color  | Purpose                                      | Concurrency        |
+| :------------------------ | :----- | :------------------------------------------- | :----------------- |
+| 🟢 UI Thread              | Green  | Rendering, user input, never blocks          | Single (main)      |
+| 🔵 Orchestrator Thread    | Blue   | Sequential execution, state machine          | Single             |
+| 🟣 AI Worker Thread Pool  | Purple | AI code generation tasks                     | Max 2 concurrent   |
+| 🟡 Patch Worker Thread    | Yellow | File mutations, requires exclusive file lock | Single-threaded    |
+| 🔴 Build Worker Thread    | Red    | MSBuild compilation, isolated                | Single (per build) |
+| ⚪ Background Maintenance | White  | Low priority cleanup                         | Single             |
 
 ### Phase Flow
 
@@ -809,6 +809,7 @@ public class RetryController
 **Phase 2 — Task Graph Construction (Orchestrator Thread)**
 
 **Phase 3 — Task Execution Loop (SERIALIZED)**
+
 1. AI_GENERATING - AI generates code
 2. CREATING_SNAPSHOT - Snapshot BEFORE mutation
 3. MUTATION_GUARD - Validate safety
@@ -855,13 +856,13 @@ public class SequentialExecutionStrategy
 
 ### Concurrency Matrix
 
-| Operation | Can Run With | Cannot Run With | Lock Type |
-|-----------|--------------|-----------------|-----------|
-| **Patching (Mutation)** | Nothing | All other operations | Exclusive Write Lock |
-| **Indexing** | Read queries | Mutation, Build | Exclusive Write Lock |
-| **Building** | Nothing | All other operations | Exclusive Build Lock |
-| **Read Queries** | All read operations | Mutation | Shared Read Lock |
-| **AI Generation** | Other AI Generation | Mutation, Build | None (stateless) |
+| Operation               | Can Run With        | Cannot Run With      | Lock Type            |
+| :---------------------- | :------------------ | :------------------- | :------------------- |
+| **Patching (Mutation)** | Nothing             | All other operations | Exclusive Write Lock |
+| **Indexing**            | Read queries        | Mutation, Build      | Exclusive Write Lock |
+| **Building**            | Nothing             | All other operations | Exclusive Build Lock |
+| **Read Queries**        | All read operations | Mutation             | Shared Read Lock     |
+| **AI Generation**       | Other AI Generation | Mutation, Build      | None (stateless)     |
 
 ```csharp
 public class ConcurrencyPolicy
@@ -899,7 +900,7 @@ public class Orchestrator
 {
     private ConstructionTransaction? _activeTransaction;
     private readonly object _transactionLock = new();
-    
+
     /// <summary>
     /// Begins a new construction transaction.
     /// CRASHES if a transaction is already active - this is intentional.
@@ -917,7 +918,7 @@ public class Orchestrator
                     $"Transaction '{_activeTransaction.Id}' is already active. " +
                     "Each Orchestrator instance supports exactly ONE active transaction.");
             }
-            
+
             _activeTransaction = new ConstructionTransaction
             {
                 Id = taskId,
@@ -925,11 +926,11 @@ public class Orchestrator
                 StartedAt = DateTime.UtcNow,
                 PreMutationSnapshotId = GetCurrentSnapshotId()
             };
-            
+
             return _activeTransaction;
         }
     }
-    
+
     /// <summary>
     /// Commits the active transaction and clears it.
     /// </summary>
@@ -942,21 +943,21 @@ public class Orchestrator
                 throw new InvalidOperationException(
                     $"CANNOT commit transaction '{transactionId}': No active transaction exists.");
             }
-            
+
             if (_activeTransaction.Id != transactionId)
             {
                 throw new InvalidOperationException(
                     $"CANNOT commit transaction '{transactionId}': " +
                     $"Active transaction is '{_activeTransaction.Id}'.");
             }
-            
+
             // Emit TransactionCommittedEvent
             _eventBus.Publish(new TransactionCommittedEvent
             {
                 TransactionId = transactionId,
                 Duration = DateTime.UtcNow - _activeTransaction.StartedAt
             });
-            
+
             _activeTransaction = null;
         }
     }
@@ -979,28 +980,28 @@ public class TransactionRecoveryService
     {
         // 1. Load last stable snapshot
         var snapshot = await _snapshotService.GetLastStableSnapshotAsync(projectId);
-        
+
         // 2. Replay events up to crash point
         var events = await _eventLog.GetEventsAfterAsync(snapshot.Timestamp);
-        
+
         // 3. Identify incomplete transactions
         var incompleteTransactions = events
             .Where(e => e is TransactionStartedEvent)
-            .Where(e => !events.Any(commit => 
-                commit is TransactionCommittedEvent tc && 
+            .Where(e => !events.Any(commit =>
+                commit is TransactionCommittedEvent tc &&
                 tc.TransactionId == ((TransactionStartedEvent)e).TransactionId))
             .ToList();
-        
+
         // 4. Rollback incomplete transactions
         foreach (var incomplete in incompleteTransactions)
         {
-            _logger.LogWarning("Rolling back incomplete transaction: {TransactionId}", 
+            _logger.LogWarning("Rolling back incomplete transaction: {TransactionId}",
                 ((TransactionStartedEvent)incomplete).TransactionId);
         }
-        
+
         // 5. Rebuild context from committed state
         var context = await _snapshotService.RestoreSnapshotAsync(snapshot.Id);
-        
+
         // 6. Emit RecoveryCompletedEvent
         await _eventBus.PublishAsync(new RecoveryCompletedEvent
         {
@@ -1008,28 +1009,29 @@ public class TransactionRecoveryService
             RolledBackTransactions = incompleteTransactions.Count,
             RestoredSnapshotId = snapshot.Id
         });
-        
+
         return context;
     }
 }
 ```
 
 > **Why This Matters**: Single active transaction guarantees that:
+>
 > - State is always in a consistent, recoverable state
 > - Rollback has a clear target (the pre-mutation snapshot)
 > - Concurrent mutation bugs are caught immediately (crash early, fail fast)
 
 ### Snapshot Creation Points
 
-| Trigger | State | Purpose |
-|---------|-------|---------|
-| Before PATCHING | `CREATING_SNAPSHOT` | Enable rollback on failure or system reset |
-| Before PACKAGING | `CREATING_SNAPSHOT` | Enable rollback on packaging failure |
-| Manual user request | Any non-mutation state | User-initiated checkpoint |
+| Trigger             | State                  | Purpose                                    |
+| :------------------ | :--------------------- | :----------------------------------------- |
+| Before PATCHING     | `CREATING_SNAPSHOT`    | Enable rollback on failure or system reset |
+| Before PACKAGING    | `CREATING_SNAPSHOT`    | Enable rollback on packaging failure       |
+| Manual user request | Any non-mutation state | User-initiated checkpoint                  |
 
 ### Snapshot Lifecycle
 
-```
+```text
 1. AI_GENERATING completes
 2. State transitions to CREATING_SNAPSHOT
 3. SnapshotService.CreateSnapshotAsync() called
@@ -1075,21 +1077,21 @@ public record ConstructionTransaction
     public string Description { get; init; }
     public DateTime StartedAt { get; init; }
     public DateTime? CompletedAt { get; init; }
-    
+
     // Snapshot reference for rollback
     public string PreMutationSnapshotId { get; init; }
-    
+
     // === PROVIDER/MODEL TRACKING (CRITICAL FOR REPRODUCIBILITY) ===
     public string AIProviderBaseUrl { get; init; }    // e.g., "https://openrouter.ai/api/v1"
     public string AIModelName { get; init; }          // e.g., "openai/gpt-4o"
     public string AIServiceVersion { get; init; }     // ai-service.exe build version
-    
+
     // Trace ID for correlating logs
     public string TraceId { get; init; }
-    
+
     // AI operations performed in this transaction
     public List<AIOperationRecord> AIOperations { get; init; } = new();
-    
+
     // Result
     public bool Success { get; init; }
     public string? ErrorMessage { get; init; }
@@ -1115,29 +1117,29 @@ public record AIOperationRecord
 public class ConstructionTransactionFactory
 {
     private readonly AIServiceClient _aiClient;
-    
+
     public async Task<ConstructionTransaction> CreateTransactionAsync(string taskId, string description)
     {
         // Get health/config info from AI service
         var health = await _aiClient.GetHealthAsync();
-        
+
         return new ConstructionTransaction
         {
             Id = taskId,
             Description = description,
             StartedAt = DateTime.UtcNow,
             PreMutationSnapshotId = GetCurrentSnapshotId(),
-            
+
             // Provider/Model Tracking (CRITICAL)
             AIProviderBaseUrl = "configured-via-settings",
             AIModelName = "configured-via-settings",
             AIServiceVersion = health.Version ?? "unknown",
-            
+
             // Generate trace ID for log correlation
             TraceId = GenerateTraceId()
         };
     }
-    
+
     private string GenerateTraceId()
     {
         // Format: trace_{guid}
@@ -1167,35 +1169,35 @@ public class AIOperationTimeouts
         ["LLM_CHAT_SIMPLE"] = TimeSpan.FromSeconds(30),      // Simple queries
         ["LLM_CHAT_COMPLEX"] = TimeSpan.FromSeconds(120),    // Code generation
         ["LLM_CHAT_ARCHITECTURE"] = TimeSpan.FromSeconds(180), // Architecture design
-        
+
         // Image Generation
         ["IMAGE_GEN_STANDARD"] = TimeSpan.FromSeconds(30),   // 1024x1024
         ["IMAGE_GEN_LARGE"] = TimeSpan.FromSeconds(60),      // Larger sizes
-        
-        
+
+
         // Vision
         ["VLM_ANALYSIS"] = TimeSpan.FromSeconds(45),          // Image analysis
-        
+
         // Search
         ["WEB_SEARCH"] = TimeSpan.FromSeconds(20),            // Web search
-        
+
         // Build Operations
         ["BUILD_DEBUG"] = TimeSpan.FromSeconds(120),          // Debug build
         ["BUILD_RELEASE"] = TimeSpan.FromSeconds(300),        // Release build with optimization
-        
+
         // Packaging
         ["MSIX_PACKAGE"] = TimeSpan.FromSeconds(60),
         ["SIGNING"] = TimeSpan.FromSeconds(30)
     };
-    
+
     /// <summary>
     /// Get timeout for a specific operation type.
     /// Falls back to default if not configured.
     /// </summary>
     public static TimeSpan GetTimeout(string operationType)
     {
-        return OperationTimeouts.TryGetValue(operationType, out var timeout) 
-            ? timeout 
+        return OperationTimeouts.TryGetValue(operationType, out var timeout)
+            ? timeout
             : TimeSpan.FromSeconds(120); // Default fallback
     }
 }
@@ -1207,15 +1209,15 @@ public class AIOperationTimeouts
 public class TimeoutAwareAIClient
 {
     private readonly AIServiceClient _client;
-    
+
     public async Task<T> ExecuteWithTimeoutAsync<T>(
         string operationType,
         Func<CancellationToken, Task<T>> operation)
     {
         var timeout = AIOperationTimeouts.GetTimeout(operationType);
-        
+
         using var cts = new CancellationTokenSource(timeout);
-        
+
         try
         {
             return await operation(cts.Token);
@@ -1245,7 +1247,7 @@ public class TraceContext
     public string TaskId { get; init; }
     public string ParentSpanId { get; init; }
     public List<string> SpanChain { get; init; } = new();
-    
+
     /// <summary>
     /// Creates a child span for nested operations.
     /// </summary>
@@ -1274,7 +1276,7 @@ public class TracingHttpClient : DelegatingHandler
     {
         // Get trace context from current scope
         var traceContext = TraceContext.Current;
-        
+
         if (traceContext != null)
         {
             // Add trace headers to ALL AI service requests
@@ -1283,7 +1285,7 @@ public class TracingHttpClient : DelegatingHandler
             request.Headers.Add("X-Task-Id", traceContext.TaskId);
             request.Headers.Add("X-Parent-Span-Id", traceContext.ParentSpanId);
         }
-        
+
         return await base.SendAsync(request, cancellationToken);
     }
 }
@@ -1295,34 +1297,40 @@ public class TracingHttpClient : DelegatingHandler
 // ai-mini-service/index.ts - Request logging with trace ID
 
 interface RequestContext {
-    traceId: string;
-    projectId: string;
-    taskId: string;
-    parentSpanId?: string;
+  traceId: string;
+  projectId: string;
+  taskId: string;
+  parentSpanId?: string;
 }
 
 function logRequest(context: RequestContext, operation: string, data: unknown) {
-    console.log(JSON.stringify({
-        timestamp: new Date().toISOString(),
-        traceId: context.traceId,
-        projectId: context.projectId,
-        taskId: context.taskId,
-        operation,
-        data
-    }));
+  console.log(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      traceId: context.traceId,
+      projectId: context.projectId,
+      taskId: context.taskId,
+      operation,
+      data,
+    })
+  );
 }
 
 // Example: Chat endpoint with trace logging
 export async function handleChat(request: Request): Promise<Response> {
-    const traceId = request.headers.get("X-Trace-Id") || "unknown";
-    const projectId = request.headers.get("X-Project-Id") || "unknown";
-    const taskId = request.headers.get("X-Task-Id") || "unknown";
-    
-    logRequest({ traceId, projectId, taskId }, "chat_request", { /* ... */ });
-    
-    // ... process request ...
-    
-    logRequest({ traceId, projectId, taskId }, "chat_response", { /* ... */ });
+  const traceId = request.headers.get('X-Trace-Id') || 'unknown';
+  const projectId = request.headers.get('X-Project-Id') || 'unknown';
+  const taskId = request.headers.get('X-Task-Id') || 'unknown';
+
+  logRequest({ traceId, projectId, taskId }, 'chat_request', {
+    /* ... */
+  });
+
+  // ... process request ...
+
+  logRequest({ traceId, projectId, taskId }, 'chat_response', {
+    /* ... */
+  });
 }
 ```
 
@@ -1339,10 +1347,10 @@ public class AIServiceHealthMonitor
 {
     private readonly AIServiceClient _client;
     private readonly ILogger<AIServiceHealthMonitor> _logger;
-    
+
     public AIServiceHealthStatus LastKnownStatus { get; private set; } = AIServiceHealthStatus.UNKNOWN;
     public DateTime? LastSuccessfulHealthCheck { get; private set; }
-    
+
     public async Task<AIServiceHealthStatus> CheckHealthAsync()
     {
         try
@@ -1383,17 +1391,17 @@ public class AIServiceFallbackStrategy
         return status switch
         {
             AIServiceHealthStatus.HEALTHY => FallbackAction.Continue(),
-            
+
             AIServiceHealthStatus.DEGRADED => FallbackAction.TransitionTo(
                 BuilderState.AI_SERVICE_DEGRADED,
                 "AI Service operating in degraded mode. Some features may be unavailable."
             ),
-            
+
             AIServiceHealthStatus.UNAVAILABLE => FallbackAction.TransitionTo(
                 BuilderState.AI_SERVICE_UNAVAILABLE,
                 "AI Service is not responding. Attempting automatic recovery..."
             ),
-            
+
             _ => FallbackAction.TransitionTo(
                 BuilderState.AI_SERVICE_UNAVAILABLE,
                 "AI Service status unknown. Running health check..."
@@ -1407,9 +1415,9 @@ public record FallbackAction
     public bool ShouldTransition { get; init; }
     public BuilderState? TargetState { get; init; }
     public string Message { get; init; }
-    
+
     public static FallbackAction Continue() => new() { ShouldTransition = false };
-    
+
     public static FallbackAction TransitionTo(BuilderState state, string message) => new()
     {
         ShouldTransition = true,
@@ -1455,7 +1463,7 @@ public record FallbackAction
 
 ### Recovery Procedure
 
-```
+```text
 AI_SERVICE_UNAVAILABLE State:
 ┌─────────────────────────────────────────────────────────────┐
 │ 1. Log failure with Trace ID                                │
@@ -1476,12 +1484,13 @@ AI_SERVICE_UNAVAILABLE State:
 
 ### 15.1 Degraded State Definition and Escalation
 
-| State                  | Trigger                                                                                     | Behavior                                                                                              | Recovery                                                                                     |
-|------------------------|---------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|
-| `AI_SERVICE_DEGRADED`  | - 3 consecutive health check failures<br>- 3 consecutive request timeouts<br>- 10+ 429 rate‑limit responses | - AI operations continue with exponential backoff<br>- Blueprint generation is **blocked**<br>- UI shows yellow status dot | Auto‑recovery after 1 successful health check; fallback to `AI_SERVICE_UNAVAILABLE` if 10 consecutive failures |
-| `AI_SERVICE_UNAVAILABLE` | - Health check timeout (5s)<br>- Process not running<br>- Any request returns 5xx error       | - All AI‑dependent operations are blocked<br>- Orchestrator stays in this state until recovery succeeds | Automatic restart of mini‑service, then retry health check; after 3 failed restarts, wait 60s and retry indefinitely |
+| State                    | Trigger                                                                                                     | Behavior                                                                                                                   | Recovery                                                                                                             |
+| :----------------------- | :---------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------- |
+| `AI_SERVICE_DEGRADED`    | - 3 consecutive health check failures<br>- 3 consecutive request timeouts<br>- 10+ 429 rate‑limit responses | - AI operations continue with exponential backoff<br>- Blueprint generation is **blocked**<br>- UI shows yellow status dot | Auto‑recovery after 1 successful health check; fallback to `AI_SERVICE_UNAVAILABLE` if 10 consecutive failures       |
+| `AI_SERVICE_UNAVAILABLE` | - Health check timeout (5s)<br>- Process not running<br>- Any request returns 5xx error                     | - All AI‑dependent operations are blocked<br>- Orchestrator stays in this state until recovery succeeds                    | Automatic restart of mini‑service, then retry health check; after 3 failed restarts, wait 60s and retry indefinitely |
 
 **Transition Rules:**
+
 - `AI_SERVICE_DEGRADED` → `AI_GENERATING` after a successful health check.
 - `AI_SERVICE_UNAVAILABLE` → `CONFIGURED` after mini‑service restart and successful `/health` call.
 - User can always cancel to leave these states and return to `IDLE`.
@@ -1505,11 +1514,11 @@ public class AIServiceE2ETests
             systemPrompt: "You are a helpful assistant.",
             userPrompt: "Say 'hello'"
         );
-        
+
         Assert.NotNull(response);
         Assert.NotEmpty(response);
     }
-    
+
     [Fact]
     public async Task LLM_ChatCodeGeneration_GeneratesValidCode()
     {
@@ -1517,12 +1526,12 @@ public class AIServiceE2ETests
             systemPrompt: "You are a C# code generator.",
             userPrompt: "Generate a simple ViewModel class"
         );
-        
+
         Assert.NotNull(response);
         Assert.Contains("class", response);
         Assert.Contains("ViewModel", response);
     }
-    
+
     // === Image Generation Tests ===
     [Fact]
     public async Task Image_GenerateStandard_ReturnsValidImage()
@@ -1531,15 +1540,15 @@ public class AIServiceE2ETests
             prompt: "A simple app icon",
             size: "1024x1024"
         );
-        
+
         Assert.NotNull(imageBase64);
         Assert.True(imageBase64.Length > 0);
         // Verify it's valid base64 by decoding
         var imageBytes = Convert.FromBase64String(imageBase64);
         Assert.True(imageBytes.Length > 0);
     }
-    
-    
+
+
     // === Vision Tests ===
     [Fact]
     public async Task Vision_AnalyzeImage_ReturnsValidDescription()
@@ -1548,16 +1557,16 @@ public class AIServiceE2ETests
             prompt: "A red square",
             size: "1024x1024"
         );
-        
+
         var analysis = await _client.AnalyzeImageAsync(
             prompt: "Describe this image",
             imageData: imageData
         );
-        
+
         Assert.NotNull(analysis);
         Assert.Contains("red", analysis.ToLower());
     }
-    
+
     // === Search Tests ===
     [Fact]
     public async Task Search_Query_ReturnsRelevantResults()
@@ -1566,26 +1575,26 @@ public class AIServiceE2ETests
             query: "WinUI 3 documentation",
             numResults: 5
         );
-        
+
         Assert.NotNull(results);
         Assert.NotEmpty(results);
     }
-    
+
     // === Error Handling Tests ===
     [Fact]
     public async Task ServiceUnavailable_ReturnsAppropriateError()
     {
         // Stop the AI service
         await _serviceManager.StopServiceAsync();
-        
+
         await Assert.ThrowsAsync<AIServiceUnavailableException>(
             () => _client.ChatAsync("test", "test")
         );
-        
+
         // Restart for other tests
         await _serviceManager.StartServiceAsync();
     }
-    
+
     [Fact]
     public async Task Timeout_ExceedsLimit_ThrowsTimeoutException()
     {
@@ -1599,19 +1608,19 @@ public class AIServiceE2ETests
             )
         );
     }
-    
+
     // === Trace ID Tests ===
     [Fact]
     public async Task Request_WithTraceId_PropagatesToLogs()
     {
         var traceId = $"test_{Guid.NewGuid():N}";
-        
+
         await _client.ChatAsync(
             systemPrompt: "test",
             userPrompt: "test",
             traceId: traceId
         );
-        
+
         // Verify trace ID appears in logs
         var logEntry = await _logReader.FindByTraceIdAsync(traceId);
         Assert.NotNull(logEntry);
@@ -1631,40 +1640,40 @@ public class AIServiceE2ETests
 ```typescript
 // ai-mini-service/integrity.ts
 
-import { createHash } from "crypto";
-import { readFileSync, existsSync } from "fs";
+import { createHash } from 'crypto';
+import { readFileSync, existsSync } from 'fs';
 
 interface IntegrityCheckResult {
-    valid: boolean;
-    expectedHash: string;
-    actualHash: string;
-    timestamp: string;
+  valid: boolean;
+  expectedHash: string;
+  actualHash: string;
+  timestamp: string;
 }
 
 export async function verifyIntegrity(): Promise<IntegrityCheckResult> {
-    // The expected hash is embedded at build time
-    const EXPECTED_HASH = process.env.AI_SERVICE_HASH || "";
-    
-    // Calculate actual hash of running executable
-    const executablePath = process.execPath;
-    const executableData = readFileSync(executablePath);
-    const actualHash = createHash("sha256").update(executableData).digest("hex");
-    
-    const valid = EXPECTED_HASH === "" || actualHash === EXPECTED_HASH;
-    
-    if (!valid) {
-        console.error("⚠️ INTEGRITY CHECK FAILED");
-        console.error(`Expected: ${EXPECTED_HASH}`);
-        console.error(`Actual:   ${actualHash}`);
-        console.error("The ai-service.exe may have been tampered with!");
-    }
-    
-    return {
-        valid,
-        expectedHash: EXPECTED_HASH,
-        actualHash,
-        timestamp: new Date().toISOString()
-    };
+  // The expected hash is embedded at build time
+  const EXPECTED_HASH = process.env.AI_SERVICE_HASH || '';
+
+  // Calculate actual hash of running executable
+  const executablePath = process.execPath;
+  const executableData = readFileSync(executablePath);
+  const actualHash = createHash('sha256').update(executableData).digest('hex');
+
+  const valid = EXPECTED_HASH === '' || actualHash === EXPECTED_HASH;
+
+  if (!valid) {
+    console.error('⚠️ INTEGRITY CHECK FAILED');
+    console.error(`Expected: ${EXPECTED_HASH}`);
+    console.error(`Actual:   ${actualHash}`);
+    console.error('The ai-service.exe may have been tampered with!');
+  }
+
+  return {
+    valid,
+    expectedHash: EXPECTED_HASH,
+    actualHash,
+    timestamp: new Date().toISOString(),
+  };
 }
 ```
 
@@ -1675,44 +1684,44 @@ public class AIServiceIntegrityValidator
 {
     private readonly string _servicePath;
     private readonly string _expectedHash;
-    
+
     public AIServiceIntegrityValidator(string servicePath, string expectedHash)
     {
         _servicePath = servicePath;
         _expectedHash = expectedHash;
     }
-    
+
     public async Task<IntegrityResult> VerifyBeforeStartAsync()
     {
         var exePath = Path.Combine(_servicePath, "ai-service.exe");
-        
+
         if (!File.Exists(exePath))
         {
             return IntegrityResult.Failed("ai-service.exe not found");
         }
-        
+
         // Calculate SHA256 hash
         using var sha256 = System.Security.Cryptography.SHA256.Create();
         using var stream = File.OpenRead(exePath);
         var hashBytes = await sha256.ComputeHashAsync(stream);
         var actualHash = Convert.ToHexString(hashBytes).ToLower();
-        
+
         if (actualHash != _expectedHash.ToLower())
         {
             return IntegrityResult.Failed(
                 $"Hash mismatch. Expected: {_expectedHash}, Actual: {actualHash}");
         }
-        
+
         // Verify signature (Windows Authenticode)
         var signatureValid = VerifyAuthenticodeSignature(exePath);
         if (!signatureValid)
         {
             return IntegrityResult.Failed("Authenticode signature verification failed");
         }
-        
+
         return IntegrityResult.Success();
     }
-    
+
     private bool VerifyAuthenticodeSignature(string filePath)
     {
         // Use Windows CryptoAPI to verify Authenticode signature
@@ -1730,7 +1739,7 @@ public record IntegrityResult
 {
     public bool IsValid { get; init; }
     public string? ErrorMessage { get; init; }
-    
+
     public static IntegrityResult Success() => new() { IsValid = true };
     public static IntegrityResult Failed(string error) => new() { IsValid = false, ErrorMessage = error };
 }
@@ -1745,7 +1754,7 @@ public class AIMiniServiceManager
     {
         // 1. Verify integrity BEFORE starting
         var integrity = await _integrityValidator.VerifyBeforeStartAsync();
-        
+
         if (!integrity.IsValid)
         {
             _logger.LogError("AI Service integrity check failed: {Error}", integrity.ErrorMessage);
@@ -1753,7 +1762,7 @@ public class AIMiniServiceManager
             await ShowIntegrityErrorDialog(integrity.ErrorMessage);
             return false;
         }
-        
+
         // 2. Proceed with normal startup
         // ... existing startup code ...
     }
@@ -1778,27 +1787,27 @@ public class AIMiniServiceManager
 
 ## Change Log
 
-| Date | Change |
-|------|--------|
-| 2026-02-26 | **Added Section 17: ai-service.exe Package Integrity** - Startup integrity check, hash verification, Authenticode signature validation |
+| Date       | Change                                                                                                                                                  |
+| :--------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-02-26 | **Added Section 17: ai-service.exe Package Integrity** - Startup integrity check, hash verification, Authenticode signature validation                  |
 | 2026-02-26 | **Added Section 16: AI E2E Test Suite Specification** - Complete test coverage for LLM, Image Gen, Vision, Search, Error handling, Trace ID propagation |
-| 2026-02-26 | **Added Section 15: AI Service Failure Governance** - Failure detection, fallback strategy, state transitions for AI_SERVICE_UNAVAILABLE/DEGRADED |
-| 2026-02-26 | **Added Section 14: Trace ID Propagation** - Trace context, HTTP header propagation, AI service request logging with trace ID |
-| 2026-02-26 | **Added Section 13: Timeout Granularity Configuration** - Per-operation-type timeouts, timeout enforcement |
-| 2026-02-26 | **Added Section 12: ConstructionTransaction with SDK Version Tracking** - SDK version, commit hash, trace ID, AI operation records for reproducibility |
-| 2026-02-26 | **Added AI_SERVICE_UNAVAILABLE (31) and AI_SERVICE_DEGRADED (32) states** - New states for AI service failure handling |
-| 2026-02-26 | **Added AI_SERVICE_UNAVAILABLE, AI_SERVICE_TIMEOUT, AI_SERVICE_ERROR, AI_SERVICE_DEGRADED error types** |
-| 2026-02-25 | **Added Retry Stage Behavior Specification** - Detailed behavior for 1-3/4-6/7-9/≥10 retry stages with AI strategy and Kernel actions |
-| 2026-02-25 | **Added Single Active Transaction Runtime Enforcement** - Code-level enforcement with crash recovery explanation |
-| 2026-02-25 | **Added Invariant: Kernel-Exclusive State Mutation** - Explicit statement that only Kernel mutates BuilderState |
-| 2026-02-25 | **Added Invariant: Single Active Transaction** - Exactly one active ConstructionTransaction per Orchestrator |
-| 2026-02-25 | **Added AssetGenerationFailedEvent** - Event for asset generation failures |
-| 2026-02-25 | **Added ASSET_GENERATION_FAILED → RETRYING transition** - State machine path for asset retry |
-| 2026-02-23 | Added ASSET_GENERATION_FAILED, BRANDING_INFERENCE_FAILED, REQUIREMENT_EVALUATION_FAILED error types |
-| 2026-02-23 | Added Platform Requirements & Asset Generation states (26-29) |
-| 2026-02-23 | Added RequirementsEvaluatedEvent, BrandingInferredEvent, AssetsGeneratedEvent |
-| 2026-02-23 | Added state transitions for REQUIREMENT_EVALUATION → BRANDING_INFERENCE → ASSET_GENERATING → ASSETS_READY |
-| 2026-02-21 | Converted to Infinite Silent Retry model - removed FAILED state, added SYSTEM_RESET |
-| 2026-02-21 | Added CANCELLED state as only terminal state (user-initiated only) |
-| 2026-02-21 | Added SystemResetEvent and AttemptedApproaches tracking |
-| 2026-02-21 | Fixed all architectural contradictions (1-7) |
+| 2026-02-26 | **Added Section 15: AI Service Failure Governance** - Failure detection, fallback strategy, state transitions for AI_SERVICE_UNAVAILABLE/DEGRADED       |
+| 2026-02-26 | **Added Section 14: Trace ID Propagation** - Trace context, HTTP header propagation, AI service request logging with trace ID                           |
+| 2026-02-26 | **Added Section 13: Timeout Granularity Configuration** - Per-operation-type timeouts, timeout enforcement                                              |
+| 2026-02-26 | **Added Section 12: ConstructionTransaction with SDK Version Tracking** - SDK version, commit hash, trace ID, AI operation records for reproducibility  |
+| 2026-02-26 | **Added AI_SERVICE_UNAVAILABLE (31) and AI_SERVICE_DEGRADED (32) states** - New states for AI service failure handling                                  |
+| 2026-02-26 | **Added AI_SERVICE_UNAVAILABLE, AI_SERVICE_TIMEOUT, AI_SERVICE_ERROR, AI_SERVICE_DEGRADED error types**                                                 |
+| 2026-02-25 | **Added Retry Stage Behavior Specification** - Detailed behavior for 1-3/4-6/7-9/≥10 retry stages with AI strategy and Kernel actions                   |
+| 2026-02-25 | **Added Single Active Transaction Runtime Enforcement** - Code-level enforcement with crash recovery explanation                                        |
+| 2026-02-25 | **Added Invariant: Kernel-Exclusive State Mutation** - Explicit statement that only Kernel mutates BuilderState                                         |
+| 2026-02-25 | **Added Invariant: Single Active Transaction** - Exactly one active ConstructionTransaction per Orchestrator                                            |
+| 2026-02-25 | **Added AssetGenerationFailedEvent** - Event for asset generation failures                                                                              |
+| 2026-02-25 | **Added ASSET_GENERATION_FAILED → RETRYING transition** - State machine path for asset retry                                                            |
+| 2026-02-23 | Added ASSET_GENERATION_FAILED, BRANDING_INFERENCE_FAILED, REQUIREMENT_EVALUATION_FAILED error types                                                     |
+| 2026-02-23 | Added Platform Requirements & Asset Generation states (26-29)                                                                                           |
+| 2026-02-23 | Added RequirementsEvaluatedEvent, BrandingInferredEvent, AssetsGeneratedEvent                                                                           |
+| 2026-02-23 | Added state transitions for REQUIREMENT_EVALUATION → BRANDING_INFERENCE → ASSET_GENERATING → ASSETS_READY                                               |
+| 2026-02-21 | Converted to Infinite Silent Retry model - removed FAILED state, added SYSTEM_RESET                                                                     |
+| 2026-02-21 | Added CANCELLED state as only terminal state (user-initiated only)                                                                                      |
+| 2026-02-21 | Added SystemResetEvent and AttemptedApproaches tracking                                                                                                 |
+| 2026-02-21 | Fixed all architectural contradictions (1-7)                                                                                                            |

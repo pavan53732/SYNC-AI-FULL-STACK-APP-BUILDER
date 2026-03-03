@@ -4,7 +4,7 @@
 >
 > **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
 >
-> _The UI layer reflects the AI-Primary model: users interact with the AI Construction Engine, while the Runtime Safety Kernel handles enforcement silently._
+> _Sync AI is a Local AI Full-Stack Windows Native App Builder — a sophisticated desktop application. This document covers its Presentation Layer: operators or users interact with Sync AI via natural language. The AI Construction Engine builds silently, the Runtime Safety Kernel enforces guarantees silently, and users see only the result._
 
 ## Table of Contents
 
@@ -37,7 +37,7 @@
 
 **What Users See** vs **What Happens Internally**:
 
-```
+```text
 USER VIEW                                INTERNAL REALITY
 ─────────────────────────────────────────────────────────
 Prompt input                             Natural language parsing
@@ -49,10 +49,10 @@ Prompt input                             Natural language parsing
                                         Syntax validation
                                         Dependency resolution
                                         Build compilation
-                                        Error detection
-                                        Auto-fix execution
-         ↓                               Re-compilation
-✅ Working app preview                  Final validation
+         ↓                               Error detection
+✅ Working app preview                  Auto-fix execution
+                                        Re-compilation
+                                        Final validation
                                         Preview rendering
 ```
 
@@ -98,6 +98,8 @@ public partial class App : Application
 
     public App()
     {
+        InitializeComponent();
+
         _services = ConfigureServices();
     }
 
@@ -172,7 +174,7 @@ public sealed partial class MainWindow : Window
 
 **ResourceDictionary Implementation**:
 
-```xaml
+```text
 <ResourceDictionary>
     <x:Double x:Key="SpacingXS">4</x:Double>
     <x:Double x:Key="SpacingSM">8</x:Double>
@@ -195,7 +197,7 @@ public sealed partial class MainWindow : Window
 
 **Style Definitions**:
 
-```xaml
+```text
 <Style x:Key="TitleStyle" TargetType="TextBlock">
     <Setter Property="FontSize" Value="28"/>
     <Setter Property="FontWeight" Value="Semibold"/>
@@ -224,7 +226,7 @@ public sealed partial class MainWindow : Window
 
 **ResourceDictionary**:
 
-```xaml
+```text
 <ResourceDictionary>
     <SolidColorBrush x:Key="StatusIdleBrush"     Color="#6B6B6B"/>
     <SolidColorBrush x:Key="StatusBuildingBrush" Color="#0078D4"/>
@@ -296,7 +298,7 @@ var acrylicBrush = new AcrylicBrush
 
 ### MainWindow.xaml
 
-```xaml
+```text
 <Window x:Class="SyncAIAppBuilder.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -407,7 +409,7 @@ var acrylicBrush = new AcrylicBrush
 
 **Purpose:** List and manage local workspaces
 
-```xaml
+```text
 <Page x:Class="SyncAIAppBuilder.UI.Pages.ProjectsPage">
     <Grid Padding="24">
         <Grid.RowDefinitions>
@@ -482,7 +484,7 @@ var acrylicBrush = new AcrylicBrush
 
 **Purpose:** Prompt input and generation control
 
-```xaml
+```text
 <Page x:Class="SyncAIAppBuilder.UI.Pages.EditorPage">
     <Grid Padding="24">
         <Grid.RowDefinitions>
@@ -645,7 +647,7 @@ var acrylicBrush = new AcrylicBrush
 
 **Purpose:** Real-time orchestrator state visualization (Developer Mode)
 
-```xaml
+```text
 <UserControl x:Class="SyncAIAppBuilder.UI.Components.BuildMonitorPanel">
     <Grid Padding="16" RowSpacing="16">
         <Grid.RowDefinitions>
@@ -725,7 +727,7 @@ var acrylicBrush = new AcrylicBrush
 
 **Purpose:** Read-only code viewer with syntax highlighting
 
-```xaml
+```text
 <Page x:Class="SyncAIAppBuilder.UI.Pages.CodePreviewPage">
     <Grid>
         <Grid.ColumnDefinitions>
@@ -784,7 +786,7 @@ var acrylicBrush = new AcrylicBrush
 
 **Purpose:** Application configuration
 
-```xaml
+```text
 <Page x:Class="SyncAIAppBuilder.UI.Pages.SettingsPage">
     <ScrollViewer>
         <StackPanel Padding="24" Spacing="24" MaxWidth="800">
@@ -922,16 +924,19 @@ var acrylicBrush = new AcrylicBrush
 
 ### Generate Button Behavior
 
-| State        | Visual                                                        |
-| ------------ | ------------------------------------------------------------- |
-| **Idle**     | 160×48px, accent color, enabled                               |
-| **Hover**    | +4% brightness, elevation shadow, translate Y: -2px           |
-| **Click**    | Shrink to 96% scale (80ms)                                    |
-| **Building** | Disabled, text "Building…", indeterminate progress bar inside |
+| State                 | Visual                                                        | Mode                       | Visual state                    | Transition timing          |
+| :-------------------- | :------------------------------------------------------------ | :------------------------- | :------------------------------ | :------------------------- |
+| **Idle**              | 160×48px, accent color, enabled                               | Instant                    | Base UI (Input field)           | Instant                    |
+| **Hover**             | +4% brightness, elevation shadow, translate Y: -2px           | 100ms ease-out             | Base UI (Input field)           | 100ms ease-out             |
+| **Click**             | Shrink to 96% scale (80ms)                                    | 80ms ease-in               | Base UI (Input field)           | 80ms ease-in               |
+| **Building**          | Disabled, text "Building…", indeterminate progress bar inside | 300ms ease-in              | Indeterminate Spinner           | 300ms ease-in              |
+| **Success**           | Preview Render                                                | 500ms slide-up             | Preview Render                  | 500ms slide-up             |
+| **Error (Transient)** | Secondary Spinner (Auto-fixing)                               | No transition (stays busy) | Secondary Spinner (Auto-fixing) | No transition (stays busy) |
+| **Error (Hard)**      | Actionable Prompt (Modal)                                     | 200ms pop                  | Actionable Prompt (Modal)       | 200ms pop                  |
 
 **Idle XAML**:
 
-```xaml
+```text
 <Button x:Name="GenerateButton"
         Content="Generate Application"
         Width="160"
@@ -1213,18 +1218,21 @@ private async Task RollbackToSnapshot(string snapshotId)
 **User Guidance for SOFT_RECOVERY State**:
 
 When the system enters SOFT_RECOVERY, users should understand:
+
 1. **The system is still working** - This is not an error state, just extended processing
 2. **Cancellation is always available** - Users can stop at any time without losing progress
 3. **No action is required** - The system will automatically resolve and continue
 4. **Previous work is preserved** - Snapshots ensure no data loss during extended retries
 
 **Recommended User Actions**:
+
 - Wait for the system to complete (most common)
 - Click "Cancel" to stop and return to the last stable state
 - Switch to other tasks while the system continues in the background
 - Enable Developer Mode to see detailed progress (optional)
 
 **What NOT to do**:
+
 - Do not close the application (progress will be saved, but it's better to cancel first)
 - Do not modify project files externally during this state
 
@@ -1238,15 +1246,15 @@ When the system enters SOFT_RECOVERY, users should understand:
 
 ### Orchestrator → UI State Mapping Table
 
-| UI State                | Orchestrator States (Backend)                                                                                                          |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `FIRST_LAUNCH`          | N/A (no orchestrator instance)                                                                                                         |
-| `EMPTY_IDLE`            | `IDLE`                                                                                                                                 |
-| `TYPING`                | `IDLE` (no backend change)                                                                                                             |
-| `BUILDING`              | `SPEC_PARSED`, `TASK_GRAPH_READY`, `MUTATION_GUARD`, `PATCHING`, `INDEXING`, `TASK_EXECUTING`, `VALIDATING`, `RETRYING` (initial)     |
-| `PREVIEW_READY`         | `COMPLETED`                                                                                                                            |
-| `SOFT_RECOVERY`         | `RETRYING` (extended duration, user informed)                                                                                          |
-| `INTERVENTION_REQUIRED` | `GUARD_REJECTED`                                                                                                                       |
+| UI State                | Orchestrator States (Backend)                                                                                                     |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `FIRST_LAUNCH`          | N/A (no orchestrator instance)                                                                                                    |
+| `EMPTY_IDLE`            | `IDLE`                                                                                                                            |
+| `TYPING`                | `IDLE` (no backend change)                                                                                                        |
+| `BUILDING`              | `SPEC_PARSED`, `TASK_GRAPH_READY`, `MUTATION_GUARD`, `PATCHING`, `INDEXING`, `TASK_EXECUTING`, `VALIDATING`, `RETRYING` (initial) |
+| `PREVIEW_READY`         | `COMPLETED`                                                                                                                       |
+| `SOFT_RECOVERY`         | `RETRYING` (extended duration, user informed)                                                                                     |
+| `INTERVENTION_REQUIRED` | `GUARD_REJECTED`                                                                                                                  |
 
 > **Note**: There is no `FAILED` or `ENVIRONMENT_INVALID` orchestrator state. The system retries continuously until success or user cancellation.
 
@@ -1275,7 +1283,8 @@ private UIState MapToUIState(OrchestratorState orchestratorState, bool extendedR
 ```
 
 > **Note**: The system never enters a terminal failure state. All errors trigger continuous retry until success or user cancellation.
-```
+
+````
 
 ### ViewModel Implementation
 
@@ -1398,7 +1407,7 @@ public class MainViewModel : ObservableObject
             NavView.MenuItems.Add(item);
     }
 }
-```
+````
 
 ### State Transition Diagram
 
@@ -1997,8 +2006,8 @@ public class BuildMonitorViewModel : ObservableObject
 
 ## Change Log
 
-| Date | Change |
-|------|--------|
-| 2026-02-23 | Added Asset Generation Progress UI component to EditorPage |
-| 2026-02-23 | Added requirement evaluation and branding inference progress indicators |
+| Date       | Change                                                                                   |
+| ---------- | ---------------------------------------------------------------------------------------- |
+| 2026-02-23 | Added Asset Generation Progress UI component to EditorPage                               |
+| 2026-02-23 | Added requirement evaluation and branding inference progress indicators                  |
 | 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md and BRANDING_INFERENCE_HEURISTICS.md to References |

@@ -1,10 +1,8 @@
 # USER WORKFLOWS & FEATURES
 
-> **The User Experience: From Prompt to Production**
+> **Sync AI is a Local AI Full-Stack Windows Native App Builder** — a sophisticated desktop application that autonomously designs, generates, compiles, validates, fixes, and packages complete production-ready Windows desktop applications from natural language descriptions by operators or users.
 >
-> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
->
-> _Users interact with the AI Construction Engine. The Runtime Safety Kernel handles all enforcement silently.
+> _This document specifies the user experience and workflows of Sync AI._
 
 ---
 
@@ -25,9 +23,9 @@
 
 ### The "Lovable" for Desktop Experience
 
-Sync AI is a **Local AI Full-Stack Windows App Builder**:
+Sync AI is a **Local AI Full-Stack Windows Native App Builder** — a sophisticated desktop application that autonomously designs, generates, compiles, validates, fixes, and packages complete production-ready Windows desktop applications from natural language descriptions by operators or users:
 
-1.  **AI-Primary Construction**: The AI Construction Engine is the Primary Brain. The user describes intent, AI designs and builds.
+1.  **AI-Primary Construction**: The AI Construction Engine is the Primary Brain. Operators or users describe intent, AI designs and builds.
 2.  **No IDE Required**: Zero exposure to Visual Studio, `.csproj` files, or terminals.
 3.  **Local-First & Private**: All code, data, and builds stay on the user's machine.
 4.  **End-to-End Responsibility**: The AI owns the stack from **Schema → UI → Tests → Packaging**.
@@ -81,9 +79,9 @@ The system automatically manages the development environment:
 On first launch:
 
 • If no encrypted AI config found:
-  → Redirect user to AI Settings page.
-  → Block construction until configuration validated.
-  → Test connection before allowing exit from setup.
+→ Redirect user to AI Settings page.
+→ Block construction until configuration validated.
+→ Test connection before allowing exit from setup.
 
 The system does not allow blueprint generation without validated AI configuration.
 
@@ -123,12 +121,12 @@ The system does not allow blueprint generation without validated AI configuratio
 
 The system automatically generates visual assets without templates:
 
-| Asset Type | Generated From | User Message |
-|------------|----------------|--------------|
-| **App Icons** | Domain + App Name | "Generating app icons..." |
-| **Tile Logos** | Brand inference | "Creating tile logos..." |
-| **Splash Screen** | Color psychology | "Preparing splash screen..." |
-| **Store Logo** | Style derivation | "Creating store assets..." |
+| Asset Type        | Generated From    | User Message                 |
+| :---------------- | :---------------- | :--------------------------- |
+| **App Icons**     | Domain + App Name | "Generating app icons..."    |
+| **Tile Logos**    | Brand inference   | "Creating tile logos..."     |
+| **Splash Screen** | Color psychology  | "Preparing splash screen..." |
+| **Store Logo**    | Style derivation  | "Creating store assets..."   |
 
 **User sees**: Simple progress indicator with current asset being generated.
 **User NEVER sees**: Image generation prompts, AI model details, fallback retries.
@@ -153,7 +151,7 @@ Based on evidence-driven analysis:
 
 **Input Processing Pipeline**:
 
-```
+```text
 Natural Language Prompt
     ↓
 [Semantic Parser]
@@ -168,7 +166,7 @@ Structured Intent Objects
 
 **Generation Pipeline**:
 
-```
+```text
 Intent Objects
     ↓
 [Architect] → Project structure
@@ -184,7 +182,7 @@ Generated Files (Real C# / XAML code)
 
 **Validation Pipeline**:
 
-```
+```text
 Generated Code
     ↓
 [Syntax Check] - Parse & compile
@@ -773,18 +771,19 @@ The system handles 5 categories of errors internally:
 
 The system monitors for environment conditions that require user intervention. All states trigger continuous retry with user notification.
 
-| State                   | Detection                        | Recovery Strategy                              | User Message                                                        |
-| :---------------------- | :------------------------------- | :--------------------------------------------- | :------------------------------------------------------------------ |
-| **LOW_DISK_SPACE**      | Free space < 500MB               | Prompt user to free space, wait, retry         | "Disk space critical. Please free up space to continue."            |
-| **NO_ADMIN_PRIVILEGE**  | Admin required but denied        | Request UAC elevation, wait for retry          | "Admin checks failed. Please restart as Administrator."             |
-| **SDK_MISSING**         | `dotnet --version` fails         | Trigger SDK download flow, wait, retry         | ".NET SDK not found. Downloading installer..."                      |
-| **SDK_CORRUPTED**       | Build fails with known SDK error | Repair/Reinstall SDK, retry                    | "SDK appears corrupted. Attempting repair..."                       |
-| **CERTIFICATE_EXPIRED** | Date > Expiry                    | Regenerate & Re-sign, retry                    | "Certificate expired. Renewing security credentials..."             |
-| **NUGET_CACHE_CORRUPT** | Restore fails repeatedly         | `dotnet nuget locals all --clear`, retry       | "Clearing corrupted package cache..."                               |
+| State                   | Detection                        | Recovery Strategy                        | User Message                                             |
+| :---------------------- | :------------------------------- | :--------------------------------------- | :------------------------------------------------------- |
+| **LOW_DISK_SPACE**      | Free space < 500MB               | Prompt user to free space, wait, retry   | "Disk space critical. Please free up space to continue." |
+| **NO_ADMIN_PRIVILEGE**  | Admin required but denied        | Request UAC elevation, wait for retry    | "Admin checks failed. Please restart as Administrator."  |
+| **SDK_MISSING**         | `dotnet --version` fails         | Trigger SDK download flow, wait, retry   | ".NET SDK not found. Downloading installer..."           |
+| **SDK_CORRUPTED**       | Build fails with known SDK error | Repair/Reinstall SDK, retry              | "SDK appears corrupted. Attempting repair..."            |
+| **CERTIFICATE_EXPIRED** | Date > Expiry                    | Regenerate & Re-sign, retry              | "Certificate expired. Renewing security credentials..."  |
+| **NUGET_CACHE_CORRUPT** | Restore fails repeatedly         | `dotnet nuget locals all --clear`, retry | "Clearing corrupted package cache..."                    |
 
 > **Key Principle**: The system NEVER gives up on its own. All environment states trigger retry loops that continue until success or explicit user cancellation. The system prompts for user intervention when needed, then continues retrying automatically.
 >
 > **Retry Distinction**:
+>
 > - **Mutation Retry Ceiling**: Code mutation cycles are bounded (max 10 retries per task) with staged escalation through Fix → Integration → Architecture levels before abort.
 > - **Environment Recovery Loops**: Unbounded — disk space recovery, SDK installation, NuGet cache repair continue until resolved or user cancels.
 > - This distinction ensures deterministic code safety while maintaining resilience for environmental issues.
@@ -793,8 +792,8 @@ The system monitors for environment conditions that require user intervention. A
 
 ## Change Log
 
-| Date | Change |
-|------|--------|
-| 2026-02-23 | Added "Generating Assets" workflow state (step 5) |
+| Date       | Change                                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 2026-02-23 | Added "Generating Assets" workflow state (step 5)                                                                         |
 | 2026-02-23 | Added Asset Generation Phase section with PLATFORM_REQUIREMENTS_ENGINE.md and BRANDING_INFERENCE_HEURISTICS.md references |
-| 2026-02-23 | Added asset generation user messaging table |
+| 2026-02-23 | Added asset generation user messaging table                                                                               |

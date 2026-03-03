@@ -2,7 +2,7 @@
 
 > **The Architecture of AI-Primary Construction with Deterministic Safety**
 >
-> _Defines the relationship between the AI Construction Engine and Runtime Safety Kernel._
+> _Defines the internal architecture of Sync AI — a Local AI Full-Stack Windows Native App Builder (sophisticated desktop application). Documents the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer)._
 
 ---
 
@@ -25,7 +25,7 @@ Sync AI is a **Local AI Full-Stack Windows Native App Builder** that autonomousl
 
 ### The Two Pillars
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                 AI CONSTRUCTION ENGINE                       │
 │                     (Primary Brain)                          │
@@ -70,14 +70,14 @@ Sync AI is a **Local AI Full-Stack Windows Native App Builder** that autonomousl
 
 The system uses fundamentally different capability inference timing for Preview vs Packaging:
 
-| Phase | Mode | Capability Inference Timing | Rationale |
-|-------|------|----------------------------|-----------|
-| **Preview (Debug)** | Reactive | After build (on failure only) | Fast iteration; only infer if build fails due to missing capability |
-| **Packaging (Release)** | Proactive | Before build | Optimize for success; infer capabilities early to minimize retry cycles |
+| Phase                   | Mode      | Capability Inference Timing   | Rationale                                                               |
+| :---------------------- | :-------- | :---------------------------- | :---------------------------------------------------------------------- |
+| **Preview (Debug)**     | Reactive  | After build (on failure only) | Fast iteration; only infer if build fails due to missing capability     |
+| **Packaging (Release)** | Proactive | Before build                  | Optimize for success; infer capabilities early to minimize retry cycles |
 
 ### Debug Preview Pipeline (Reactive Model)
 
-```
+```text
 1. PRE-BUILD FAST SCAN (Optional)
    └── Quick Roslyn scan for obvious capability-requiring namespaces
    └── If found AND missing from manifest → Inject immediately
@@ -106,7 +106,7 @@ The system uses fundamentally different capability inference timing for Preview 
 
 ### Release Packaging Pipeline (Proactive Model)
 
-```
+```text
 1. CAPABILITY_SCAN (MANDATORY first step)
    └── Full semantic analysis BEFORE any build
 
@@ -142,22 +142,23 @@ The system uses fundamentally different capability inference timing for Preview 
 ## 2. AI Construction Engine
 
 ### Role
+
 **Primary Intelligence** — The brain of the system
 
 ### Responsibilities
 
-| Function | Description |
-|----------|-------------|
-| **Intent Understanding** | Parses natural language and extracts requirements |
-| **Architecture Design** | Creates adaptive execution plans |
-| **Code Generation** | Produces C#, XAML, SQL through multi-agent coordination |
-| **Strategy Selection** | Chooses approach based on context |
-| **Retry Strategy** | Owns retry decisions (cycles 1-9) |
-| **Adaptation** | Learns from errors and adjusts |
+| Function                 | Description                                             |
+| ------------------------ | ------------------------------------------------------- |
+| **Intent Understanding** | Parses natural language and extracts requirements       |
+| **Architecture Design**  | Creates adaptive execution plans                        |
+| **Code Generation**      | Produces C#, XAML, SQL through multi-agent coordination |
+| **Strategy Selection**   | Chooses approach based on context                       |
+| **Retry Strategy**       | Owns retry decisions (cycles 1-9)                       |
+| **Adaptation**           | Learns from errors and adjusts                          |
 
 ### AI Agent Stack
 
-```
+```text
 AI Construction Engine
     │
     ├── Architect Agent      → Designs structure
@@ -171,6 +172,7 @@ AI Construction Engine
 ### Flexibility Within Bounds
 
 The AI Construction Engine has full creative freedom within these constraints:
+
 - Target platform: WinUI 3 / .NET 8
 - Database: SQLite
 - Architecture: MVVM pattern
@@ -182,15 +184,16 @@ The AI Construction Engine has full creative freedom within these constraints:
 
 The "Hidden System Prompt" is implemented as **Constraint Documents** that the AI reads:
 
-| Constraint Document | What It Defines |
-|---------------------|-----------------|
-| `SYSTEM_ARCHITECTURE.md` | Base Tech Stack (WinUI 3, .NET 8, SQLite, MVVM, MSIX) |
-| `ORCHESTRATION_ENGINE.md` | State machine rules, retry behavior |
-| `AI_AGENTS_AND_PLANNING.md` | Agent output contracts, task types |
-| `CODE_INTELLIGENCE.md` | Patch operations whitelist |
-| `WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md` | Manifest rules, capability inference |
+| Constraint Document                              | What It Defines                                       |
+| ------------------------------------------------ | ----------------------------------------------------- |
+| `SYSTEM_ARCHITECTURE.md`                         | Base Tech Stack (WinUI 3, .NET 8, SQLite, MVVM, MSIX) |
+| `ORCHESTRATION_ENGINE.md`                        | State machine rules, retry behavior                   |
+| `AI_AGENTS_AND_PLANNING.md`                      | Agent output contracts, task types                    |
+| `CODE_INTELLIGENCE.md`                           | Patch operations whitelist                            |
+| `WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md` | Manifest rules, capability inference                  |
 
 **What the Hidden System Prompt defines (FRAMEWORK RULES):**
+
 - ✅ Always use WinUI 3 (not WPF, not ASP.NET)
 - ✅ Always use MVVM pattern
 - ✅ Always use SQLite for local database
@@ -198,6 +201,7 @@ The "Hidden System Prompt" is implemented as **Constraint Documents** that the A
 - ✅ Always follow Windows packaging rules
 
 **What the Hidden System Prompt does NOT define (USER'S IDEA):**
+
 - ❌ What the app does (user's custom functionality)
 - ❌ What the UI looks like (user's custom design)
 - ❌ What features to include (user's custom requirements)
@@ -211,7 +215,7 @@ The "Hidden System Prompt" is implemented as **Constraint Documents** that the A
 
 The template is embedded in the application and copied to new project workspaces during initialization.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │  BASE PROJECT TEMPLATE (Minimal Kernel Bootstrap)           │
 ├─────────────────────────────────────────────────────────────┤
@@ -241,6 +245,7 @@ The template is embedded in the application and copied to new project workspaces
 ```
 
 **Why Base Project Template is needed:**
+
 - ✅ Guarantees valid `.csproj` configuration
 - ✅ Guarantees correct SDK wiring
 - ✅ Guarantees project can be opened in Visual Studio
@@ -248,6 +253,7 @@ The template is embedded in the application and copied to new project workspaces
 - ✅ Reduces failure rate for project creation
 
 **What the template does NOT contain:**
+
 - ❌ No pre-built features
 - ❌ No pre-built UI components
 - ❌ No pre-built business logic
@@ -257,23 +263,24 @@ The template is embedded in the application and copied to new project workspaces
 
 ## 3. Runtime Safety Kernel
 
-### Role
+### 3.1 Role
+
 **Enforcement Layer** — Guarantees deterministic, safe execution
 
-### Responsibilities
+### 3.2 Responsibilities
 
-| Function | Description |
-|----------|-------------|
-| **Mutation Validation** | Verifies all patches before application |
-| **Deterministic Execution** | Ensures reproducible results |
-| **Snapshot Management** | Creates/restores file system states |
-| **System Resets** | Rollbacks with forced amnesia at cycle 10+ |
-| **Resource Enforcement** | Memory, disk, time limits |
-| **Security Enforcement** | Sandbox boundaries, path validation |
+| Function                    | Description                                |
+| --------------------------- | ------------------------------------------ |
+| **Mutation Validation**     | Verifies all patches before application    |
+| **Deterministic Execution** | Ensures reproducible results               |
+| **Snapshot Management**     | Creates/restores file system states        |
+| **System Resets**           | Rollbacks with forced amnesia at cycle 10+ |
+| **Resource Enforcement**    | Memory, disk, time limits                  |
+| **Security Enforcement**    | Sandbox boundaries, path validation        |
 
 ### Kernel Components
 
-```
+```text
 Runtime Safety Kernel
     │
     ├── Orchestrator         → State machine enforcement
@@ -301,7 +308,7 @@ These are the differentiation moat — they never change:
 
 ### The Boundary Contract
 
-```
+```text
 AI Engine                    Runtime Kernel
     │                             │
     │  1. Propose Mutation        │
@@ -323,12 +330,12 @@ AI Engine                    Runtime Kernel
 
 ### Boundary Rules
 
-| Rule | Enforcement |
-|------|-------------|
-| AI proposes, Kernel disposes | All mutations pass through Kernel |
-| No direct file access | AI never touches filesystem directly |
-| No bypass | Even internal agents go through Kernel |
-| Full audit trail | Every mutation logged |
+| Rule                             | Entity  | Authority | Responsibility                         |
+| :------------------------------- | :------ | :-------- | :------------------------------------- |
+| **AI proposes, Kernel disposes** | **ACE** | Proposer  | Proposing code mutations               |
+| **No direct file access**        | **RSK** | Enforcer  | Validating and executing mutations     |
+| No bypass                        | N/A     | Kernel    | Even internal agents go through Kernel |
+| Full audit trail                 | N/A     | Kernel    | Every mutation logged                  |
 
 ---
 
@@ -338,9 +345,9 @@ AI Engine                    Runtime Kernel
 
 The retry process is split between AI and Kernel:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
-│                    RETRY OWNERSHIP                           │
+│                   RETRY OWNERSHIP                            │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
 │  Cycles 1-9: AI CONSTRUCTION ENGINE                          │
@@ -364,14 +371,15 @@ The retry process is split between AI and Kernel:
 
 ### Retry Table
 
-| Range | Owner | Enforcement | Behavior |
-|-------|-------|-------------|----------|
-| 1-9 | AI Construction Engine | Strategy flexible | AI adapts, learns, retries |
-| 10+ | Runtime Kernel | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
+| Range | Owner                  | Enforcement            | Behavior                              |
+| ----- | ---------------------- | ---------------------- | ------------------------------------- |
+| 1-9   | AI Construction Engine | Strategy flexible      | AI adapts, learns, retries            |
+| 10+   | Runtime Kernel         | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
 
 ### AI Retry Strategy (Cycles 1-9)
 
 The AI Construction Engine may:
+
 - Escalate to different agents (Fix → Integration → Architect)
 - Change generation approach
 - Simplify the target
@@ -380,6 +388,7 @@ The AI Construction Engine may:
 ### Kernel Enforcement (Cycle 10+)
 
 The Runtime Kernel:
+
 - Rolls back to `PreMutationSnapshotId`
 - Clears all task-scoped memory (Forced AI Amnesia)
 - Emits `SystemResetEvent`
@@ -392,17 +401,17 @@ The Runtime Kernel:
 
 ### Who Can Stop Execution?
 
-| Trigger | Authority | Action |
-|---------|-----------|--------|
-| User clicks cancel | User | Immediate cancellation, transition to CANCELLED |
-| Hard loop detected (10+) | Kernel | System Reset (Rollback + Wipe Memory + Retry) |
-| Safety violation | Kernel | System Reset (Rollback + Try new approach) |
+| Trigger                  | Authority | Action                                          |
+| ------------------------ | --------- | ----------------------------------------------- |
+| User clicks cancel       | User      | Immediate cancellation, transition to CANCELLED |
+| Hard loop detected (10+) | Kernel    | System Reset (Rollback + Wipe Memory + Retry)   |
+| Safety violation         | Kernel    | System Reset (Rollback + Try new approach)      |
 
 > **INVARIANT**: There is NO terminal FAILED state. The only way to stop execution is user cancellation.
 
 ### Cancellation Sequence
 
-```
+```text
 1. User clicks "Cancel" button
 2. Kernel receives UserCancelledEvent
 3. Stop all AI operations immediately
@@ -418,16 +427,16 @@ The Runtime Kernel:
 
 ### Who Controls Snapshots?
 
-| Operation | Authority | Reason |
-|-----------|-----------|--------|
-| Create snapshot | Kernel | Before every mutation |
-| Restore snapshot | Kernel | On rollback/system reset |
-| Delete snapshot | Kernel | On pruning/archival |
-| List snapshots | UI (read-only) | User time-travel |
+| Operation        | Authority      | Reason                   |
+| ---------------- | -------------- | ------------------------ |
+| Create snapshot  | Kernel         | Before every mutation    |
+| Restore snapshot | Kernel         | On rollback/system reset |
+| Delete snapshot  | Kernel         | On pruning/archival      |
+| List snapshots   | UI (read-only) | User time-travel         |
 
 ### Snapshot Lifecycle
 
-```
+```text
 AI Proposes Mutation
         │
         ▼
@@ -466,7 +475,7 @@ Kernel Validates Mutation                  │
 
 ### Complete Flow (Infinite Silent Retry Model)
 
-```
+```text
 User Prompt
     │
     ▼
@@ -549,16 +558,29 @@ User Prompt
 ## Summary
 
 ### AI Construction Engine (Primary Brain)
+
 - Understands, designs, generates, adapts
 - Owns retry strategy (1-9)
 - Creative, flexible, intelligent
 
 ### Runtime Safety Kernel (Enforcement Layer)
+
 - Validates, enforces, guarantees
 - Owns system resets (10+)
 - Deterministic, resilient, protective
 
 ### The Contract
+
+```text
+Sync-AI > deploy --isolated --sign --verify
+[SCAN] 14 capabilities detected...
+[MANIFEST] Updated Package.appxmanifest...
+[BUILD] Release build successful...
+[SIGN] Code signature applied...
+[VERIFY] Signature integrity verified.
+[SUCCESS] Application ready for distribution.
+```
+
 > AI proposes, Kernel validates.
 > AI adapts, Kernel enforces.
 > AI creates, Kernel guarantees.
@@ -579,13 +601,13 @@ User Prompt
 
 ## Change Log
 
-| Date | Change |
-|------|--------|
-| 2026-02-24 | **Added "Hidden System Prompt (Constraint Documents)" section** - Explains framework rules vs user's idea |
+| Date       | Change                                                                                                      |
+| ---------- | ----------------------------------------------------------------------------------------------------------- |
+| 2026-02-24 | **Added "Hidden System Prompt (Constraint Documents)" section** - Explains framework rules vs user's idea   |
 | 2026-02-24 | **Added "Base Project Template (Minimal Kernel Bootstrap)" section** - Explains empty structure scaffolding |
-| 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - user-configured providers |
-| 2026-02-22 | Added AI Service Layer references (Layer 6.6) |
-| 2026-02-21 | Converted to Infinite Silent Retry model |
-| 2026-02-21 | Replaced "Hard Abort" with "System Reset + Forced Amnesia" |
-| 2026-02-21 | Added Cancellation Authority section (only way to stop) |
-| 2026-02-21 | Removed FAILED state from all diagrams |
+| 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - user-configured providers                         |
+| 2026-02-22 | Added AI Service Layer references (Layer 6.6)                                                               |
+| 2026-02-21 | Converted to Infinite Silent Retry model                                                                    |
+| 2026-02-21 | Replaced "Hard Abort" with "System Reset + Forced Amnesia"                                                  |
+| 2026-02-21 | Added Cancellation Authority section (only way to stop)                                                     |
+| 2026-02-21 | Removed FAILED state from all diagrams                                                                      |

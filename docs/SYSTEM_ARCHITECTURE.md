@@ -10,19 +10,19 @@
 
 ## Related Documentation
 
-| Document | Purpose |
-|----------|---------|
-| [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) | **AI capabilities via user-configured OpenAI-compatible providers** |
-| [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) | **NEW: Complete AI mini service implementation** |
-| [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) | **NEW: Zero-template approach - Platform requirements & asset generation** |
-| [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) | **NEW: Intelligent brand derivation from user intent** |
-| [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) | Sandbox, MSBuild, Job Objects, ACL Enforcement |
-| [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) | State Machine, Task Lifecycle, Build System, Retry Logic |
-| [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) | Intent Parsing, DAG Generation, Agent Contracts |
-| [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) | Roslyn Indexing, Symbol Graph, Database Schema |
-| [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) | Manifest Engine, Capability Inference, MSIX Pipeline |
-| [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) | Preview Rendering, Sandbox Launch |
-| [AGENT_EXECUTION_CONTRACT.md](./AGENT_EXECUTION_CONTRACT.md) | Agent Execution Specification |
+| Document                                                                                           | Purpose                                                                    |
+| :------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------- |
+| [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md)                                                       | **AI capabilities via user-configured OpenAI-compatible providers**        |
+| [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md)                           | **NEW: Complete AI mini service implementation**                           |
+| [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md)                               | **NEW: Zero-template approach - Platform requirements & asset generation** |
+| [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md)                             | **NEW: Intelligent brand derivation from user intent**                     |
+| [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md)                                             | Sandbox, MSBuild, Job Objects, ACL Enforcement                             |
+| [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md)                                               | State Machine, Task Lifecycle, Build System, Retry Logic                   |
+| [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md)                                           | Intent Parsing, DAG Generation, Agent Contracts                            |
+| [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md)                                                     | Roslyn Indexing, Symbol Graph, Database Schema                             |
+| [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) | Manifest Engine, Capability Inference, MSIX Pipeline                       |
+| [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md)                                                           | Preview Rendering, Sandbox Launch                                          |
+| [AGENT_EXECUTION_CONTRACT.md](./AGENT_EXECUTION_CONTRACT.md)                                       | Agent Execution Specification                                              |
 
 ---
 
@@ -46,7 +46,7 @@
 
 ### What is Sync AI?
 
-> **Sync AI is a fully local AI full-stack Windows native app builder** that autonomously designs, generates, compiles, validates, fixes, and packages complete production-ready applications from natural language prompts.
+> **Sync AI is a Local AI Full-Stack Windows Native App Builder** — a sophisticated desktop application that autonomously designs, generates, compiles, validates, fixes, and packages complete production-ready Windows desktop applications from natural language descriptions by operators or users.
 
 **AI leads the construction. The Runtime Safety Kernel enforces deterministic guarantees.**
 
@@ -54,13 +54,13 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 
 ### Framework & Target
 
-| Attribute | Value |
-|-----------|-------|
-| **Framework** | WinUI 3 (.NET 8) |
-| **Target OS** | Windows 10 Build 22621+ (Windows 11 standard) |
-| **Deployment** | MSIX packaging |
-| **AI Reasoning** | **Local AI Mini Service (openai SDK) — User-configured providers** |
-| **Build & Execution** | Local-only (no cloud dependency) |
+| Attribute             | Value                                                              |
+| :-------------------- | :----------------------------------------------------------------- |
+| **Framework**         | WinUI 3 (.NET 8)                                                   |
+| **Target OS**         | Windows 10 Build 22621+ (Windows 11 standard)                      |
+| **Deployment**        | MSIX packaging                                                     |
+| **AI Reasoning**      | **Local AI Mini Service (openai SDK) — User-configured providers** |
+| **Build & Execution** | Local-only (no cloud dependency)                                   |
 
 ### Core Capabilities
 
@@ -80,27 +80,27 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 
 > **AI-Primary Model**: The AI Construction Engine proposes. The Runtime Safety Kernel enforces.
 
-| Subsystem | Primary Owner | AI Proposes | Kernel Enforces | Detailed Spec |
-|------------|---------------|-------------|-----------------|---------------|
-| Intent Parsing | AI Construction Engine | ✅ | ❌ | AI_AGENTS_AND_PLANNING.md |
-| Blueprint Design | AI Construction Engine | ✅ | ❌ | AI_AGENTS_AND_PLANNING.md |
-| Code Generation | AI Construction Engine | ✅ | ❌ | AI_AGENTS_AND_PLANNING.md |
-| Code Mutation | Runtime Safety Kernel | ❌ | ✅ | CODE_INTELLIGENCE.md |
-| Snapshot Management | Runtime Safety Kernel | ❌ | ✅ | ORCHESTRATION_ENGINE.md |
-| State Transitions | Runtime Safety Kernel | ❌ | ✅ | ORCHESTRATION_ENGINE.md |
-| Capability Inference | AI Construction Engine | ✅ | ❌ | AI_RUNTIME_MODEL.md |
-| Manifest Generation | Runtime Safety Kernel | ❌ | ✅ | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md |
-| MSIX Packaging | Runtime Safety Kernel | ❌ | ✅ | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md |
-| Certificate Signing | Runtime Safety Kernel | ❌ | ✅ | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md |
-| Asset Generation | AI Construction Engine | ✅ | ❌ | BRANDING_INFERENCE_HEURISTICS.md |
-| Version Authority | Runtime Safety Kernel | ❌ | ✅ | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md |
-| Retry Strategy (1-9) | AI Construction Engine | ✅ | ❌ | AI_RUNTIME_MODEL.md |
-| System Reset (10+) | Runtime Safety Kernel | ❌ | ✅ | ORCHESTRATION_ENGINE.md |
-| Execution Sandbox | Runtime Safety Kernel | ❌ | ✅ | EXECUTION_ENVIRONMENT.md |
+| Subsystem            | Primary Owner          | AI Proposes | Kernel Enforces | Detailed Spec                                  |
+| -------------------- | ---------------------- | ----------- | --------------- | ---------------------------------------------- |
+| Intent Parsing       | AI Construction Engine | ✅          | ❌              | AI_AGENTS_AND_PLANNING.md                      |
+| Blueprint Design     | AI Construction Engine | ✅          | ❌              | AI_AGENTS_AND_PLANNING.md                      |
+| Code Generation      | AI Construction Engine | ✅          | ❌              | AI_AGENTS_AND_PLANNING.md                      |
+| Code Mutation        | Runtime Safety Kernel  | ❌          | ✅              | CODE_INTELLIGENCE.md                           |
+| Snapshot Management  | Runtime Safety Kernel  | ❌          | ✅              | ORCHESTRATION_ENGINE.md                        |
+| State Transitions    | Runtime Safety Kernel  | ❌          | ✅              | ORCHESTRATION_ENGINE.md                        |
+| Capability Inference | AI Construction Engine | ✅          | ❌              | AI_RUNTIME_MODEL.md                            |
+| Manifest Generation  | Runtime Safety Kernel  | ❌          | ✅              | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md |
+| MSIX Packaging       | Runtime Safety Kernel  | ❌          | ✅              | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md |
+| Certificate Signing  | Runtime Safety Kernel  | ❌          | ✅              | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md |
+| Asset Generation     | AI Construction Engine | ✅          | ❌              | BRANDING_INFERENCE_HEURISTICS.md               |
+| Version Authority    | Runtime Safety Kernel  | ❌          | ✅              | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md |
+| Retry Strategy (1-9) | AI Construction Engine | ✅          | ❌              | AI_RUNTIME_MODEL.md                            |
+| System Reset (10+)   | Runtime Safety Kernel  | ❌          | ✅              | ORCHESTRATION_ENGINE.md                        |
+| Execution Sandbox    | Runtime Safety Kernel  | ❌          | ✅              | EXECUTION_ENVIRONMENT.md                       |
 
 > **AI-Primary Architecture:** The AI Construction Engine sits at the top, directing all construction. The Runtime Safety Kernel enforces deterministic guarantees. The AI Service Layer provides AI capabilities via user-configured OpenAI-compatible providers.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 7: User Interface (WinUI 3 / XAML)                   │
 │  ─ Prompt input, real-time preview, version timeline         │
@@ -149,7 +149,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 
 ### AI-Primary Control Hierarchy (Updated)
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                 AI CONSTRUCTION ENGINE                       │
 │                   (Primary Brain)                            │
@@ -167,8 +167,8 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 │    AI SERVICE LAYER       │   │    RUNTIME SAFETY KERNEL    │
 │    (Layer 6.6)            │   │    (Enforcement Layer)       │
 │                           │   │                              │
-│ openai SDK              │   │ Kernel enforces safety:      │
-│ User-configured         │   │ validates, snapshots, resets │
+│ openai SDK                │   │ Kernel enforces safety:      │
+│ User-configured           │   │ validates, snapshots, resets │
 │                           │   │ Owns system resets at 10+    │
 │ LLM, Vision, Image Gen,   │   │                              │
 │ Search                    │   │                              │
@@ -180,43 +180,44 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 
 ### Layer Ownership Map
 
-| Layer | Primary Responsibility | Detailed Spec |
-|-------|------------------------|---------------|
-| **Layer 1** | Filesystem isolation, SQLite storage, snapshots | [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) |
-| **Layer 2** | MSBuild, NuGet, process management | [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) |
-| **Layer 2.5** | Manifest, capabilities, signing | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
-| **Layer 3** | AST patches, conflict detection | [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) |
-| **Layer 4** | Roslyn indexing, symbol graph | [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) |
-| **Layer 5** | (merged into Layer 6.5) | - |
-| **Layer 6** | Runtime Safety Kernel - enforcement, abort authority | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) |
-| **Layer 6.5** | AI Construction Engine - intelligence, generation | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) |
-| **Layer 6.6** | **AI Service Layer - openai SDK, user-configured providers** | [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) |
-| **Layer 7** | WinUI 3 shell, user interaction | [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) |
+| Layer         | Primary Responsibility                                       | Detailed Spec                                                                                      |
+| :------------ | :----------------------------------------------------------- | :------------------------------------------------------------------------------------------------- |
+| **Layer 1**   | Filesystem isolation, SQLite storage, snapshots              | [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md)                                             |
+| **Layer 2**   | MSBuild, NuGet, process management                           | [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md)                                             |
+| **Layer 2.5** | Manifest, capabilities, signing                              | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
+| **Layer 3**   | AST patches, conflict detection                              | [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md)                                                     |
+| **Layer 4**   | Roslyn indexing, symbol graph                                | [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md)                                                     |
+| **Layer 5**   | (merged into Layer 6.5)                                      | -                                                                                                  |
+| **Layer 6**   | Runtime Safety Kernel - enforcement, abort authority         | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md)                                               |
+| **Layer 6.5** | AI Construction Engine - intelligence, generation            | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md)                                           |
+| **Layer 6.6** | **AI Service Layer - openai SDK, user-configured providers** | [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md)                                                       |
+| **Layer 7**   | WinUI 3 shell, user interaction                              | [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md)                                                     |
 
 ### System Ownership Matrix
 
 > **AI-Primary Ownership Model**: The AI Construction Engine proposes WHAT to build. The Runtime Safety Kernel enforces HOW it's done safely.
 
-| Subsystem | Owner | AI Proposes | Kernel Enforces | Detailed Spec |
-|-----------|-------|-------------|-----------------|---------------|
-| **Intent Parsing** | AI Construction Engine | ✅ | ❌ | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) |
-| **Architecture Design** | AI Construction Engine | ✅ | ❌ | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) |
-| **Code Generation** | AI Construction Engine | ✅ | ❌ | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) |
-| **Code Mutation** | Patch Engine | ❌ | ✅ | [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) |
-| **Build Execution** | Execution Kernel | ❌ | ✅ | [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) |
-| **Capability Inference** | AI Construction Engine | ✅ | ❌ | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
-| **Manifest Generation** | Runtime Safety Kernel | ❌ | ✅ | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
-| **MSIX Packaging** | Runtime Safety Kernel | ❌ | ✅ | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
-| **Certificate Signing** | Runtime Safety Kernel | ❌ | ✅ | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
-| **Snapshot Management** | Runtime Safety Kernel | ❌ | ✅ | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) |
-| **State Transitions** | Runtime Safety Kernel | ❌ | ✅ | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) |
-| **Retry Strategy (1-9)** | AI Construction Engine | ✅ | ❌ | [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) |
-| **System Reset (10+)** | Runtime Safety Kernel | ❌ | ✅ | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) |
-| **Preview Rendering** | Preview System | ❌ | ✅ | [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) |
-| **Asset Generation** | AI Construction Engine | ✅ | ❌ | [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) |
-| **Version Authority** | Runtime Safety Kernel | ❌ | ✅ | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
+| Subsystem                | Owner                  | AI Proposes | Kernel Enforces | Detailed Spec                                                                                      |
+| ------------------------ | ---------------------- | ----------- | --------------- | -------------------------------------------------------------------------------------------------- |
+| **Intent Parsing**       | AI Construction Engine | ✅          | ❌              | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md)                                           |
+| **Architecture Design**  | AI Construction Engine | ✅          | ❌              | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md)                                           |
+| **Code Generation**      | AI Construction Engine | ✅          | ❌              | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md)                                           |
+| **Code Mutation**        | Patch Engine           | ❌          | ✅              | [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md)                                                     |
+| **Build Execution**      | Execution Kernel       | ❌          | ✅              | [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md)                                             |
+| **Capability Inference** | AI Construction Engine | ✅          | ❌              | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
+| **Manifest Generation**  | Runtime Safety Kernel  | ❌          | ✅              | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
+| **MSIX Packaging**       | Runtime Safety Kernel  | ❌          | ✅              | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
+| **Certificate Signing**  | Runtime Safety Kernel  | ❌          | ✅              | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
+| **Snapshot Management**  | Runtime Safety Kernel  | ❌          | ✅              | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md)                                               |
+| **State Transitions**    | Runtime Safety Kernel  | ❌          | ✅              | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md)                                               |
+| **Retry Strategy (1-9)** | AI Construction Engine | ✅          | ❌              | [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md)                                                       |
+| **System Reset (10+)**   | Runtime Safety Kernel  | ❌          | ✅              | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md)                                               |
+| **Preview Rendering**    | Preview System         | ❌          | ✅              | [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md)                                                           |
+| **Asset Generation**     | AI Construction Engine | ✅          | ❌              | [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md)                             |
+| **Version Authority**    | Runtime Safety Kernel  | ❌          | ✅              | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
 
 **Key**:
+
 - **Owner**: The primary component responsible for this subsystem
 - **AI Proposes**: The AI Construction Engine suggests/creates initial output
 - **Kernel Enforces**: The Runtime Safety Kernel validates, applies, or enforces the result
@@ -231,50 +232,50 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 
 ### 3.1 Execution Invariants
 
-| Invariant | Description |
-|-----------|-------------|
-| **One Active Task** | Only ONE mutation task can be active at a time. No parallel patching. |
-| **No Raw File Writes** | All code mutations MUST go through the Roslyn-based Patch Engine. |
-| **Snapshot Before Mutation** | A snapshot MUST exist before any patch is applied. |
-| **Continuous Retry** | The system retries until success or user cancellation. No max retry limit. |
-| **Deterministic Replay** | Event log enables perfect state reconstruction. |
+| Invariant                    | Description                                                                |
+| ---------------------------- | -------------------------------------------------------------------------- |
+| **One Active Task**          | Only ONE mutation task can be active at a time. No parallel patching.      |
+| **No Raw File Writes**       | All code mutations MUST go through the Roslyn-based Patch Engine.          |
+| **Snapshot Before Mutation** | A snapshot MUST exist before any patch is applied.                         |
+| **Continuous Retry**         | The system retries until success or user cancellation. No max retry limit. |
+| **Deterministic Replay**     | Event log enables perfect state reconstruction.                            |
 
 ### 3.2 Data Invariants
 
-| Invariant | Description |
-|-----------|-------------|
-| **Single Source of Truth** | `BuilderContext` is the authoritative state. |
-| **Immutable Events** | All events are records (immutable by default). |
-| **Atomic Graph Updates** | Database updates are transactional. |
+| Invariant                       | Description                                       |
+| ------------------------------- | ------------------------------------------------- |
+| **Single Source of Truth**      | `BuilderContext` is the authoritative state.      |
+| **Immutable Events**            | All events are records (immutable by default).    |
+| **Atomic Graph Updates**        | Database updates are transactional.               |
 | **Hash-Based Change Detection** | File changes detected via SHA256 hash comparison. |
 
 ### 3.3 Security Invariants
 
-| Invariant | Description |
-|-----------|-------------|
-| **Zero Trust AI** | Never assume AI output is safe. All patches validated. |
-| **Path Sandbox** | All paths must be relative to project root. No `..` traversal. |
-| **Banned Directories** | `.git`, `.vs`, `bin`, `obj` are off-limits to AI patches. |
-| **Operation Whitelist** | Only whitelisted patch operations are permitted. |
-| **User-Configured AI** | AI capabilities via user-configured OpenAI-compatible providers |
+| Invariant               | Description                                                     |
+| ----------------------- | --------------------------------------------------------------- |
+| **Zero Trust AI**       | Never assume AI output is safe. All patches validated.          |
+| **Path Sandbox**        | All paths must be relative to project root. No `..` traversal.  |
+| **Banned Directories**  | `.git`, `.vs`, `bin`, `obj` are off-limits to AI patches.       |
+| **Operation Whitelist** | Only whitelisted patch operations are permitted.                |
+| **User-Configured AI**  | AI capabilities via user-configured OpenAI-compatible providers |
 
 ### 3.4 Packaging Invariants
 
-| Invariant | Description |
-|-----------|-------------|
+| Invariant                          | Description                                                                                                                                                                                                                               |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Capability Inference Mandatory** | For **Release/Packaging builds**, capability scan MUST run before the build as a mandatory first step. **Preview/Debug builds** follow the reactive model defined in `AI_RUNTIME_MODEL.md` (inference runs after build, only on failure). |
-| **Version Authority** | `BuilderContext.ProjectMetadata["AppVersion"]` is the single source of truth. |
-| **Signing Mandatory** | All MSIX packages MUST be signed. |
-| **Atomic Packaging** | Packaging is all-or-nothing. Any failure triggers rollback. |
+| **Version Authority**              | `BuilderContext.ProjectMetadata["AppVersion"]` is the single source of truth.                                                                                                                                                             |
+| **Signing Mandatory**              | All MSIX packages MUST be signed.                                                                                                                                                                                                         |
+| **Atomic Packaging**               | Packaging is all-or-nothing. Any failure triggers rollback.                                                                                                                                                                               |
 
 ### 3.5 AI Service Invariants
 
-| Invariant | Description |
-|-----------|-------------|
+| Invariant                     | Description                                             |
+| ----------------------------- | ------------------------------------------------------- |
 | **User-Configured Providers** | Users configure AI providers via Settings > AI Settings |
-| **Local Service Only** | AI mini service runs on localhost:3001 only |
-| **Automatic Startup** | Desktop app starts AI service if not running |
-| **Health Monitoring** | Desktop app monitors AI service health |
+| **Local Service Only**        | AI mini service runs on localhost:3001 only             |
+| **Automatic Startup**         | Desktop app starts AI service if not running            |
+| **Health Monitoring**         | Desktop app monitors AI service health                  |
 
 ### 3.X Global AI Configuration Invariant (NEW)
 
@@ -282,7 +283,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 > It is NOT project-scoped.
 
 • Stored encrypted at:
-  %USERPROFILE%\.syncai\Config\ai.config.enc
+%USERPROFILE%\.syncai\Config\ai.config.enc
 
 • Encrypted using Windows DPAPI (CurrentUser scope).
 • Loaded and validated at application startup.
@@ -292,6 +293,7 @@ The AI Mini Service does NOT persist configuration to disk.
 All configuration is pushed at runtime via POST /api/config.
 
 Changing AI configuration forces:
+
 1. SYSTEM_RESET
 2. Mini-service restart
 3. Revalidation before resuming execution
@@ -309,25 +311,25 @@ public enum AIConfigState
     /// User has not configured any AI providers in Settings > AI Settings.
     /// </summary>
     NOT_CONFIGURED,
-    
+
     /// <summary>
     /// Configuration has been provided but not yet validated.
     /// POST /api/config has been called with provider details.
     /// </summary>
     CONFIGURED,
-    
+
     /// <summary>
     /// Configuration has been validated successfully.
     /// Test LLM call succeeded. Blueprint design is now permitted.
     /// </summary>
     VALIDATED,
-    
+
     /// <summary>
     /// Configuration was provided but validation failed.
     /// Invalid API key, unreachable endpoint, or quota exceeded.
     /// </summary>
     INVALID,
-    
+
     /// <summary>
     /// AI Mini Service is not running or not reachable.
     /// Service health check failed.
@@ -338,16 +340,16 @@ public enum AIConfigState
 
 **State Transition Rules:**
 
-| From State | Trigger | To State |
-|------------|---------|----------|
-| NOT_CONFIGURED | User saves AI Settings | CONFIGURED |
-| CONFIGURED | POST /api/config succeeds + test call passes | VALIDATED |
-| CONFIGURED | POST /api/config fails | INVALID |
-| CONFIGURED | Mini-service stops responding | SERVICE_UNAVAILABLE |
-| VALIDATED | Mini-service stops responding | SERVICE_UNAVAILABLE |
-| VALIDATED | User changes AI Settings | CONFIGURED |
-| INVALID | User saves new AI Settings | CONFIGURED |
-| SERVICE_UNAVAILABLE | Mini-service restarts + becomes healthy | CONFIGURED |
+| From State          | Trigger                                      | To State            |
+| ------------------- | -------------------------------------------- | ------------------- |
+| NOT_CONFIGURED      | User saves AI Settings                       | CONFIGURED          |
+| CONFIGURED          | POST /api/config succeeds + test call passes | VALIDATED           |
+| CONFIGURED          | POST /api/config fails                       | INVALID             |
+| CONFIGURED          | Mini-service stops responding                | SERVICE_UNAVAILABLE |
+| VALIDATED           | Mini-service stops responding                | SERVICE_UNAVAILABLE |
+| VALIDATED           | User changes AI Settings                     | CONFIGURED          |
+| INVALID             | User saves new AI Settings                   | CONFIGURED          |
+| SERVICE_UNAVAILABLE | Mini-service restarts + becomes healthy      | CONFIGURED          |
 
 **Critical Invariant:** `BLUEPRINT_DESIGN` state transition is BLOCKED unless `AIConfigState == VALIDATED`.
 
@@ -357,12 +359,12 @@ public enum AIConfigState
 
 > **To ensure reproducible AI behavior, these parameters are LOCKED and CANNOT be changed by agents.**
 
-| Parameter | Locked Value | Rationale |
-|-----------|--------------|-----------|
-| `temperature` | `0.0` | Deterministic output for reproducible builds |
-| `top_p` | `1.0` | Use full probability distribution |
-| `presence_penalty` | `0.0` | No repetition penalty for code generation |
-| `frequency_penalty` | `0.0` | No frequency-based repetition penalty |
+| Parameter           | Locked Value | Rationale                                    |
+| ------------------- | ------------ | -------------------------------------------- |
+| `temperature`       | `0.0`        | Deterministic output for reproducible builds |
+| `top_p`             | `1.0`        | Use full probability distribution            |
+| `presence_penalty`  | `0.0`        | No repetition penalty for code generation    |
+| `frequency_penalty` | `0.0`        | No frequency-based repetition penalty        |
 
 > **INVARIANT**: Agents CANNOT override these locked values. Any request passing different values MUST be rejected by the AI Mini Service.
 
@@ -372,17 +374,17 @@ public enum AIConfigState
 
 > **AI configuration MUST be encrypted at rest using Windows DPAPI.**
 
-| Aspect | Specification |
-|--------|---------------|
-| **Encryption Algorithm** | Windows DPAPI (Data Protection API) |
-| **Scope** | CurrentUser (only the same Windows user can decrypt) |
-| **File Path** | `%USERPROFILE%\.syncai\Config\ai.config.enc` |
-| **Format** | Encrypted binary blob (no plain JSON ever written to disk) |
-| **Key Management** | Windows manages key lifecycle automatically |
+| Aspect                   | Specification                                              |
+| ------------------------ | ---------------------------------------------------------- |
+| **Encryption Algorithm** | Windows DPAPI (Data Protection API)                        |
+| **Scope**                | CurrentUser (only the same Windows user can decrypt)       |
+| **File Path**            | `%USERPROFILE%\.syncai\Config\ai.config.enc`               |
+| **Format**               | Encrypted binary blob (no plain JSON ever written to disk) |
+| **Key Management**       | Windows manages key lifecycle automatically                |
 
 **Encryption Flow:**
 
-```
+```text
 1. User enters API keys in Settings > AI Settings
 2. Desktop app encrypts using DPAPI (CurrentUser scope)
 3. Encrypted blob written to ai.config.enc
@@ -390,7 +392,6 @@ public enum AIConfigState
 5. Decrypted config pushed to Mini Service via POST /api/config
 6. In-memory config cleared on app shutdown
 ```
-
 
 ---
 
@@ -404,15 +405,15 @@ public enum AIConfigState
 
 These are the **non-negotiable** technologies that ALL generated apps use:
 
-| Technology | Purpose | Why Fixed |
-|------------|---------|-----------|
-| **WinUI 3** | UI Framework | Modern Windows native UI |
-| **C# 12** | Language | .NET 8 ecosystem |
-| **XAML** | UI Markup | WinUI 3 standard |
-| **.NET 8** | Runtime | Long-term support |
-| **SQLite** | Local Database | Built into Windows |
-| **MVVM** | Architecture | Proven pattern for XAML apps |
-| **MSIX** | Packaging | Windows standard installer |
+| Technology  | Purpose        | Why Fixed                    |
+| :---------- | :------------- | :--------------------------- |
+| **WinUI 3** | UI Framework   | Modern Windows native UI     |
+| **C# 12**   | Language       | .NET 8 ecosystem             |
+| **XAML**    | UI Markup      | WinUI 3 standard             |
+| **.NET 8**  | Runtime        | Long-term support            |
+| **SQLite**  | Local Database | Built into Windows           |
+| **MVVM**    | Architecture   | Proven pattern for XAML apps |
+| **MSIX**    | Packaging      | Windows standard installer   |
 
 **This is what the "Hidden System Prompt" (Constraint Documents) defines.**
 
@@ -420,45 +421,45 @@ These are the **non-negotiable** technologies that ALL generated apps use:
 
 The AI can add ANY additional capability based on the user's idea:
 
-| Capability | Examples |
-|------------|----------|
-| **NuGet Packages** | CommunityToolkit, Newtonsoft.Json, SkiaSharp, etc. |
-| **Windows APIs** | File system, Networking, Bluetooth, Media, etc. |
-| **Cloud Services** | REST APIs, Authentication, Real-time sync |
-| **Third-party Libraries** | Charts, PDF, Image processing, etc. |
-| **Custom UI Designs** | Any layout, theme, animation |
+| Capability                | Examples                                           |
+| ------------------------- | -------------------------------------------------- |
+| **NuGet Packages**        | CommunityToolkit, Newtonsoft.Json, SkiaSharp, etc. |
+| **Windows APIs**          | File system, Networking, Bluetooth, Media, etc.    |
+| **Cloud Services**        | REST APIs, Authentication, Real-time sync          |
+| **Third-party Libraries** | Charts, PDF, Image processing, etc.                |
+| **Custom UI Designs**     | Any layout, theme, animation                       |
 
 ### What Sync AI Can Build
 
-| Category | Example Apps |
-|----------|--------------|
-| ✅ Productivity | Notes, Tasks, Calendars, Time tracking |
-| ✅ Business | CRM, Inventory, Invoicing, POS |
-| ✅ Media | Players, Editors, Viewers, Converters |
-| ✅ Utility | File managers, System tools, Launchers |
-| ✅ Social | Chat clients, Feed readers, Community apps |
-| ✅ Education | Learning apps, Quizzes, Flashcards |
-| ✅ Health | Fitness tracking, Medical records, Diet apps |
-| ✅ Finance | Budgeting, Expenses, Investment tracking |
-| ✅ Creative | Drawing, Design tools, Music creation |
-| ✅ Games | 2D games, Puzzles, Arcade |
-| ✅ E-commerce | Shopping apps, Inventory, Order management |
-| ✅ Communication | Email clients, Messaging, VoIP |
-| ✅ Developer Tools | Code editors, DB managers, API testers |
+| Category           | Example Apps                                 |
+| ------------------ | -------------------------------------------- |
+| ✅ Productivity    | Notes, Tasks, Calendars, Time tracking       |
+| ✅ Business        | CRM, Inventory, Invoicing, POS               |
+| ✅ Media           | Players, Editors, Viewers, Converters        |
+| ✅ Utility         | File managers, System tools, Launchers       |
+| ✅ Social          | Chat clients, Feed readers, Community apps   |
+| ✅ Education       | Learning apps, Quizzes, Flashcards           |
+| ✅ Health          | Fitness tracking, Medical records, Diet apps |
+| ✅ Finance         | Budgeting, Expenses, Investment tracking     |
+| ✅ Creative        | Drawing, Design tools, Music creation        |
+| ✅ Games           | 2D games, Puzzles, Arcade                    |
+| ✅ E-commerce      | Shopping apps, Inventory, Order management   |
+| ✅ Communication   | Email clients, Messaging, VoIP               |
+| ✅ Developer Tools | Code editors, DB managers, API testers       |
 
 ### What Sync AI Does NOT Build
 
-| Category | Reason |
-|----------|--------|
-| ❌ Web Apps | This is a Windows native builder |
-| ❌ Mobile Apps (iOS/Android) | Windows desktop only |
-| ❌ Console Apps | GUI apps only |
-| ❌ Linux/macOS Apps | Windows only |
-| ❌ Backend Services | Client apps only |
+| Category                     | Reason                           |
+| ---------------------------- | -------------------------------- |
+| ❌ Web Apps                  | This is a Windows native builder |
+| ❌ Mobile Apps (iOS/Android) | Windows desktop only             |
+| ❌ Console Apps              | GUI apps only                    |
+| ❌ Linux/macOS Apps          | Windows only                     |
+| ❌ Backend Services          | Client apps only                 |
 
 ### How It Works
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │  USER PROMPT: "Build me a fitness app with charts"          │
 ├─────────────────────────────────────────────────────────────┤
@@ -492,11 +493,13 @@ The AI can add ANY additional capability based on the user's idea:
 #### Layer 1: Filesystem Sandbox + SQLite Graph DB
 
 **Owns:**
+
 - Workspace isolation and path validation
 - Snapshot creation, compression, and restoration
 - SQLite database for symbols, dependencies, errors
 
 **Does NOT Own:**
+
 - Build execution (Layer 2)
 - Code indexing (Layer 4)
 - Patch application (Layer 3)
@@ -506,11 +509,13 @@ The AI can add ANY additional capability based on the user's idea:
 #### Layer 2: Execution Kernel
 
 **Owns:**
+
 - MSBuild invocation via `Microsoft.Build` API
 - NuGet restore via `NuGet.Commands` API
 - Process management for preview execution
 
 **Does NOT Own:**
+
 - Task scheduling (Layer 6)
 - File mutations (Layer 3)
 - Error classification (Layer 6)
@@ -520,12 +525,14 @@ The AI can add ANY additional capability based on the user's idea:
 #### Layer 2.5: Packaging & Manifest Engine
 
 **Owns:**
+
 - `Package.appxmanifest` generation
 - Capability inference from code analysis
 - MSIX bundle creation
 - Certificate management and signing
 
 **Does NOT Own:**
+
 - Build execution (Layer 2)
 - Code analysis for capabilities (uses Layer 4 data)
 
@@ -534,11 +541,13 @@ The AI can add ANY additional capability based on the user's idea:
 #### Layer 3: Patch Engine
 
 **Owns:**
+
 - AST-based code mutations via Roslyn
 - Conflict detection (hash mismatch, signature mismatch)
 - Transactional patch application
 
 **Does NOT Own:**
+
 - Code indexing (Layer 4)
 - Build execution (Layer 2)
 - AI code generation (Layer 6.5)
@@ -548,12 +557,14 @@ The AI can add ANY additional capability based on the user's idea:
 #### Layer 4: Code Intelligence (Roslyn)
 
 **Owns:**
+
 - C# syntax tree parsing
 - Symbol graph construction
 - Impact analysis for mutations
 - XAML binding index
 
 **Does NOT Own:**
+
 - Applying mutations (Layer 3)
 - Task planning (Layer 6.5)
 
@@ -566,6 +577,7 @@ The AI can add ANY additional capability based on the user's idea:
 #### Layer 6: Runtime Safety Kernel
 
 **Owns:**
+
 - State machine (`BuilderState` enum)
 - Task lifecycle management
 - Error classification and retry decisions
@@ -577,6 +589,7 @@ The AI can add ANY additional capability based on the user's idea:
   - Transitions triggered by: User settings change, service health, validation results
 
 **Does NOT Own:**
+
 - Code generation (Layer 6.5)
 - File mutations (Layer 3)
 - UI rendering (Layer 7)
@@ -586,6 +599,7 @@ The AI can add ANY additional capability based on the user's idea:
 #### Layer 6.5: AI Construction Engine
 
 **Owns:**
+
 - Intent parsing and spec generation
 - Task graph (DAG) construction
 - Multi-agent coordination for code generation
@@ -593,6 +607,7 @@ The AI can add ANY additional capability based on the user's idea:
 - AI Service Client for Layer 6.6 communication
 
 **Does NOT Own:**
+
 - Applying generated code (Layer 3)
 - Build execution (Layer 2)
 - State management (Layer 6)
@@ -603,6 +618,7 @@ The AI can add ANY additional capability based on the user's idea:
 #### Layer 6.6: AI Service Layer (NEW)
 
 **Owns:**
+
 - LLM (Chat Completions) for code generation
 - Image Generation for visual assets
 - Vision Language Model for UI analysis
@@ -610,6 +626,7 @@ The AI can add ANY additional capability based on the user's idea:
 - All communication with user-configured OpenAI-compatible providers
 
 **Does NOT Own:**
+
 - Code generation logic (Layer 6.5)
 - State management (Layer 6)
 - File mutations (Layer 3)
@@ -619,12 +636,14 @@ The AI can add ANY additional capability based on the user's idea:
 #### Layer 7: User Interface
 
 **Owns:**
+
 - WinUI 3 shell and navigation
 - User input handling
 - Progress display
 - Preview rendering
 
 **Does NOT Own:**
+
 - State management (Layer 6)
 - Business logic (all lower layers)
 
@@ -632,19 +651,19 @@ The AI can add ANY additional capability based on the user's idea:
 
 ### 4.2 Cross-Layer Communication Rules
 
-| From Layer | To Layer | Allowed? | Mechanism |
-|------------|----------|----------|-----------|
-| 7 → 6 | UI → Orchestrator | ✅ Yes | Command objects |
-| 6 → 6.5 | Orchestrator → AI Engine | ✅ Yes | Task dispatch |
-| 6.5 → 6.6 | AI Engine → AI Service | ✅ Yes | HTTP REST API |
-| 6 → 3 | Orchestrator → Patch | ✅ Yes | Patch operations |
-| 6 → 2 | Orchestrator → Build | ✅ Yes | Build requests |
-| 6.5 → 4 | AI → Roslyn | ✅ Yes | Context queries |
-| 3 → 4 | Patch → Roslyn | ✅ Yes | Syntax trees |
-| 3 → 1 | Patch → Filesystem | ✅ Yes | File writes |
-| 7 → 3 | UI → Patch | ❌ No | - |
-| 7 → 2 | UI → Build | ❌ No | - |
-| 6.6 → External | AI Service → User-configured providers | ✅ Yes | HTTPS |
+| From Layer    | To Layer                               | Allowed? | Mechanism        |
+| :------------ | :------------------------------------- | :------- | :--------------- |
+| **7 → 6**     | UI → Orchestrator                      | ✅ Yes   | Command objects  |
+| **6 → 6.5**   | Orchestrator → AI Engine               | ✅ Yes   | Task dispatch    |
+| **6.5 → 6.6** | AI Engine → AI Service                 | ✅ Yes   | HTTP REST API    |
+| **6 → 3**     | Orchestrator → Patch                   | ✅ Yes   | Patch operations |
+| **6 → 2**     | Orchestrator → Build                   | ✅ Yes   | Build requests   |
+| **6.5 → 4**   | AI → Roslyn                            | ✅ Yes   | Context queries  |
+| **3 → 4**     | Patch → Roslyn                         | ✅ Yes   | Syntax trees     |
+| **3 → 1**     | Patch → Filesystem                     | ✅ Yes   | File writes      |
+| **7 → 3**     | UI → Patch                             | ❌ No    | -                |
+| **7 → 2**     | UI → Build                             | ❌ No    | -                |
+| **6.6 → Ext** | AI Service → User-configured providers | ✅ Yes   | HTTPS            |
 
 **Rule:** UI (Layer 7) ONLY communicates with Orchestrator (Layer 6). All other communication must go through the Orchestrator.
 
@@ -690,7 +709,7 @@ Layer 7: UI shows success, preview refreshes
 
 ### 5.2 State Machine Overview
 
-```
+```text
 IDLE → AI_PLANNING → SPEC_PARSED → TASK_GRAPH_READY
     → TASK_EXECUTING → VALIDATING → [RETRYING ↔ TASK_EXECUTING]
     → COMPLETED → IDLE
@@ -704,21 +723,21 @@ IDLE → AI_PLANNING → SPEC_PARSED → TASK_GRAPH_READY
 
 ### 6.1 Parallel Operations (✅ Safe)
 
-| Operation | Reasoning |
-|-----------|-----------|
-| Planning Layer | No shared state, read-only analysis |
-| AI Code Generation | Stateless, independent HTTP calls to Layer 6.6 |
-| Retrieval & Indexing | Read operations on immutable snapshots |
+| Operation            | Reasoning                                      |
+| -------------------- | ---------------------------------------------- |
+| Planning Layer       | No shared state, read-only analysis            |
+| AI Code Generation   | Stateless, independent HTTP calls to Layer 6.6 |
+| Retrieval & Indexing | Read operations on immutable snapshots         |
 
 ### 6.2 Serialized Operations (🔒 Must Be Sequential)
 
-| Operation | Reasoning |
-|-----------|-----------|
-| Patch Application | File system mutations must be atomic |
-| Indexing | Symbol graph updates require exclusive lock |
-| Restore/Rollback | Cannot overlap with other operations |
-| Build | MSBuild requires project lock |
-| Snapshot | Disk writes must be ordered |
+| Operation             | Reasoning                                   |
+| :-------------------- | :------------------------------------------ |
+| **Patch Application** | File system mutations must be atomic        |
+| **Indexing**          | Symbol graph updates require exclusive lock |
+| **Restore/Rollback**  | Cannot overlap with other operations        |
+| **Build**             | MSBuild require project lock                |
+| **Snapshot**          | Disk writes must be ordered                 |
 
 ### 6.3 The Golden Rule
 
@@ -726,14 +745,14 @@ IDLE → AI_PLANNING → SPEC_PARSED → TASK_GRAPH_READY
 
 ### 6.4 Thread Types
 
-| Thread | Purpose | Concurrency |
-|--------|---------|-------------|
-| 🟢 UI Thread | Rendering, user input | Single (main) |
-| 🔵 Orchestrator Thread | Sequential execution | Single |
-| 🟣 AI Worker Pool | Code generation (HTTP to Layer 6.6) | Max 2 concurrent |
-| 🟡 Patch Worker | File mutations | Single-threaded |
-| 🔴 Build Worker | MSBuild compilation | Single (per build) |
-| ⚪ Background Maintenance | Cleanup, pruning | Single |
+| Thread                    | Purpose                             | Concurrency        |
+| ------------------------- | ----------------------------------- | ------------------ |
+| 🟢 UI Thread              | Rendering, user input               | Single (main)      |
+| 🔵 Orchestrator Thread    | Sequential execution                | Single             |
+| 🟣 AI Worker Pool         | Code generation (HTTP to Layer 6.6) | Max 2 concurrent   |
+| 🟡 Patch Worker           | File mutations                      | Single-threaded    |
+| 🔴 Build Worker           | MSBuild compilation                 | Single (per build) |
+| ⚪ Background Maintenance | Cleanup, pruning                    | Single             |
 
 **Detailed Threading Model:** See [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §8.2
 
@@ -755,11 +774,11 @@ All version references MUST derive from this value:
 
 ### 7.2 Version Increment Rules
 
-| Trigger | Action | Example |
-|---------|--------|---------|
-| Code Patch | Increment Patch | `1.0.0` → `1.0.1` |
+| Trigger           | Action          | Example           |
+| ----------------- | --------------- | ----------------- |
+| Code Patch        | Increment Patch | `1.0.0` → `1.0.1` |
 | Capability Change | Increment Minor | `1.0.1` → `1.1.0` |
-| Schema Breaking | Increment Major | `1.1.0` → `2.0.0` |
+| Schema Breaking   | Increment Major | `1.1.0` → `2.0.0` |
 
 **Rule:** If multiple triggers apply, the **highest order** increment wins.
 
@@ -777,14 +796,15 @@ The AI Construction Engine has full flexibility to adapt, retry, and escalate du
 
 ### 8.2 Retry Ownership
 
-| Range | Owner | Enforcement | Behavior |
-|-------|-------|-------------|----------|
-| 1-9 | AI Construction Engine | Strategy flexible | AI adapts, learns, retries |
-| 10+ | Runtime Safety Kernel | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
+| Range   | Owner                  | Enforcement            | Behavior                              |
+| :------ | :--------------------- | :--------------------- | :------------------------------------ |
+| **1-9** | AI Construction Engine | Strategy flexible      | AI adapts, learns, retries            |
+| **10+** | Runtime Safety Kernel  | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
 
 ### 8.3 AI Retry Strategy (Cycles 1-9)
 
 The AI Construction Engine may:
+
 - **FIX_LEVEL (1-3)**: Fix Agent handles local token repairs
 - **INTEGRATION_LEVEL (4-6)**: Integration Agent handles DI and wiring
 - **ARCHITECTURE_LEVEL (7-9)**: Architect Agent re-evaluates the plan
@@ -794,6 +814,7 @@ AI selects which agent handles the fix and adapts approach based on errors.
 ### 8.4 Kernel Enforcement (Cycle 10+)
 
 The Runtime Safety Kernel initiates a SYSTEM RESET:
+
 - Rolls back to `PreMutationSnapshotId`
 - Clears all task-scoped memory (Forced AI Amnesia)
 - Emits `SystemResetEvent`
@@ -824,17 +845,17 @@ All AI-generated content MUST pass these gates:
 
 ### 9.2 Execution Isolation
 
-| Isolation Method | Use Case |
-|------------------|----------|
-| Windows Sandbox | Preferred for preview execution |
-| AppContainer | Fallback if Sandbox unavailable |
-| Job Objects | Resource limits (1GB memory, 50% CPU) |
+| Isolation Method | Use Case                              |
+| ---------------- | ------------------------------------- |
+| Windows Sandbox  | Preferred for preview execution       |
+| AppContainer     | Fallback if Sandbox unavailable       |
+| Job Objects      | Resource limits (1GB memory, 50% CPU) |
 
 ### 9.3 Banned Directories
 
 AI patches cannot touch:
 
-```
+```text
 .git, .vs, bin, obj, .metadata.json
 ```
 
@@ -844,12 +865,12 @@ AI patches cannot touch:
 
 ### 9.4 AI Service Security (NEW)
 
-| Aspect | Implementation |
-|--------|---------------|
-| **Binding** | localhost only (127.0.0.1) |
-| **Port** | 3001 (configurable) |
-| **Authentication** | Not required (local service) |
-| **API Keys** | User-configured per model slot in Settings > AI Settings |
+| Aspect             | Implementation                                           |
+| ------------------ | -------------------------------------------------------- |
+| **Binding**        | localhost only (127.0.0.1)                               |
+| **Port**           | 3001 (configurable)                                      |
+| **Authentication** | Not required (local service)                             |
+| **API Keys**       | User-configured per model slot in Settings > AI Settings |
 
 ---
 
@@ -857,13 +878,13 @@ AI patches cannot touch:
 
 ### 10.1 Local-First Architecture (Updated)
 
-| Component | Location | Cloud Required? |
-|-----------|----------|-----------------|
-| **AI Reasoning** | **Local AI Mini Service (openai SDK)** | **User-configured providers** |
-| Build & Compilation | Local PC | No |
-| NuGet Restore | Local PC | No (if cached) |
-| App Execution | Local PC | No |
-| Data Storage | Local SQLite | No |
+| Component           | Location                               | Cloud Required?               |
+| ------------------- | -------------------------------------- | ----------------------------- |
+| **AI Reasoning**    | **Local AI Mini Service (openai SDK)** | **User-configured providers** |
+| Build & Compilation | Local PC                               | No                            |
+| NuGet Restore       | Local PC                               | No (if cached)                |
+| App Execution       | Local PC                               | No                            |
+| Data Storage        | Local SQLite                           | No                            |
 
 ### 10.2 Distribution
 
@@ -883,32 +904,38 @@ AI patches cannot touch:
 ## 11. Implementation Roadmap
 
 ### Phase 0: AI Service Foundation (NEW - Weeks 0-1)
+
 - Set up AI Mini Service (Bun + openai SDK)
 - Implement all API endpoints (LLM, Image, Vision, Search)
 - Create C# client for Layer 6.6 communication
 - Test all AI capabilities
 
 ### Phase 1: Foundation (Weeks 1-4)
+
 - Orchestrator Engine (Layer 6)
 - Filesystem Sandbox (Layer 1)
 - SQLite Schema (Layer 1)
 
 ### Phase 2: Code Intelligence (Weeks 4-6)
+
 - Roslyn Indexing Service (Layer 4)
 - Symbol Graph (Layer 4)
 - Impact Analysis (Layer 4)
 
 ### Phase 3: Mutation Safety (Weeks 7-9)
+
 - Patch Engine (Layer 3)
 - Conflict Detection (Layer 3)
 - Rollback System (Layer 1)
 
 ### Phase 4: Execution (Weeks 10-12)
+
 - Execution Kernel (Layer 2)
 - Error Classification (Layer 6)
 - Auto-Fix Strategies (Layer 6.5)
 
 ### Phase 5: Production (Weeks 13-15)
+
 - Testing & Hardening
 - Packaging Pipeline (Layer 2.5)
 - Documentation
@@ -919,32 +946,32 @@ AI patches cannot touch:
 
 ## Quick Reference: Where To Find Details
 
-| Topic | Document | Section |
-|-------|----------|---------|
-| **AI Service Layer** | AI_SERVICE_LAYER.md | All |
-| **AI Mini Service Code** | AI_MINI_SERVICE_IMPLEMENTATION.md | All |
-| State Machine | ORCHESTRATION_ENGINE.md | §3 |
-| Task Schema | ORCHESTRATION_ENGINE.md | §2 |
-| Retry Logic | ORCHESTRATION_ENGINE.md | §7 |
-| Thread Types | ORCHESTRATION_ENGINE.md | §8.2 |
-| Boot Sequence | ORCHESTRATION_ENGINE.md | §8.5 |
-| Crash Recovery | ORCHESTRATION_ENGINE.md | §8.7 |
-| Database Schema | CODE_INTELLIGENCE.md | §5 |
-| Roslyn Indexing | CODE_INTELLIGENCE.md | §3-4 |
-| Patch Engine | CODE_INTELLIGENCE.md | §6 |
-| XAML Bindings | CODE_INTELLIGENCE.md | §8 |
-| Sandbox Implementation | EXECUTION_ENVIRONMENT.md | §2 |
-| MSBuild Integration | EXECUTION_ENVIRONMENT.md | §3 |
-| Job Objects | EXECUTION_ENVIRONMENT.md | §4 |
-| ACL Enforcement | EXECUTION_ENVIRONMENT.md | §5 |
-| Machine Variability | EXECUTION_ENVIRONMENT.md | §6 |
-| Intent Parsing | AI_AGENTS_AND_PLANNING.md | §2 |
-| DAG Planning | AI_AGENTS_AND_PLANNING.md | §3 |
-| Agent Contracts | AI_AGENTS_AND_PLANNING.md | §4-5 |
-| Manifest Engine | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md | §2 |
-| Capability Inference | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md | §3 |
-| Certificate Policy | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md | §4.2 |
-| Elevation Policy | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md | §6 |
+| Topic                    | Document                                       | Section |
+| ------------------------ | ---------------------------------------------- | ------- |
+| **AI Service Layer**     | AI_SERVICE_LAYER.md                            | All     |
+| **AI Mini Service Code** | AI_MINI_SERVICE_IMPLEMENTATION.md              | All     |
+| State Machine            | ORCHESTRATION_ENGINE.md                        | §3      |
+| Task Schema              | ORCHESTRATION_ENGINE.md                        | §2      |
+| Retry Logic              | ORCHESTRATION_ENGINE.md                        | §7      |
+| Thread Types             | ORCHESTRATION_ENGINE.md                        | §8.2    |
+| Boot Sequence            | ORCHESTRATION_ENGINE.md                        | §8.5    |
+| Crash Recovery           | ORCHESTRATION_ENGINE.md                        | §8.7    |
+| Database Schema          | CODE_INTELLIGENCE.md                           | §5      |
+| Roslyn Indexing          | CODE_INTELLIGENCE.md                           | §3-4    |
+| Patch Engine             | CODE_INTELLIGENCE.md                           | §6      |
+| XAML Bindings            | CODE_INTELLIGENCE.md                           | §8      |
+| Sandbox Implementation   | EXECUTION_ENVIRONMENT.md                       | §2      |
+| MSBuild Integration      | EXECUTION_ENVIRONMENT.md                       | §3      |
+| Job Objects              | EXECUTION_ENVIRONMENT.md                       | §4      |
+| ACL Enforcement          | EXECUTION_ENVIRONMENT.md                       | §5      |
+| Machine Variability      | EXECUTION_ENVIRONMENT.md                       | §6      |
+| Intent Parsing           | AI_AGENTS_AND_PLANNING.md                      | §2      |
+| DAG Planning             | AI_AGENTS_AND_PLANNING.md                      | §3      |
+| Agent Contracts          | AI_AGENTS_AND_PLANNING.md                      | §4-5    |
+| Manifest Engine          | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md | §2      |
+| Capability Inference     | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md | §3      |
+| Certificate Policy       | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md | §4.2    |
+| Elevation Policy         | WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md | §6      |
 
 ---
 
@@ -959,14 +986,14 @@ AI patches cannot touch:
 
 ## Change Log
 
-| Date | Change | Author |
-|------|--------|--------|
+| Date       | Change                                                                                                                    | Author            |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------- |
 | 2026-02-24 | **Added Section 3.6: AI Capabilities Definition** - Base Tech Stack, Extended Capabilities, What Sync AI Can/Cannot Build | Architecture Team |
-| 2026-02-24 | **Removed Cost Control Layer** - simplified AI service | Architecture Team |
-| 2026-02-24 | **Updated AI Service Invariants** | Architecture Team |
-| 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - 3-slot user-configured providers | Architecture Team |
-| 2026-02-23 | **Removed TTS/ASR features** - Simplified to LLM, Vision, Image Gen, Search | Architecture Team |
-| 2026-02-22 | **Added Layer 6.6: AI Service Layer** | Architecture Team |
-| 2026-02-22 | Added AI Service cross-references | Architecture Team |
-| 2026-02-22 | Added AI Service cross-references | Architecture Team |
-| 2026-02-20 | Restructured as authoritative invariant map; extracted details to specialized specs | Architecture Team |
+| 2026-02-24 | **Removed Cost Control Layer** - simplified AI service                                                                    | Architecture Team |
+| 2026-02-24 | **Updated AI Service Invariants**                                                                                         | Architecture Team |
+| 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - 3-slot user-configured providers                                | Architecture Team |
+| 2026-02-23 | **Removed TTS/ASR features** - Simplified to LLM, Vision, Image Gen, Search                                               | Architecture Team |
+| 2026-02-22 | **Added Layer 6.6: AI Service Layer**                                                                                     | Architecture Team |
+| 2026-02-22 | Added AI Service cross-references                                                                                         | Architecture Team |
+| 2026-02-22 | Added AI Service cross-references                                                                                         | Architecture Team |
+| 2026-02-20 | Restructured as authoritative invariant map; extracted details to specialized specs                                       | Architecture Team |

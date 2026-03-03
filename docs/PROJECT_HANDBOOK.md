@@ -1,10 +1,8 @@
 # PROJECT HANDBOOK
 
-> **The Developer's Guide to Structure, Contribution, and Deployment**
+> **Sync AI is a Local AI Full-Stack Windows Native App Builder** — a sophisticated desktop application that autonomously designs, generates, compiles, validates, fixes, and packages complete production-ready Windows desktop applications from natural language descriptions by operators or users.
 >
-> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
->
-> _The AI Construction Engine is the Primary Brain. The Runtime Safety Kernel is the Enforcement Layer._
+> _Internally: AI Construction Engine (Primary Brain) + Runtime Safety Kernel (Enforcement Layer)._
 
 ---
 
@@ -120,17 +118,17 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 
 ### The 8-Layer Architecture (Infrastructure-Up Model)
 
-| Layer | Name | Responsibility | Directory |
-|-------|------|----------------|-----------|
-| **Layer 1** | Filesystem Sandbox + SQLite | Isolated storage, snapshots | `Services/🟢 Filesystem Sandbox/` |
-| **Layer 2** | Execution Kernel | MSBuild, NuGet, process management | `Services/🔵 Execution Kernel/` |
-| **Layer 2.5** | Packaging Engine | Manifest, capability inference, MSIX | `Services/🟤 Packaging Engine/` |
-| **Layer 3** | Patch Engine | AST mutations, conflict detection | `Services/🟠 Patch Engine/` |
-| **Layer 4** | Code Intelligence | Roslyn indexing, symbol graph | `Services/🟡 Code Intelligence/` |
-| **Layer 6** | Runtime Safety Kernel | State machine, retry logic, enforcement | `Services/🔴 Runtime Safety Kernel/` |
-| **Layer 6.5** | AI Construction Engine | Primary brain, code generation | `Services/🟣 AI Construction Engine/` |
-| **Layer 6.6** | **AI Service Layer** | **openai SDK - user-configured providers** | `Assets/ai-service.exe` |
-| **Layer 7** | User Interface | WinUI 3 shell | `UI/` |
+| Layer         | Name                        | Responsibility                             | Directory                             |
+| :------------ | :-------------------------- | :----------------------------------------- | :------------------------------------ |
+| **Layer 1**   | Filesystem Sandbox + SQLite | Isolated storage, snapshots                | `Services/🟢 Filesystem Sandbox/`     |
+| **Layer 2**   | Execution Kernel            | MSBuild, NuGet, process management         | `Services/🔵 Execution Kernel/`       |
+| **Layer 2.5** | Packaging Engine            | Manifest, capability inference, MSIX       | `Services/🟤 Packaging Engine/`       |
+| **Layer 3**   | Patch Engine                | AST mutations, conflict detection          | `Services/🟠 Patch Engine/`           |
+| **Layer 4**   | Code Intelligence           | Roslyn indexing, symbol graph              | `Services/🟡 Code Intelligence/`      |
+| **Layer 6**   | Runtime Safety Kernel       | State machine, retry logic, enforcement    | `Services/🔴 Runtime Safety Kernel/`  |
+| **Layer 6.5** | AI Construction Engine      | Primary brain, code generation             | `Services/🟣 AI Construction Engine/` |
+| **Layer 6.6** | **AI Service Layer**        | **openai SDK - user-configured providers** | `Assets/ai-service.exe`               |
+| **Layer 7**   | User Interface              | WinUI 3 shell                              | `UI/`                                 |
 
 > **Layer 6.6 (AI Service Layer)**: Provides AI capabilities via user-configured OpenAI-compatible providers.
 > The compiled `ai-service.exe` runs as a hidden background process on localhost:3001.
@@ -138,7 +136,7 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 
 ### Layer Communication Rules
 
-```
+```text
 Layer 7 (UI) ──────────────────→ Layer 6 (Orchestrator) ONLY
                                    │
                                    ↓
@@ -169,59 +167,59 @@ Layer 1 (Filesystem) ←────────── Layer 6 (Orchestrator)
 >
 > **This is what the "Hidden System Prompt" defines - the FRAMEWORK RULES.**
 
-| Technology | Purpose | Why Fixed |
-|------------|---------|-----------|
-| **WinUI 3** | UI Framework | Modern Windows native UI |
-| **C# 12** | Language | .NET 8 ecosystem |
-| **XAML** | UI Markup | WinUI 3 standard |
-| **.NET 8** | Runtime | Long-term support |
-| **SQLite** | Local Database | Built into Windows |
-| **MVVM** | Architecture | Proven pattern for XAML apps |
-| **MSIX** | Packaging | Windows standard installer |
+| Technology  | Purpose        | Why Fixed                    |
+| :---------- | :------------- | :--------------------------- |
+| **WinUI 3** | UI Framework   | Modern Windows native UI     |
+| **C# 12**   | Language       | .NET 8 ecosystem             |
+| **XAML**    | UI Markup      | WinUI 3 standard             |
+| **.NET 8**  | Runtime        | Long-term support            |
+| **SQLite**  | Local Database | Built into Windows           |
+| **MVVM**    | Architecture   | Proven pattern for XAML apps |
+| **MSIX**    | Packaging      | Windows standard installer   |
 
 ### Extended Capabilities (Unlimited)
 
 > **The AI can add ANY additional capability based on user's custom idea.**
 
-| Capability | Examples |
-|------------|----------|
-| **NuGet Packages** | CommunityToolkit, Newtonsoft.Json, SkiaSharp, etc. |
-| **Windows APIs** | File system, Networking, Bluetooth, Media, etc. |
-| **Cloud Services** | REST APIs, Authentication, Real-time sync |
-| **Third-party Libraries** | Charts, PDF, Image processing, etc. |
-| **Custom UI Designs** | Any layout, theme, animation |
+| Capability                | Examples                                           |
+| ------------------------- | -------------------------------------------------- |
+| **NuGet Packages**        | CommunityToolkit, Newtonsoft.Json, SkiaSharp, etc. |
+| **Windows APIs**          | File system, Networking, Bluetooth, Media, etc.    |
+| **Cloud Services**        | REST APIs, Authentication, Real-time sync          |
+| **Third-party Libraries** | Charts, PDF, Image processing, etc.                |
+| **Custom UI Designs**     | Any layout, theme, animation                       |
 
 ### Platform & Runtime
 
-| Component | Technology | Version |
-|-----------|------------|---------|
-| **Runtime** | .NET | 8.0 LTS |
-| **Language** | C# | 12 |
-| **UI Framework** | WinUI 3 (Windows App SDK) | 1.5+ |
-| **Target OS** | Windows 10/11 | Build 19041+ |
+| Component        | Technology                | Version      |
+| ---------------- | ------------------------- | ------------ |
+| **Runtime**      | .NET                      | 8.0 LTS      |
+| **Language**     | C#                        | 12           |
+| **UI Framework** | WinUI 3 (Windows App SDK) | 1.5+         |
+| **Target OS**    | Windows 10/11             | Build 19041+ |
 
 ### Code Intelligence
 
-| Component | Technology |
-|-----------|------------|
-| **C# Analysis** | Microsoft.CodeAnalysis (Roslyn) 4.8+ |
+| Component            | Technology                           |
+| -------------------- | ------------------------------------ |
+| **C# Analysis**      | Microsoft.CodeAnalysis (Roslyn) 4.8+ |
 | **AST Manipulation** | Roslyn SyntaxRewriter, SyntaxFactory |
 
 ### AI Capabilities (Layer 6.6)
 
-| Component | Technology |
-|-----------|------------|
-| **AI SDK** | openai npm SDK (user-configured providers) |
-| **Runtime** | Bun (compiled to standalone .exe) |
-| **Capabilities** | LLM, Vision, Image Gen, Web Search |
-| **Communication** | HTTP on localhost:3001 |
+| Component         | Technology                                 |
+| ----------------- | ------------------------------------------ |
+| **AI SDK**        | openai npm SDK (user-configured providers) |
+| **Runtime**       | Bun (compiled to standalone .exe)          |
+| **Capabilities**  | LLM, Vision, Image Gen, Web Search         |
+| **Communication** | HTTP on localhost:3001                     |
 
 ### Database & Persistence
 
-| Component | Technology |
-|-----------|------------|
-| **Database** | SQLite 3.x |
-| **ORM** | Dapper (micro-ORM) |
+| Component    | Technology         |
+| ------------ | ------------------ |
+| **Database** | SQLite 3.x         |
+| **ORM**      | Dapper (micro-ORM) |
 
 ---
 
@@ -247,6 +245,7 @@ dotnet build
 **DO NOT START WITH LAYER 1**. The correct order:
 
 #### Phase 1A: Runtime Safety Kernel (MUST BE FIRST)
+
 - `BuilderReducer.cs` - Deterministic state transitions
 - `TaskSchema.cs` - Task types, validation strategies
 - `BuilderContext.cs` - State container
@@ -256,11 +255,13 @@ dotnet build
 **Why First?**: Without deterministic orchestration, downstream components will produce nondeterministic mutations.
 
 #### Phase 1B: Orchestrator Integration
+
 - Update all downstream services to ask orchestrator permission
 - All state transitions must emit events
 - All mutations must be serialized
 
 #### Phase 2: Orchestrator-Aware Layers
+
 - Layer 4 (Code Intelligence) - Read-only, can run in parallel
 - Layer 3 (Patch Engine) - Serialized through orchestrator
 - Layer 6.5 (AI Agents) - Ask orchestrator before mutation
@@ -287,6 +288,7 @@ dotnet build
 ### MSIX Packaging
 
 The system automatically generates `Package.appxmanifest` with:
+
 - Identity injection
 - Capability inference (Roslyn-based)
 - Visual elements
@@ -305,12 +307,14 @@ The system automatically generates `Package.appxmanifest` with:
 > **Hide complexity, show only results.**
 
 The user should never see:
+
 - Build errors
 - Retry loops
 - Stack traces
 - Configuration files
 
 The user should only see:
+
 - Working applications
 - Progress indicators
 - Success confirmations
@@ -341,14 +345,14 @@ The user should only see:
 
 ## Change Log
 
-| Date | Change |
-|------|--------|
-| 2026-02-24 | **Added "Base Tech Stack (Fixed Foundation)" section** - Defines non-negotiable technologies |
+| Date       | Change                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------------ |
+| 2026-02-24 | **Added "Base Tech Stack (Fixed Foundation)" section** - Defines non-negotiable technologies           |
 | 2026-02-24 | **Added "Extended Capabilities (Unlimited)" section** - AI can add any capability based on user's idea |
-| 2026-02-23 | Updated docs tree with all 12 documentation files |
-| 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md and BRANDING_INFERENCE_HEURISTICS.md to docs list |
-| 2026-02-23 | **Added Layer 6.6 (AI Service Layer) with openai SDK - 3-slot user-configured providers** |
-| 2026-02-22 | Added AI capabilities section to technology stack |
-| 2026-02-22 | Added AI_SERVICE_LAYER.md and AI_MINI_SERVICE_IMPLEMENTATION.md references |
-| 2026-02-21 | Unified layer definitions with SYSTEM_ARCHITECTURE.md (Fixes Contradiction 2) |
-| 2026-02-21 | Updated directory structure to use infrastructure-up layer model |
+| 2026-02-23 | Updated docs tree with all 12 documentation files                                                      |
+| 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md and BRANDING_INFERENCE_HEURISTICS.md to docs list                |
+| 2026-02-23 | **Added Layer 6.6 (AI Service Layer) with openai SDK - 3-slot user-configured providers**              |
+| 2026-02-22 | Added AI capabilities section to technology stack                                                      |
+| 2026-02-22 | Added AI_SERVICE_LAYER.md and AI_MINI_SERVICE_IMPLEMENTATION.md references                             |
+| 2026-02-21 | Unified layer definitions with SYSTEM_ARCHITECTURE.md (Fixes Contradiction 2)                          |
+| 2026-02-21 | Updated directory structure to use infrastructure-up layer model                                       |
