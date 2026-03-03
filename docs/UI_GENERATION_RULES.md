@@ -532,18 +532,19 @@ All generated apps support light/dark/system themes automatically by using WinUI
 
 The following patterns are **explicitly forbidden** in the generated UI:
 
-| Forbidden Pattern                               | Reason                              | Replacement                             |
-| ----------------------------------------------- | ----------------------------------- | --------------------------------------- |
-| `WebView2`                                      | Phase 1 constraint — no web content | Use native WinUI 3 controls             |
-| Code-behind business logic                      | Violates MVVM                       | Move to ViewModel                       |
-| `Thread.Sleep()` or `Task.Delay()` in UI thread | Blocks UI                           | Use async/await                         |
-| Hardcoded colors and sizes                      | Breaks theme support                | Use `ThemeResource`                     |
-| `StackPanel` as page root                       | Poor resize behavior                | Use `Grid`                              |
-| Direct `DbContext` usage in pages/dialogs       | Violates layering                   | Use service via ViewModel               |
-| `Window` for dialogs                            | WinUI 3 anti-pattern                | Use `ContentDialog`                     |
-| `Canvas` with absolute positioning              | Breaks responsive layout            | Use `Grid`/`StackPanel`/`RelativePanel` |
-| Binding errors ignored                          | Silent data corruption              | All bindings must be validated          |
-| `Dispatcher.RunAsync` (UWP API)                 | Not available in WinUI 3            | Use `DispatcherQueue.TryEnqueue()`      |
+| Forbidden Pattern                               | Reason                              | Replacement                                 |
+| ----------------------------------------------- | ----------------------------------- | ------------------------------------------- |
+| `WebView2`                                      | Phase 1 constraint — no web content | Use native WinUI 3 controls                 |
+| Code-behind business logic                      | Violates MVVM                       | Move to ViewModel                           |
+| `Thread.Sleep()` or `Task.Delay()` in UI thread | Blocks UI                           | Use async/await                             |
+| Hardcoded colors and sizes                      | Breaks theme support                | Use `ThemeResource`                         |
+| `StackPanel` as page root                       | Poor resize behavior                | Use `Grid`                                  |
+| Direct `DbContext` usage in pages/dialogs       | Violates layering                   | Use service via ViewModel                   |
+| `Window` for dialogs                            | WinUI 3 anti-pattern                | Use `ContentDialog`                         |
+| `Canvas` with absolute positioning              | Breaks responsive layout            | Use `Grid`/`StackPanel`/`RelativePanel`     |
+| Binding errors ignored                          | Silent data corruption              | All bindings must be validated              |
+| `Dispatcher.RunAsync` (UWP API)                 | Not available in WinUI 3            | Use `DispatcherQueue.TryEnqueue()`          |
+| Regex for XAML parsing                          | Unsafe and brittle for XML syntax   | Use XML/AST manipulation (e.g. `XDocument`) |
 
 ---
 
