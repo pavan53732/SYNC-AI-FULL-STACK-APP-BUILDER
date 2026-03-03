@@ -46,6 +46,7 @@ The Preview System provides **three modes** for users to visualize generated Win
 ### Packaging Pipeline (Release Configuration)
 
 As defined in SYSTEM_ARCHITECTURE.md:
+
 1. **CAPABILITY_SCAN** (MANDATORY first step)
 2. MANIFEST_UPDATE
 3. VERSION_SYNC
@@ -62,7 +63,7 @@ As defined in SYSTEM_ARCHITECTURE.md:
 
 ### Preview Service Layer
 
-````csharp
+```csharp
 public class PreviewService
 {
     private readonly BuildService _buildService;
@@ -192,7 +193,7 @@ public class PreviewService
         return result == ContentDialogResult.Primary;
     }
 }
-````
+```
 
 ---
 
@@ -503,10 +504,10 @@ catch (Win32Exception ex)
 
 #### Failure Classification for Preview
 
-| Severity Level | Condition | Preview Behavior |
-|---------------|-----------|------------------|
-| **DEGRADED** | 3+ consecutive health failures or 10+ rate limits | Continue with backoff; show yellow status indicator |
-| **UNAVAILABLE** | Health check timeout or service not running | Block asset generation only; allow code preview |
+| Severity Level  | Condition                                         | Preview Behavior                                    |
+| --------------- | ------------------------------------------------- | --------------------------------------------------- |
+| **DEGRADED**    | 3+ consecutive health failures or 10+ rate limits | Continue with backoff; show yellow status indicator |
+| **UNAVAILABLE** | Health check timeout or service not running       | Block asset generation only; allow code preview     |
 
 #### Asset Failure Handling Rules
 
@@ -558,12 +559,12 @@ public class PreviewAssetService
         {
             // Log error but don't block preview
             _logger.LogWarning("Asset generation failed for {AssetId}: {Error}", assetId, ex.Message);
-            
+
             // Return fallback
-            return new PreviewAsset 
-            { 
+            return new PreviewAsset
+            {
                 Data = AssetFallbacks.GetFallback(assetId),
-                IsFallback = true 
+                IsFallback = true
             };
         }
     }
@@ -572,12 +573,12 @@ public class PreviewAssetService
 
 #### User Notification Strategy
 
-| Scenario | Notification Type | Action Required |
-|----------|-----------------|-----------------|
-| Optional asset failed | Info bar (subtle) | None - continues silently |
+| Scenario               | Notification Type     | Action Required                       |
+| ---------------------- | --------------------- | ------------------------------------- |
+| Optional asset failed  | Info bar (subtle)     | None - continues silently             |
 | Mandatory asset failed | Error bar with action | User clicks "Use Fallback" or "Retry" |
-| AI service degraded | Warning banner | None - continues with backoff |
-| AI service unavailable | Error banner | User can still preview code |
+| AI service degraded    | Warning banner        | None - continues with backoff         |
+| AI service unavailable | Error banner          | User can still preview code           |
 
 The preview should remain functional even if AI service has issues, as long as the core build artifacts are available.
 
@@ -722,21 +723,26 @@ public class PreviewServiceTests
 
 ## References
 
-- [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) - System architecture overview
-- [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) - Build and execution subsystems
-- [USER_WORKFLOWS.md](USER_WORKFLOWS.md) - Features and user interaction patterns
-- [UI_IMPLEMENTATION.md](UI_IMPLEMENTATION.md) - UX principles
-- [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) - Packaging subsystem details
-- [AI_SERVICE_LAYER.md](AI_SERVICE_LAYER.md) - **AI capabilities via user-configured providers**
-- [AI_MINI_SERVICE_IMPLEMENTATION.md](AI_MINI_SERVICE_IMPLEMENTATION.md) - Complete TypeScript implementation
-- [PLATFORM_REQUIREMENTS_ENGINE.md](PLATFORM_REQUIREMENTS_ENGINE.md) - **NEW: Zero-template asset generation pipeline**
-- [BRANDING_INFERENCE_HEURISTICS.md](BRANDING_INFERENCE_HEURISTICS.md) - **NEW: Intelligent brand derivation**
+- [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) — 8-layer architecture overview and layer boundaries
+- [AI_RUNTIME_MODEL.md](AI_RUNTIME_MODEL.md) — AI Construction Engine / Runtime Safety Kernel relationship
+- [USER_WORKFLOWS.md](USER_WORKFLOWS.md) — Features and user interaction patterns
+- [UI_IMPLEMENTATION.md](UI_IMPLEMENTATION.md) — UX principles
+- [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) — Packaging subsystem details
+- [EXECUTION_ENVIRONMENT.md](EXECUTION_ENVIRONMENT.md) — Build sandbox, MSBuild, workspace isolation
+- [TOOLCHAIN_MANIFEST.md](TOOLCHAIN_MANIFEST.md) — Layer 5: bundled tool versions and paths
+- [TOOLCHAIN_ISOLATION.md](TOOLCHAIN_ISOLATION.md) — Layer 5: build process isolation contract
+- [STRUCTURED_SPEC_FORMAT.md](STRUCTURED_SPEC_FORMAT.md) — Canonical JSON schema for app specifications
+- [REPAIR_PATTERNS.md](REPAIR_PATTERNS.md) — Deterministic repair strategies for build failures
+- [AI_SERVICE_LAYER.md](AI_SERVICE_LAYER.md) — AI capabilities via user-configured providers
+- [AI_MINI_SERVICE_IMPLEMENTATION.md](AI_MINI_SERVICE_IMPLEMENTATION.md) — Complete TypeScript implementation
+- [PLATFORM_REQUIREMENTS_ENGINE.md](PLATFORM_REQUIREMENTS_ENGINE.md) — Zero-template asset generation pipeline
+- [BRANDING_INFERENCE_HEURISTICS.md](BRANDING_INFERENCE_HEURISTICS.md) — Intelligent brand derivation
 
 ---
 
 ## Change Log
 
-| Date | Change |
-|------|--------|
-| 2026-02-23 | Added Asset Generation Check step (step 3) to Preview Pipeline |
+| Date       | Change                                                                                   |
+| ---------- | ---------------------------------------------------------------------------------------- |
+| 2026-02-23 | Added Asset Generation Check step (step 3) to Preview Pipeline                           |
 | 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md and BRANDING_INFERENCE_HEURISTICS.md to References |

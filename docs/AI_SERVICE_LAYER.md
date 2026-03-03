@@ -38,9 +38,9 @@ The AI Service Layer bridges the gap between the **Windows Desktop Application**
 
 ### Why This Layer Exists
 
-| Component | Technology | Role |
-|-----------|------------|------|
-| **Sync AI Desktop** | C# / .NET 8 / WinUI 3 | Main application, UI, Orchestrator, Build System |
+| Component           | Technology                   | Role                                             |
+| ------------------- | ---------------------------- | ------------------------------------------------ |
+| **Sync AI Desktop** | C# / .NET 8 / WinUI 3        | Main application, UI, Orchestrator, Build System |
 | **AI Mini Service** | Bun / Node.js + `openai` SDK | AI capabilities (LLM, Vision, Image Gen, Search) |
 
 The `openai` npm SDK is a **Node.js/TypeScript library**, which cannot be used directly in a C#/.NET application. Therefore, we need a **local HTTP service** that wraps the SDK and exposes AI capabilities via REST API.
@@ -79,7 +79,7 @@ The `openai` npm SDK is a **Node.js/TypeScript library**, which cannot be used d
 │  Layer 6: Runtime Safety Kernel (ENFORCEMENT LAYER)         │
 │  ─ Validates all mutations, enforces deterministic execution │
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 4: Code Intelligence (Roslyn)                         │
+│  Layer 4: Code Intelligence (Roslyn)                        │
 │  ─ AST parsing, symbol indexing, impact analysis             │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 3: Patch Engine                                       │
@@ -90,6 +90,12 @@ The `openai` npm SDK is a **Node.js/TypeScript library**, which cannot be used d
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 2: Execution Kernel                                   │
 │  ─ In-process MSBuild, NuGet restore, app execution          │
+│  ─ Uses Layer 5 (bundled toolchain) exclusively              │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 5: Build Execution Sandbox (TOOLCHAIN FOUNDATION)    │
+│  ─ Bundled .NET SDK, MSBuild, signtool, makeappx             │
+│  ─ PATH isolation, env override, offline NuGet cache         │
+│  ─ No dependency on host-installed development tools         │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 1: Filesystem Sandbox + SQLite Graph DB               │
 │  ─ Isolated projects, snapshots, symbol/dependency storage   │
@@ -143,15 +149,15 @@ The `openai` npm SDK is a **Node.js/TypeScript library**, which cannot be used d
 
 ### HTTP Endpoints
 
-| Endpoint | Method | Purpose | Model Slot Used |
-|----------|--------|---------|----------------|
-| `/api/chat` | POST | LLM chat completions | 🧠 Primary |
-| `/api/chat/stream` | POST | Streaming LLM responses | 🧠 Primary |
-| `/api/generate-image` | POST | Image generation | 🎨 Image Gen |
-| `/api/vision` | POST | Image analysis (VLM) | 👁️ Vision |
-| `/api/search` | POST | Web search | 🧠 Primary |
-| `/api/config` | POST | Push AI provider config from desktop app | — |
-| `/health` | GET | Service health check | — |
+| Endpoint              | Method | Purpose                                  | Model Slot Used |
+| --------------------- | ------ | ---------------------------------------- | --------------- |
+| `/api/chat`           | POST   | LLM chat completions                     | 🧠 Primary      |
+| `/api/chat/stream`    | POST   | Streaming LLM responses                  | 🧠 Primary      |
+| `/api/generate-image` | POST   | Image generation                         | 🎨 Image Gen    |
+| `/api/vision`         | POST   | Image analysis (VLM)                     | 👁️ Vision       |
+| `/api/search`         | POST   | Web search                               | 🧠 Primary      |
+| `/api/config`         | POST   | Push AI provider config from desktop app | —               |
+| `/health`             | GET    | Service health check                     | —               |
 
 ### Request/Response Format
 
@@ -174,6 +180,7 @@ Content-Type: application/json
 **Endpoint:** `POST /api/chat`
 
 **Request:**
+
 ```json
 {
   "messages": [
@@ -185,6 +192,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -194,13 +202,14 @@ Content-Type: application/json
 ```
 
 **Use Cases:**
+
 - Intent parsing
 - Architecture design
 - Code generation
 - Error analysis
 - Fix suggestions
 
-> **Note:** AI parameters are locked for deterministic behavior. See [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §3.Z for the complete locked parameter specification (temperature=0.0, top_p=1.0, etc.).
+> **Note:** AI parameters are locked for deterministic behavior. See [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §3 (Global Invariants) for the complete locked parameter specification (temperature=0.0, top_p=1.0, etc.).
 
 ---
 
@@ -209,6 +218,7 @@ Content-Type: application/json
 **Endpoint:** `POST /api/generate-image`
 
 **Request:**
+
 ```json
 {
   "prompt": "A modern app icon with blue gradient",
@@ -219,6 +229,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -240,17 +251,17 @@ See [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) §11 
 > **INVARIANT**: Same IntentHash = Same Seed = Same Image. This ensures deterministic, reproducible brand assets across rebuilds.
 
 **Supported Sizes:**
+
 - `1024x1024` (Square)
 - `768x1344` (Portrait)
 - `1344x768` (Landscape)
 - `1440x720` (Wide)
 
 **Use Cases:**
+
 - App icon generation
 - UI placeholder images
 - Visual assets
-
----
 
 ---
 
@@ -259,6 +270,7 @@ See [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) §11 
 **Endpoint:** `POST /api/vision`
 
 **Request:**
+
 ```json
 {
   "prompt": "Analyze this UI screenshot and describe the layout",
@@ -267,6 +279,7 @@ See [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) §11 
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -275,6 +288,7 @@ See [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) §11 
 ```
 
 **Use Cases:**
+
 - UI screenshot analysis
 - Design feedback
 - Visual debugging
@@ -287,6 +301,7 @@ See [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) §11 
 **Endpoint:** `POST /api/search`
 
 **Request:**
+
 ```json
 {
   "query": "WinUI 3 best practices 2024"
@@ -294,6 +309,7 @@ See [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) §11 
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -304,6 +320,7 @@ See [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) §11 
 > **Note:** The search endpoint returns a plain string response in the `content` field, consistent with the chat endpoint. The LLM synthesizes the search results into a coherent response.
 
 **Use Cases:**
+
 - Documentation lookup
 - Best practices research
 - Error solution search
@@ -319,7 +336,7 @@ public class AIServiceClient
 {
     private readonly HttpClient _httpClient;
     private const string BaseUrl = "http://localhost:3001";
-    
+
     public AIServiceClient()
     {
         _httpClient = new HttpClient
@@ -328,9 +345,9 @@ public class AIServiceClient
             Timeout = TimeSpan.FromSeconds(120)
         };
     }
-    
+
     // ── Configuration ──────────────────────────────────────
-    
+
     /// <summary>
     /// Sends AI provider settings to the service. Called on app startup
     /// and whenever the user changes Settings > AI Settings.
@@ -358,16 +375,16 @@ public class AIServiceClient
                 apiKey = settings.ImageGen.ApiKey
             } : null
         };
-        
+
         var response = await _httpClient.PostAsJsonAsync("/api/config", request);
         response.EnsureSuccessStatusCode();
-        
+
         var result = await response.Content.ReadFromJsonAsync<ConfigResponse>();
         return result.Configured.Primary && result.Configured.Vision;
     }
-    
+
     // ── Chat (Primary Model) ──────────────────────────────
-    
+
     public async Task<string> ChatAsync(string systemPrompt, string userPrompt)
     {
         var request = new
@@ -378,28 +395,28 @@ public class AIServiceClient
                 new { role = "user", content = userPrompt }
             }
         };
-        
+
         var response = await _httpClient.PostAsJsonAsync("/api/chat", request);
         response.EnsureSuccessStatusCode();
-        
+
         var result = await response.Content.ReadFromJsonAsync<ChatResponse>();
         return result.Content;
     }
-    
+
     // ── Image Generation (Image Gen Model) ────────────────
-    
+
     public async Task<byte[]> GenerateImageAsync(string prompt, string size = "1024x1024")
     {
         var request = new { prompt, size };
         var response = await _httpClient.PostAsJsonAsync("/api/generate-image", request);
         response.EnsureSuccessStatusCode();
-        
+
         var result = await response.Content.ReadFromJsonAsync<ImageResponse>();
         return Convert.FromBase64String(result.ImageBase64);
     }
-    
+
     // ── Vision Analysis (Vision Model) ────────────────────
-    
+
     public async Task<string> AnalyzeImageAsync(string prompt, byte[] imageData)
     {
         var request = new
@@ -409,32 +426,32 @@ public class AIServiceClient
         };
         var response = await _httpClient.PostAsJsonAsync("/api/vision", request);
         response.EnsureSuccessStatusCode();
-        
+
         var result = await response.Content.ReadFromJsonAsync<VisionResponse>();
         return result.Content;
     }
-    
+
     // ── Web Search (Primary Model) ────────────────────────
-    
+
     public async Task<string> SearchAsync(string query)
     {
         var request = new { query };
         var response = await _httpClient.PostAsJsonAsync("/api/search", request);
         response.EnsureSuccessStatusCode();
-        
+
         var result = await response.Content.ReadFromJsonAsync<SearchResponse>();
         return result.Content;
     }
-    
+
     // ── Health Check ──────────────────────────────────────
-    
+
     public async Task<HealthResponse> GetHealthAsync()
     {
         var response = await _httpClient.GetAsync("/health");
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<HealthResponse>();
     }
-    
+
     public async Task<bool> IsHealthyAsync()
     {
         try
@@ -512,12 +529,12 @@ public record ImageResponse
 
 ### Error Codes
 
-| Code | Description | Recovery |
-|------|-------------|----------|
-| `SERVICE_UNAVAILABLE` | Mini service not running | Start the service |
-| `INVALID_REQUEST` | Malformed request | Fix request format |
-| `RATE_LIMITED` | Too many requests | Implement backoff |
-| `INTERNAL_ERROR` | SDK error | Retry with backoff |
+| Code                  | Description              | Recovery           |
+| --------------------- | ------------------------ | ------------------ |
+| `SERVICE_UNAVAILABLE` | Mini service not running | Start the service  |
+| `INVALID_REQUEST`     | Malformed request        | Fix request format |
+| `RATE_LIMITED`        | Too many requests        | Implement backoff  |
+| `INTERNAL_ERROR`      | SDK error                | Retry with backoff |
 
 ### Retry Strategy
 
@@ -545,14 +562,14 @@ public async Task<T> WithRetryAsync<T>(Func<Task<T>> operation, int maxRetries =
 
 ### Latency Targets
 
-| Operation | Target Latency |
-|-----------|---------------|
-| Health check | < 10ms |
-| Chat (simple) | < 2s |
-| Chat (complex) | < 10s |
-| Image generation | < 15s |
-| Vision analysis | < 5s |
-| Web search | < 3s |
+| Operation        | Target Latency |
+| ---------------- | -------------- |
+| Health check     | < 10ms         |
+| Chat (simple)    | < 2s           |
+| Chat (complex)   | < 10s          |
+| Image generation | < 15s          |
+| Vision analysis  | < 5s           |
+| Web search       | < 3s           |
 
 ### Optimization Strategies
 
@@ -568,21 +585,21 @@ public async Task<T> WithRetryAsync<T>(Func<Task<T>> operation, int maxRetries =
 
 ### Network Security
 
-| Aspect | Implementation |
-|--------|---------------|
-| **Binding** | localhost only (127.0.0.1) |
-| **Port** | 3001 (configurable) |
-| **Protocol** | HTTP (local only, no external access) |
-| **Authentication** | Not required (local service) |
+| Aspect             | Implementation                        |
+| ------------------ | ------------------------------------- |
+| **Binding**        | localhost only (127.0.0.1)            |
+| **Port**           | 3001 (configurable)                   |
+| **Protocol**       | HTTP (local only, no external access) |
+| **Authentication** | Not required (local service)          |
 
 ### Data Security
 
-| Aspect | Implementation |
-|--------|---------------|
-| **API Keys** | User-configured per model slot; stored encrypted locally |
-| **User Data** | Stays local |
-| **Network Calls** | Only to user-configured AI provider endpoints |
-| **Logging** | No sensitive data logged (API keys never logged) |
+| Aspect            | Implementation                                           |
+| ----------------- | -------------------------------------------------------- |
+| **API Keys**      | User-configured per model slot; stored encrypted locally |
+| **User Data**     | Stays local                                              |
+| **Network Calls** | Only to user-configured AI provider endpoints            |
+| **Logging**       | No sensitive data logged (API keys never logged)         |
 
 ### Service Isolation
 
@@ -634,6 +651,7 @@ public async Task<T> WithRetryAsync<T>(Func<Task<T>> operation, int maxRetries =
 ### Complete API Specification
 
 See [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) for:
+
 - Complete TypeScript implementation
 - Bun project setup
 - All endpoint implementations
@@ -644,11 +662,11 @@ See [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) for
 
 > **AI configuration encryption is defined centrally in [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) Section 3.W.**
 
-| Aspect | Specification |
-|--------|---------------|
-| **Algorithm** | Windows DPAPI (DataProtectionScope.CurrentUser) |
-| **Storage Path** | `%USERPROFILE%\.syncai\Config\ai.config.enc` |
-| **No Plain Text** | Plain JSON configuration files are FORBIDDEN |
+| Aspect            | Specification                                   |
+| ----------------- | ----------------------------------------------- |
+| **Algorithm**     | Windows DPAPI (DataProtectionScope.CurrentUser) |
+| **Storage Path**  | `{SyncAIRoot}\config\ai.config.enc`             |
+| **No Plain Text** | Plain JSON configuration files are FORBIDDEN    |
 
 **See:** [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §3.W for full encryption specification.
 
@@ -859,11 +877,11 @@ namespace SyncAI.Services
                     // Path to compiled ai-service.exe (embedded in app)
                     FileName = Path.Combine(_servicePath, "ai-service.exe"),
                     Arguments = $"--port={_port}",
-                    
+
                     // CRITICAL: Hide all windows
                     CreateNoWindow = true,
                     WindowStyle = ProcessWindowStyle.Hidden,
-                    
+
                     // Redirect output for logging (no console window needed)
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -871,15 +889,15 @@ namespace SyncAI.Services
                 };
 
                 _serviceProcess = new Process { StartInfo = startInfo };
-                
+
                 // Capture output for debugging (logs, not console)
-                _serviceProcess.OutputDataReceived += (s, e) => 
+                _serviceProcess.OutputDataReceived += (s, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                         Debug.WriteLine($"[AI Service] {e.Data}");
                 };
-                
-                _serviceProcess.ErrorDataReceived += (s, e) => 
+
+                _serviceProcess.ErrorDataReceived += (s, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                         Debug.WriteLine($"[AI Service ERROR] {e.Data}");
@@ -891,7 +909,7 @@ namespace SyncAI.Services
 
                 // Wait for service to be healthy
                 var healthy = await WaitForHealthyAsync(TimeSpan.FromSeconds(30));
-                
+
                 if (healthy)
                 {
                     // Start background health monitor
@@ -923,7 +941,7 @@ namespace SyncAI.Services
                     try
                     {
                         await Task.Delay(TimeSpan.FromSeconds(10), token);
-                        
+
                         if (!await IsServiceHealthyAsync())
                         {
                             Debug.WriteLine("AI Mini Service unhealthy - attempting restart");
@@ -960,15 +978,15 @@ namespace SyncAI.Services
         private async Task<bool> WaitForHealthyAsync(TimeSpan timeout)
         {
             var endTime = DateTime.UtcNow + timeout;
-            
+
             while (DateTime.UtcNow < endTime)
             {
                 if (await IsServiceHealthyAsync())
                     return true;
-                    
+
                 await Task.Delay(500);
             }
-            
+
             return false;
         }
 
@@ -978,7 +996,7 @@ namespace SyncAI.Services
         private async Task RestartServiceAsync()
         {
             if (_isShuttingDown) return;
-            
+
             StopService();
             await Task.Delay(1000);
             await StartServiceAsync();
@@ -992,19 +1010,19 @@ namespace SyncAI.Services
             try
             {
                 _monitorCts?.Cancel();
-                
+
                 if (_serviceProcess != null && !_serviceProcess.HasExited)
                 {
                     // Try graceful shutdown first
                     _serviceProcess.CloseMainWindow();
-                    
+
                     // Wait up to 5 seconds for graceful shutdown
                     if (!_serviceProcess.WaitForExit(5000))
                     {
                         // Force kill if needed
                         _serviceProcess.Kill();
                     }
-                    
+
                     _serviceProcess.Dispose();
                     _serviceProcess = null;
                 }
@@ -1049,7 +1067,7 @@ public partial class App : Application
 
         // Start in background - completely hidden from user
         var serviceStarted = await _aiServiceManager.StartServiceAsync();
-        
+
         if (!serviceStarted)
         {
             // Show error dialog if service fails to start
@@ -1073,7 +1091,7 @@ public partial class App : Application
 ### 11.4 Single-Executable Deployment (RECOMMENDED)
 
 > **⚠️ IMPORTANT:** The compiled executable approach is the ONLY recommended method for production.
-> 
+>
 > Do NOT use `bun run dev` scripts in production - it requires Bun runtime on the user's machine and adds unnecessary complexity.
 
 #### Build the Executable
@@ -1085,6 +1103,7 @@ bun build ./index.ts --compile --outfile ai-service.exe
 ```
 
 This creates a **standalone `ai-service.exe`** that:
+
 - ✅ Requires NO Node.js/Bun installation on user's machine
 - ✅ Single file - easy to embed in MSIX package
 - ✅ Faster startup than interpreted scripts
@@ -1136,12 +1155,12 @@ var startInfo = new ProcessStartInfo
     // The exe is embedded in the app package
     FileName = Path.Combine(AppContext.BaseDirectory, "Assets", "ai-service.exe"),
     Arguments = $"--port={_port}",
-    
+
     // CRITICAL: Hide all windows
     CreateNoWindow = true,
     WindowStyle = ProcessWindowStyle.Hidden,
     UseShellExecute = false,
-    
+
     // Optional: Redirect for internal logging
     RedirectStandardOutput = true,
     RedirectStandardError = true
@@ -1165,14 +1184,14 @@ The `ai-service.exe` is just another asset file:
 
 ### 11.5 Summary: What the User Sees
 
-| Before (Manual) | After (Auto) |
-|-----------------|--------------|
-| User opens Sync AI | User opens Sync AI |
-| User must start service manually | ✅ Service starts automatically |
-| Console window visible | ✅ NO windows visible |
-| Service appears in taskbar | ✅ Hidden from taskbar |
-| User must stop service on exit | ✅ Service stops automatically |
-| If service crashes, user must restart | ✅ Auto-restart on crash |
+| Before (Manual)                       | After (Auto)                    |
+| ------------------------------------- | ------------------------------- |
+| User opens Sync AI                    | User opens Sync AI              |
+| User must start service manually      | ✅ Service starts automatically |
+| Console window visible                | ✅ NO windows visible           |
+| Service appears in taskbar            | ✅ Hidden from taskbar          |
+| User must stop service on exit        | ✅ Service stops automatically  |
+| If service crashes, user must restart | ✅ Auto-restart on crash        |
 
 > **RESULT:** The AI Mini Service is now completely transparent to the user. It behaves like any other internal component of the application.
 
@@ -1182,14 +1201,14 @@ The `ai-service.exe` is just another asset file:
 
 ### Related Documentation
 
-| Document | Relationship |
-|----------|--------------|
-| [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) | Updated layer definitions |
-| [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) | AI/Kernel relationship, now includes AI Service |
-| [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) | Agents use AI Service for generation |
-| [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) | Complete implementation code |
-| [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) | Orchestrator coordinates AI Service calls |
-| [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) | UI includes AI Settings page |
+| Document                                                                 | Relationship                                    |
+| ------------------------------------------------------------------------ | ----------------------------------------------- |
+| [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md)                       | Updated layer definitions                       |
+| [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md)                             | AI/Kernel relationship, now includes AI Service |
+| [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md)                 | Agents use AI Service for generation            |
+| [AI_MINI_SERVICE_IMPLEMENTATION.md](./AI_MINI_SERVICE_IMPLEMENTATION.md) | Complete implementation code                    |
+| [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md)                     | Orchestrator coordinates AI Service calls       |
+| [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md)                           | UI includes AI Settings page                    |
 
 ### Implementation Dependencies
 
@@ -1218,11 +1237,11 @@ AI_SERVICE_LAYER.md (this document)
 
 ## Change Log
 
-| Date | Change |
-|------|--------|
-| 2026-02-22 | Initial specification for AI Service Layer |
-| 2026-02-22 | Integrated with 7-layer architecture as Layer 6.6 |
-| 2026-02-22 | Added Section 11: Process Lifecycle Management (Auto-Start) |
+| Date       | Change                                                                                          |
+| ---------- | ----------------------------------------------------------------------------------------------- |
+| 2026-02-22 | Initial specification for AI Service Layer                                                      |
+| 2026-02-22 | Integrated with 7-layer architecture as Layer 6.6                                               |
+| 2026-02-22 | Added Section 11: Process Lifecycle Management (Auto-Start)                                     |
 | 2026-02-22 | **Changed to compiled executable ONLY** - removed `bun run dev` scripts approach for production |
-| 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - 3-slot user-configured AI providers |
-| 2026-02-23 | **Removed TTS/ASR features** - Simplified to LLM, Vision, Image Gen, Search |
+| 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - 3-slot user-configured AI providers   |
+| 2026-02-23 | **Removed TTS/ASR features** - Simplified to LLM, Vision, Image Gen, Search                     |

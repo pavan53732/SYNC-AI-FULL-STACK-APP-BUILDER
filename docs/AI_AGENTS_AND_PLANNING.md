@@ -4,6 +4,13 @@
 >
 > **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
 >
+> **Generation Specification Documents:**
+>
+> - [STRUCTURED_SPEC_FORMAT.md](./STRUCTURED_SPEC_FORMAT.md) — Canonical JSON schema for the spec output of the Architect Agent
+> - [DATA_LAYER_GENERATION.md](./DATA_LAYER_GENERATION.md) — EF Core + SQLite code generation rules (Schema Agent)
+> - [UI_GENERATION_RULES.md](./UI_GENERATION_RULES.md) — WinUI 3 XAML + ViewModel generation rules (Frontend Agent)
+> - [TARGET_APP_ARCHITECTURE.md](./TARGET_APP_ARCHITECTURE.md) — Standard WinUI 3 solution structure being built
+>
 > _The AI Construction Engine is the PRIMARY BRAIN. It designs adaptive blueprints, learns from errors, and owns the entire construction strategy. The Runtime Safety Kernel enforces hard boundaries silently._
 
 ---
@@ -73,6 +80,7 @@ The AI Construction Engine transforms unstructured user prompts into adaptive ar
 ### Blueprint Structure
 
 ```
+
 AI ARCHITECTURE BLUEPRINT
 ├── Architecture Intent Model
 │   ├── User Intent (semantic understanding)
@@ -89,6 +97,11 @@ AI ARCHITECTURE BLUEPRINT
 ├── Navigation Graph
 └── Cross-Cutting Concerns
 ```
+
+> **INVARIANT**: The Architect Agent's final output (Application Specification) MUST conform to the
+> canonical JSON schema defined in [STRUCTURED_SPEC_FORMAT.md](./STRUCTURED_SPEC_FORMAT.md).
+> No code generation agent may accept a spec that fails schema validation.
+> The Runtime Safety Kernel validates the spec before dispatching any generation agents.
 
 ### Adaptive Blueprint Evolution
 
@@ -151,26 +164,28 @@ init-project → setup-database → define-models → setup-auth → db-migratio
 
 ### The Agent Stack
 
-| Agent | Responsibility | AI Capability Used |
-| ----- | -------------- | ------------------ |
-| **Architect** | Define overall app structure and directories | LLM (Chat) |
-| **Planner** | Converts blueprint into an ordered DAG Task Graph (Read-Only) | LLM (Chat) |
-| **Schema** | Generate database models and migrations | LLM (Chat) |
-| **Frontend** | Generate UI components, pages, and **ALL VISUAL ASSETS** | LLM (Chat) + Image Gen (icons, logos, splash) |
-| **Backend** | Generate API routes and services | LLM (Chat) |
-| **Integration** | Wire dependencies together (DI, Startup) | LLM (Chat) |
-| **Capability Inference** | Updates `Package.appxmanifest` with inferred capabilities (uses static Roslyn analysis from Layer 4) | **Static Analysis (no LLM)** |
-| **Fix** | Detect and repair build failures | LLM (Chat) + Web Search (docs) |
+| Agent                    | Responsibility                                                                                       | AI Capability Used                            |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| **Architect**            | Define overall app structure and directories                                                         | LLM (Chat)                                    |
+| **Planner**              | Converts blueprint into an ordered DAG Task Graph (Read-Only)                                        | LLM (Chat)                                    |
+| **Schema**               | Generate database models and migrations                                                              | LLM (Chat)                                    |
+| **Frontend**             | Generate UI components, pages, and **ALL VISUAL ASSETS**                                             | LLM (Chat) + Image Gen (icons, logos, splash) |
+| **Backend**              | Generate API routes and services                                                                     | LLM (Chat)                                    |
+| **Integration**          | Wire dependencies together (DI, Startup)                                                             | LLM (Chat)                                    |
+| **Capability Inference** | Updates `Package.appxmanifest` with inferred capabilities (uses static Roslyn analysis from Layer 4) | **Static Analysis (no LLM)**                  |
+| **Fix**                  | Detect and repair build failures                                                                     | LLM (Chat) + Web Search (docs)                |
 
 > **All agents communicate with the AI Service Layer (Layer 6.6) via HTTP to localhost:3001**
-> 
+>
 > **CRITICAL: The Frontend Agent uses Branding Inference Heuristics to derive visual identity.**
-> 
+>
 > **NO TEMPLATES FOR VISUAL ASSETS - All icons, logos, and splash screens are generated from first principles using:**
+>
 > - [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) — Zero-template approach for visual assets
 > - [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) — Intelligent brand derivation from user intent
 >
 > **NOTE: Base Project Template (Minimal Kernel Bootstrap) IS USED for project structure:**
+>
 > - Valid `.csproj` configuration (targets .NET 8, WinUI 3)
 > - Empty `App.xaml` and `App.xaml.cs`
 > - Empty `MainWindow.xaml`
@@ -208,8 +223,13 @@ Each agent produces structured JSON output that the Orchestrator validates.
                 "properties": {
                   "action": {
                     "enum": [
-                      "ADD_CLASS", "ADD_METHOD", "ADD_PROPERTY", "ADD_FIELD",
-                      "MODIFY_METHOD_BODY", "INSERT_USING", "REMOVE_MEMBER"
+                      "ADD_CLASS",
+                      "ADD_METHOD",
+                      "ADD_PROPERTY",
+                      "ADD_FIELD",
+                      "MODIFY_METHOD_BODY",
+                      "INSERT_USING",
+                      "REMOVE_MEMBER"
                     ]
                   },
                   "targetSymbol": { "type": "string" },
@@ -266,12 +286,12 @@ async def orchestrate_generation(spec, task_graph):
 
 ### Agent Behavior Rules
 
-| Rule | Description |
-|------|-------------|
-| **Single Attempt** | Agents attempt to fix ONCE and return |
-| **No Internal Loops** | Agents MUST NOT contain `while attempts < X` loops |
-| **Return Results** | Agents return success/failure to Orchestrator |
-| **Orchestrator Decides** | Only Orchestrator decides if retry happens |
+| Rule                     | Description                                        |
+| ------------------------ | -------------------------------------------------- |
+| **Single Attempt**       | Agents attempt to fix ONCE and return              |
+| **No Internal Loops**    | Agents MUST NOT contain `while attempts < X` loops |
+| **Return Results**       | Agents return success/failure to Orchestrator      |
+| **Orchestrator Decides** | Only Orchestrator decides if retry happens         |
 
 ### Wrong Pattern (FORBIDDEN)
 
@@ -320,10 +340,10 @@ async def fix_agent(error):
 
 ### Retry Governance Contract (Infinite Silent Retry)
 
-| Retry Range | Owner | Description |
-|-------------|-------|-------------|
-| 1-9 | AI Construction Engine | AI adapts strategy |
-| 10+ | Runtime Safety Kernel | System Reset (Rollback + Amnesia + Retry) |
+| Retry Range | Owner                  | Description                               |
+| ----------- | ---------------------- | ----------------------------------------- |
+| 1-9         | AI Construction Engine | AI adapts strategy                        |
+| 10+         | Runtime Safety Kernel  | System Reset (Rollback + Amnesia + Retry) |
 
 Retries 1–9 are owned by the AI Construction Engine.
 System-level resets (10+) are owned by the Runtime Safety Kernel. See ORCHESTRATION_ENGINE.md.
@@ -336,11 +356,11 @@ System-level resets (10+) are owned by the Runtime Safety Kernel. See ORCHESTRAT
 
 ### Separation of Concerns
 
-| Component | Responsibility | Does NOT Do |
-|-----------|---------------|-------------|
-| **AI Engine** | Generate code patches (JSON) | ❌ Write files, Manage retries |
-| **Orchestrator** | Manage state, retries, validation | ❌ Generate code |
-| **Patch Engine** | Apply patches to workspace | ❌ Generate code, Manage retries |
+| Component        | Responsibility                    | Does NOT Do                      |
+| ---------------- | --------------------------------- | -------------------------------- |
+| **AI Engine**    | Generate code patches (JSON)      | ❌ Write files, Manage retries   |
+| **Orchestrator** | Manage state, retries, validation | ❌ Generate code                 |
+| **Patch Engine** | Apply patches to workspace        | ❌ Generate code, Manage retries |
 
 ### Operation Whitelist
 
@@ -358,20 +378,20 @@ private static readonly HashSet<string> AllowedOperations = new()
 
 ## Change Log
 
-| Date | Change |
-|------|--------|
-| 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - user-configured providers |
+| Date       | Change                                                                                                                           |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - user-configured providers                                              |
 | 2026-02-24 | **Clarified "NO TEMPLATES" statement** - No templates for VISUAL ASSETS, but Base Project Template IS used for project structure |
-| 2026-02-24 | Added explanation of Minimal Kernel Bootstrap (empty .csproj, App.xaml, MainWindow.xaml, Package.appxmanifest) |
-| 2026-02-23 | Added references to Platform Requirements Engine and Branding Inference Heuristics |
-| 2026-02-23 | Updated Frontend Agent to include ALL VISUAL ASSETS generation |
-| 2026-02-23 | Added NO TEMPLATES note - all assets generated from first principles |
-| 2026-02-22 | Added AI Service Layer (Layer 6.6) integration |
-| 2026-02-22 | Added AI Service Client to agent architecture diagram |
-| 2026-02-22 | Added AI capability mapping to agent stack table |
-| 2026-02-21 | Removed internal retry loops from agents (Fixes Contradiction 4) |
-| 2026-02-21 | Added sequential execution clarification for DAG (Fixes Contradiction 6) |
-| 2026-02-21 | Added Retry Ownership invariant section |
+| 2026-02-24 | Added explanation of Minimal Kernel Bootstrap (empty .csproj, App.xaml, MainWindow.xaml, Package.appxmanifest)                   |
+| 2026-02-23 | Added references to Platform Requirements Engine and Branding Inference Heuristics                                               |
+| 2026-02-23 | Updated Frontend Agent to include ALL VISUAL ASSETS generation                                                                   |
+| 2026-02-23 | Added NO TEMPLATES note - all assets generated from first principles                                                             |
+| 2026-02-22 | Added AI Service Layer (Layer 6.6) integration                                                                                   |
+| 2026-02-22 | Added AI Service Client to agent architecture diagram                                                                            |
+| 2026-02-22 | Added AI capability mapping to agent stack table                                                                                 |
+| 2026-02-21 | Removed internal retry loops from agents (Fixes Contradiction 4)                                                                 |
+| 2026-02-21 | Added sequential execution clarification for DAG (Fixes Contradiction 6)                                                         |
+| 2026-02-21 | Added Retry Ownership invariant section                                                                                          |
 
 ---
 

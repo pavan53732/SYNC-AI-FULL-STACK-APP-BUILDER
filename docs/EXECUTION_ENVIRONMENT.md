@@ -4,6 +4,11 @@
 >
 > **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
 >
+> **Toolchain Documents:**
+>
+> - [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) — Bundled toolchain versions & folder layout (Layer 5)
+> - [TOOLCHAIN_ISOLATION.md](./TOOLCHAIN_ISOLATION.md) — Build process isolation from host system
+>
 > _The Execution Environment is managed by the Runtime Safety Kernel. It enforces boundaries for AI-generated code execution._
 
 ---
@@ -47,6 +52,11 @@ The Execution Environment provides the foundational infrastructure for safe, iso
 │  Layer 2: Execution Kernel ← THIS SPEC                      │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 1: Filesystem Sandbox + SQLite Graph DB ← THIS SPEC  │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 5: Build Execution Sandbox (TOOLCHAIN)               │
+│  ─ Bundled .NET SDK, MSBuild, signtool, makeappx            │
+│  ─ PATH isolation, env override (TOOLCHAIN_ISOLATION.md)    │
+│  ─ Versions & layout (TOOLCHAIN_MANIFEST.md)                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,34 +81,30 @@ The sandbox ensures that Sync AI never accidentally modifies user files outside 
 Each project lives in an isolated workspace:
 
 ```text
-%USERPROFILE%\.syncai\
-├── Workspaces/
-│   └── {ProjectId}/
-│       ├── src/                    ← Generated code
-│       ├── .git/                   ← Hidden Git repository for version history
-│       ├── .gitignore              ← Standard Git ignore file
-│       ├── ProjectState.db         ← Maps prompts to commit SHAs
-│       ├── .metadata.json          ← Project metadata
-│       ├── packaging/              ← Manifests & Certificates
-│       │   ├── Package.appxmanifest
-│       │   └── certificate.pfx
-│       ├── dist/                   ← Final MSIX Bundles
-│       │   └── app.msixbundle
-│       └── .build-output/          ← Compiled binaries
-├── Temp/
-│   ├── build_workspace_001/        ← Isolated copy for build stability
-│   ├── build_workspace_002/
-│   └── (cleaned after each build)
-├── Database/
-│   └── sync-ai.db                  ← SQLite graph DB
-├── Cache/
-│   ├── NuGet/                      ← Local NuGet cache
-│   ├── Embeddings/                 ← Vector cache
-│   ├── roslyn_symbols/             ← Cached Roslyn symbol data
-│   └── dependency_graph/           ← Cached dependency graph data
-└── Logs/
-    └── execution.log               ← Debug log (hidden from user)
+{SyncAIRoot}\workspace\{ProjectId}\
+├── src\                        ← Generated source code
+│   ├── {AppName}.sln
+│   ├── {AppName}.App\
+│   ├── {AppName}.Core\
+│   └── {AppName}.Data\
+├── build\                      ← MSBuild output (bin/ obj/)
+├── packages\                   ← NuGet package restore directory
+├── tmp\                        ← TEMP/TMP override for this project
+├── .localappdata\              ← LOCALAPPDATA override for this project
+├── .nuget\                     ← NuGet HTTP and plugin caches
+├── logs\                       ← Build logs (msbuild.binlog, ai-agent.log)
+├── snapshots\                  ← Runtime Safety Kernel snapshots
+├── .git\                       ← Hidden Git repository for version history
+├── ProjectState.db             ← Maps prompts to commit SHAs
+├── .metadata.json              ← Project metadata
+├── NuGet.config                ← Workspace-level NuGet isolation config
+└── toolchain.lock.json         ← Exact tool versions used for this project
 ```
+
+> **Canonical workspace path**: `{SyncAIRoot}\workspace\{ProjectId}\`
+> `{SyncAIRoot}` is the Sync AI installation directory (e.g., `C:\Program Files\SyncAI\`).
+> See [TOOLCHAIN_ISOLATION.md](./TOOLCHAIN_ISOLATION.md) §8 for the full workspace isolation layout.
+> See [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §3 for the toolchain folder layout under `{SyncAIRoot}\toolchain\`.
 
 ### 2.3 Security Enforcement
 
@@ -209,14 +215,19 @@ public class ExecutionKernel
     }
 
     /// <summary>
-    /// One-time initialization of MSBuild Locator
+    /// One-time initialization of MSBuild with bundled toolchain path
+    /// INVARIANT: Always uses the bundled MSBuild — never auto-discovers from system.
+    /// See TOOLCHAIN_MANIFEST.md §4 and TOOLCHAIN_ISOLATION.md §4 for details.
     /// </summary>
     private static void InitializeMSBuild()
     {
         if (!_isInitialized)
         {
-            // Locate the embedded SDK/MSBuild instance
-            MSBuildLocator.RegisterDefaults();
+            // MANDATORY: Use only the bundled MSBuild from {SyncAIRoot}\toolchain\msbuild
+            // RegisterDefaults() would auto-discover system MSBuild — NEVER use it.
+            var syncAIRoot = AppContext.BaseDirectory;
+            var bundledMSBuildPath = Path.Combine(syncAIRoot, "toolchain", "msbuild", "MSBuild", "Current", "Bin");
+            MSBuildLocator.RegisterMSBuildPath(bundledMSBuildPath);
             _isInitialized = true;
         }
     }
@@ -541,14 +552,14 @@ public class FileSystemAclJail
 
 > **The AI Construction Engine proposes code, the Runtime Safety Kernel enforces security boundaries.**
 
-| Security Stage | Owner | Description |
-|----------------|-------|-------------|
-| Code generation | AI Construction Engine | Agent generates code changes |
-| Path validation | Runtime Safety Kernel | Hard rejection if path outside sandbox |
-| Schema validation | Runtime Safety Kernel | Hard rejection if JSON invalid |
-| Symbol validation | Runtime Safety Kernel | Hard rejection if symbol missing |
-| Process isolation | Runtime Safety Kernel | Job Objects enforce limits |
-| Error recovery | AI Construction Engine | Agent decides how to fix |
+| Security Stage    | Owner                  | Description                            |
+| ----------------- | ---------------------- | -------------------------------------- |
+| Code generation   | AI Construction Engine | Agent generates code changes           |
+| Path validation   | Runtime Safety Kernel  | Hard rejection if path outside sandbox |
+| Schema validation | Runtime Safety Kernel  | Hard rejection if JSON invalid         |
+| Symbol validation | Runtime Safety Kernel  | Hard rejection if symbol missing       |
+| Process isolation | Runtime Safety Kernel  | Job Objects enforce limits             |
+| Error recovery    | AI Construction Engine | Agent decides how to fix               |
 
 ### 5.4 AI Trust Boundary & Validation
 
@@ -557,16 +568,19 @@ The Runtime Safety Kernel enforces a strict **Zero-Trust** policy on all AI-gene
 #### Mandatory Validation Gates
 
 **1. JSON Schema Compliance**
+
 - Output must parse strictly against `TaskGraph` or `Patch` schemas
 - Any schema violation triggers immediate rejection
 - Invalid JSON results in retry with correction prompt
 
 **2. Path Sandbox Enforcement**
+
 - All paths must be relative to project root
 - No absolute paths allowed
 - No `..` directory traversal
 
 **3. Symbol Consistency Check**
+
 - Modified methods must exist in Roslyn Index
 - Referenced classes must be resolvable
 - Breaking changes must be flagged
@@ -814,13 +828,13 @@ public class MachineVariabilityHandler
 
 ### 7.1 Why "Embedded"?
 
-| Component         | Traditional Approach          | Sync AI Embedded Approach                           |
-| ----------------- | ----------------------------- | --------------------------------------------------- |
-| **Build**         | Shell out to `dotnet CLI`     | `Microsoft.Build.Execution.BuildManager` in-process |
-| **NuGet**         | Shell out to `dotnet CLI`     | `NuGet.Commands.RestoreCommand` in-process          |
-| **Code Analysis** | External linter               | `Microsoft.CodeAnalysis` (Roslyn) in-process        |
-| **Database**      | External DB server            | `Microsoft.Data.Sqlite` embedded                    |
-| **Preview**       | External browser              | WinUI 3 `WebView2` or XAML renderer                 |
+| Component         | Traditional Approach      | Sync AI Embedded Approach                           |
+| ----------------- | ------------------------- | --------------------------------------------------- |
+| **Build**         | Shell out to `dotnet CLI` | `Microsoft.Build.Execution.BuildManager` in-process |
+| **NuGet**         | Shell out to `dotnet CLI` | `NuGet.Commands.RestoreCommand` in-process          |
+| **Code Analysis** | External linter           | `Microsoft.CodeAnalysis` (Roslyn) in-process        |
+| **Database**      | External DB server        | `Microsoft.Data.Sqlite` embedded                    |
+| **Preview**       | External browser          | WinUI 3 `WebView2` or XAML renderer                 |
 
 ### 7.2 The 6 Embedded Subsystems
 
@@ -950,19 +964,19 @@ public class HealthMonitoringConfig
         // Memory thresholds
         MemoryWarningMB = 512,      // Warn when < 512MB available
         MemoryCriticalMB = 256,    // Block operations when < 256MB
-        
+
         // Disk thresholds
         DiskWarningGB = 1.0,       // Warn when < 1GB available
         DiskCriticalGB = 0.5,     // Block operations when < 500MB
-        
+
         // CPU thresholds
         CpuWarningPercent = 80,    // Warn when CPU > 80%
         CpuCriticalPercent = 95,   // Block operations when CPU > 95%
-        
+
         // Health check intervals
         HealthCheckIntervalSeconds = 30,
         ProcessHealthCheckIntervalSeconds = 10,
-        
+
         // Service health
         AIServiceMaxRetries = 3,
         AIServiceRetryDelaySeconds = 5
@@ -986,11 +1000,11 @@ public class HealthMonitoringConfig
 
 #### Health Status Classification
 
-| Status | Condition | Action |
-|--------|-----------|--------|
-| **HEALTHY** | All metrics below warning thresholds | Continue normal operation |
-| **DEGRADED** | Any metric exceeds warning threshold | Log warning, continue with monitoring |
-| **UNHEALTHY** | Any metric exceeds critical threshold | Block new operations, show warning |
+| Status        | Condition                             | Action                                |
+| ------------- | ------------------------------------- | ------------------------------------- |
+| **HEALTHY**   | All metrics below warning thresholds  | Continue normal operation             |
+| **DEGRADED**  | Any metric exceeds warning threshold  | Log warning, continue with monitoring |
+| **UNHEALTHY** | Any metric exceeds critical threshold | Block new operations, show warning    |
 
 #### Health Monitor Implementation
 
@@ -999,13 +1013,13 @@ public class ExecutionEnvironmentHealthMonitor
 {
     private readonly HealthThresholds _thresholds;
     private HealthStatus _currentStatus = HealthStatus.HEALTHY;
-    
+
     public async Task<HealthStatus> CheckHealthAsync()
     {
         var memoryInfo = GetMemoryInfo();
         var diskInfo = GetDiskInfo();
         var cpuInfo = GetCpuInfo();
-        
+
         // Check critical conditions first
         if (memoryInfo.AvailableMB < _thresholds.MemoryCriticalMB ||
             diskInfo.AvailableGB < _thresholds.DiskCriticalGB ||
@@ -1014,7 +1028,7 @@ public class ExecutionEnvironmentHealthMonitor
             _currentStatus = HealthStatus.UNHEALTHY;
             return _currentStatus;
         }
-        
+
         // Check warning conditions
         if (memoryInfo.AvailableMB < _thresholds.MemoryWarningMB ||
             diskInfo.AvailableGB < _thresholds.DiskWarningGB ||
@@ -1023,11 +1037,11 @@ public class ExecutionEnvironmentHealthMonitor
             _currentStatus = HealthStatus.DEGRADED;
             return _currentStatus;
         }
-        
+
         _currentStatus = HealthStatus.HEALTHY;
         return _currentStatus;
     }
-    
+
     public HealthStatus GetCurrentStatus() => _currentStatus;
 }
 
@@ -1102,6 +1116,6 @@ private async Task HandleCrashRecoveryAsync(ExecutionSession incomplete)
 
 ## Change Log
 
-| Date | Change |
-|------|--------|
+| Date       | Change                                              |
+| ---------- | --------------------------------------------------- |
 | 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md to References |

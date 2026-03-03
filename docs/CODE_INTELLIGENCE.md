@@ -4,6 +4,12 @@
 >
 > **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
 >
+> **Related Specification Documents:**
+>
+> - [STRUCTURED_SPEC_FORMAT.md](./STRUCTURED_SPEC_FORMAT.md) — The Application Spec that Code Intelligence reads to understand the project entity model
+> - [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) — Bundled Roslyn/compiler versions used for analysis
+> - [TOOLCHAIN_ISOLATION.md](./TOOLCHAIN_ISOLATION.md) — Isolation contract for any toolchain analysis processes
+>
 > _The Code Intelligence layer provides knowledge to the AI Construction Engine. The Runtime Safety Kernel enforces mutation boundaries._
 
 ---
@@ -72,11 +78,13 @@ File.WriteAllText("MyClass.cs", formatted.ToFullString());
 The system uses a **tiered indexing approach** optimized for different scenarios:
 
 **Full Semantic Mode** (Default for Production Operations):
+
 - Full Roslyn AST, symbol graph, and cross-file resolution.
 - Required for all mutation operations and capability inference.
 - Ensures consistent, deterministic behavior for code changes.
 
 **Lightweight Mode** (Initial Scans and Quick Lookups):
+
 - Shallow metadata index for fast project overview.
 - Used for initial project discovery and UI listings.
 - Automatically upgraded to Full Semantic when mutations are needed.
@@ -573,12 +581,14 @@ public class MutationGuard
 **Principle**: Single-Writer, Multi-Reader.
 
 **Thread Roles**
+
 - **Indexing Writer**: 1 Thread (Exclusive)
 - **Patch Writer**: 1 Thread (Exclusive)
 - **Build Runner**: 1 Thread (Exclusive)
 - **Readers (UI/AI)**: Concurrent allowed
 
 **Locking Strategy**
+
 1. **Workspace Lock**: Mutex `Global\Workspace_{ProjectId}` ensures only one ExecutionSession active per project.
 2. **Graph Write Lock**: SQLite `BEGIN IMMEDIATE TRANSACTION` blocks other writers, allows readers (WAL mode).
 3. **File Locking**: Patch Engine locks target file during read-modify-write cycle.
@@ -604,7 +614,7 @@ Determines affected symbols before a patch is committed.
 public class ImpactAnalyzer
 {
     public async Task<ImpactAnalysis> AnalyzeChangeAsync(
-        string symbolName, 
+        string symbolName,
         ChangeType changeType,
         AgentExecutionContext context)
     {
@@ -624,7 +634,6 @@ public class ImpactAnalyzer
 }
 ```
 
-
 ---
 
 ## 12. AI Retrieval Pipeline
@@ -638,7 +647,6 @@ public class ImpactAnalyzer
 5. **XAML Bindings** — Corresponding XAML file
 
 > **PRINCIPLE**: Context is assembled based on relevance, not arbitrary token limits. The AI model manages its own context window constraints. All relevant symbols and files are included to ensure complete understanding.
-
 
 ---
 
@@ -671,7 +679,6 @@ public class DapperRepository<T> : IRepository<T> where T : class
 }
 ```
 
-
 ---
 
 ## 14. Performance Optimizations
@@ -690,7 +697,6 @@ public class DapperRepository<T> : IRepository<T> where T : class
 ```sql
 CREATE INDEX idx_edges_composite ON symbol_edges(from_symbol_id, edge_type, snapshot_id);
 ```
-
 
 ---
 
@@ -715,7 +721,6 @@ If corruption detected:
 4. Perform **Full Re-index** from disk
 5. Validate Integrity
 6. Resume operation
-
 
 ---
 
@@ -759,7 +764,7 @@ public interface IPatchEngine
 
 ## Change Log
 
-| Date | Change |
-|------|--------|
+| Date       | Change                                               |
+| ---------- | ---------------------------------------------------- |
 | 2026-02-23 | Added Generated Assets Table cross-reference section |
-| 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md to References |
+| 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md to References  |

@@ -1,8 +1,10 @@
 # PROJECT HANDBOOK
 
-> **Sync AI is a Local AI Full-Stack Windows Native App Builder** — a sophisticated desktop application that autonomously designs, generates, compiles, validates, fixes, and packages complete production-ready Windows desktop applications from natural language descriptions by operators or users.
+> **The Developer's Guide to Structure, Contribution, and Deployment**
 >
-> _Internally: AI Construction Engine (Primary Brain) + Runtime Safety Kernel (Enforcement Layer)._
+> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
+>
+> _The AI Construction Engine is the Primary Brain. The Runtime Safety Kernel is the Enforcement Layer._
 
 ---
 
@@ -44,6 +46,13 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 │   ├── USER_WORKFLOWS.md              # User experience workflows
 │   ├── WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md  # Packaging pipeline
 │   ├── AGENT_EXECUTION_CONTRACT.md    # Agent execution context, file access contracts
+│   ├── TOOLCHAIN_MANIFEST.md          # Bundled toolchain versions, folder layout (Layer 5)
+│   ├── TOOLCHAIN_ISOLATION.md         # Toolchain isolation from host environment (Layer 5)
+│   ├── STRUCTURED_SPEC_FORMAT.md      # JSON schema for AI-generated app specifications
+│   ├── TARGET_APP_ARCHITECTURE.md     # Standard WinUI 3 solution structure
+│   ├── DATA_LAYER_GENERATION.md       # EF Core + SQLite code generation rules
+│   ├── UI_GENERATION_RULES.md         # WinUI 3 XAML + ViewModel generation rules
+│   ├── REPAIR_PATTERNS.md             # Deterministic build error repair patterns
 │   └── archive/                       # Archived specifications
 │
 ├── src/                               # Source code
@@ -118,17 +127,18 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 
 ### The 8-Layer Architecture (Infrastructure-Up Model)
 
-| Layer         | Name                        | Responsibility                             | Directory                             |
-| :------------ | :-------------------------- | :----------------------------------------- | :------------------------------------ |
-| **Layer 1**   | Filesystem Sandbox + SQLite | Isolated storage, snapshots                | `Services/🟢 Filesystem Sandbox/`     |
-| **Layer 2**   | Execution Kernel            | MSBuild, NuGet, process management         | `Services/🔵 Execution Kernel/`       |
-| **Layer 2.5** | Packaging Engine            | Manifest, capability inference, MSIX       | `Services/🟤 Packaging Engine/`       |
-| **Layer 3**   | Patch Engine                | AST mutations, conflict detection          | `Services/🟠 Patch Engine/`           |
-| **Layer 4**   | Code Intelligence           | Roslyn indexing, symbol graph              | `Services/🟡 Code Intelligence/`      |
-| **Layer 6**   | Runtime Safety Kernel       | State machine, retry logic, enforcement    | `Services/🔴 Runtime Safety Kernel/`  |
-| **Layer 6.5** | AI Construction Engine      | Primary brain, code generation             | `Services/🟣 AI Construction Engine/` |
-| **Layer 6.6** | **AI Service Layer**        | **openai SDK - user-configured providers** | `Assets/ai-service.exe`               |
-| **Layer 7**   | User Interface              | WinUI 3 shell                              | `UI/`                                 |
+| Layer         | Name                        | Responsibility                                                                 | Directory / Spec                                                                   |
+| ------------- | --------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| **Layer 1**   | Filesystem Sandbox + SQLite | Isolated storage, snapshots                                                    | `Services/🟢 Filesystem Sandbox/`                                                  |
+| **Layer 2**   | Execution Kernel            | MSBuild, NuGet, process management                                             | `Services/🔵 Execution Kernel/`                                                    |
+| **Layer 2.5** | Packaging Engine            | Manifest, capability inference, MSIX                                           | `Services/🟤 Packaging Engine/`                                                    |
+| **Layer 3**   | Patch Engine                | AST mutations, conflict detection                                              | `Services/🟠 Patch Engine/`                                                        |
+| **Layer 4**   | Code Intelligence           | Roslyn indexing, symbol graph                                                  | `Services/🟡 Code Intelligence/`                                                   |
+| **Layer 5**   | **Build Execution Sandbox** | Bundled toolchain (.NET SDK, MSBuild, signtool), PATH isolation, offline NuGet | `{SyncAIRoot}\toolchain\` — See `TOOLCHAIN_MANIFEST.md` & `TOOLCHAIN_ISOLATION.md` |
+| **Layer 6**   | Runtime Safety Kernel       | State machine, retry logic, enforcement                                        | `Services/🔴 Runtime Safety Kernel/`                                               |
+| **Layer 6.5** | AI Construction Engine      | Primary brain, code generation                                                 | `Services/🟣 AI Construction Engine/`                                              |
+| **Layer 6.6** | **AI Service Layer**        | **openai SDK - user-configured providers**                                     | `Assets/ai-service.exe`                                                            |
+| **Layer 7**   | User Interface              | WinUI 3 shell                                                                  | `UI/`                                                                              |
 
 > **Layer 6.6 (AI Service Layer)**: Provides AI capabilities via user-configured OpenAI-compatible providers.
 > The compiled `ai-service.exe` runs as a hidden background process on localhost:3001.
@@ -136,7 +146,7 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 
 ### Layer Communication Rules
 
-```text
+```
 Layer 7 (UI) ──────────────────→ Layer 6 (Orchestrator) ONLY
                                    │
                                    ↓
@@ -168,7 +178,7 @@ Layer 1 (Filesystem) ←────────── Layer 6 (Orchestrator)
 > **This is what the "Hidden System Prompt" defines - the FRAMEWORK RULES.**
 
 | Technology  | Purpose        | Why Fixed                    |
-| :---------- | :------------- | :--------------------------- |
+| ----------- | -------------- | ---------------------------- |
 | **WinUI 3** | UI Framework   | Modern Windows native UI     |
 | **C# 12**   | Language       | .NET 8 ecosystem             |
 | **XAML**    | UI Markup      | WinUI 3 standard             |
@@ -225,11 +235,15 @@ Layer 1 (Filesystem) ←────────── Layer 6 (Orchestrator)
 
 ## 4. Development Setup
 
-### Prerequisites
+### Prerequisites (Developer Building Sync AI Itself)
 
 - **OS**: Windows 10 Build 22621+ or Windows 11
-- **.NET SDK**: .NET 8.0.x or later
 - **Visual Studio 2022**: With Windows Desktop Development workload
+- **.NET SDK**: .NET 8.0.x or later (for building Sync AI's own C# source)
+
+> **Note for End-Users**: End-users of Sync AI need **no development tools** installed.
+> Sync AI bundles its own .NET 8 SDK, MSBuild 17.x, and all required toolchain components.
+> See [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) for the complete bundled toolchain inventory.
 
 ### Installation
 

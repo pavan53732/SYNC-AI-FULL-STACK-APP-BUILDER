@@ -1,8 +1,10 @@
 # USER WORKFLOWS & FEATURES
 
-> **Sync AI is a Local AI Full-Stack Windows Native App Builder** — a sophisticated desktop application that autonomously designs, generates, compiles, validates, fixes, and packages complete production-ready Windows desktop applications from natural language descriptions by operators or users.
+> **The User Experience: From Prompt to Production**
 >
-> _This document specifies the user experience and workflows of Sync AI._
+> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
+>
+> _Users interact with the AI Construction Engine. The Runtime Safety Kernel handles all enforcement silently._
 
 ---
 
@@ -23,9 +25,11 @@
 
 ### The "Lovable" for Desktop Experience
 
-Sync AI is a **Local AI Full-Stack Windows Native App Builder** — a sophisticated desktop application that autonomously designs, generates, compiles, validates, fixes, and packages complete production-ready Windows desktop applications from natural language descriptions by operators or users:
+Sync AI is a **Local AI Full-Stack Windows Native App Builder** — a sophisticated desktop application that autonomously designs, generates, compiles, validates, fixes, and packages complete production-ready Windows desktop applications from natural language Descriptions by operators or users.
 
-1.  **AI-Primary Construction**: The AI Construction Engine is the Primary Brain. Operators or users describe intent, AI designs and builds.
+Think of it as "the Lovable for desktop apps" or "an AI-powered Visual Studio that builds WinUI 3 applications from plain English descriptions."
+
+1.  **AI-Primary Construction**: The AI Construction Engine is the Primary Brain. The user describes intent, AI designs and builds.
 2.  **No IDE Required**: Zero exposure to Visual Studio, `.csproj` files, or terminals.
 3.  **Local-First & Private**: All code, data, and builds stay on the user's machine.
 4.  **End-to-End Responsibility**: The AI owns the stack from **Schema → UI → Tests → Packaging**.
@@ -66,8 +70,7 @@ It is not just a UI prototyping tool; it is a full-cycle software construction e
 
 The system automatically manages the development environment:
 
-- **Automatic .NET SDK Detection**: System checks for compatible SDK on launch
-- **Guided SDK Installation**: If SDK missing or outdated, guided setup flow initiates
+- **Bundled Toolchain Bootstrapping**: Sync AI ships with its own .NET SDK, MSBuild, and Windows SDK tools — no host installation required
 - **NuGet Cache Corruption Detection**: Detects and repairs corrupted NuGet caches
 - **Self-Repair Strategy**: Automatic recovery from build environment issues
 - **Low-Resource Mitigation**: RAM/Disk constraints detected and handled gracefully
@@ -122,7 +125,7 @@ The system does not allow blueprint generation without validated AI configuratio
 The system automatically generates visual assets without templates:
 
 | Asset Type        | Generated From    | User Message                 |
-| :---------------- | :---------------- | :--------------------------- |
+| ----------------- | ----------------- | ---------------------------- |
 | **App Icons**     | Domain + App Name | "Generating app icons..."    |
 | **Tile Logos**    | Brand inference   | "Creating tile logos..."     |
 | **Splash Screen** | Color psychology  | "Preparing splash screen..." |
@@ -151,7 +154,7 @@ Based on evidence-driven analysis:
 
 **Input Processing Pipeline**:
 
-```text
+```
 Natural Language Prompt
     ↓
 [Semantic Parser]
@@ -166,7 +169,7 @@ Structured Intent Objects
 
 **Generation Pipeline**:
 
-```text
+```
 Intent Objects
     ↓
 [Architect] → Project structure
@@ -182,7 +185,7 @@ Generated Files (Real C# / XAML code)
 
 **Validation Pipeline**:
 
-```text
+```
 Generated Code
     ↓
 [Syntax Check] - Parse & compile

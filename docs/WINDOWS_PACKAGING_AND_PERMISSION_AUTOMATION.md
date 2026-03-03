@@ -4,7 +4,12 @@
 >
 > **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
 >
-> _Governs the transition from "Compile" to "Distribute". Automates Identity, Capabilities, and Signing. The Packaging Pipeline is owned by the Runtime Safety Kernel.
+> **Toolchain Documents:**
+>
+> - [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) — Bundled versions and paths for `signtool.exe`, `makeappx.exe`, `makepri.exe`
+> - [TOOLCHAIN_ISOLATION.md](./TOOLCHAIN_ISOLATION.md) — Process launch contract for all packaging tool invocations
+>
+> \_Governs the transition from "Compile" to "Distribute". Automates Identity, Capabilities, and Signing. The Packaging Pipeline is owned by the Runtime Safety Kernel.
 
 ---
 
@@ -14,13 +19,13 @@
 
 > **The AI Construction Engine proposes capabilities, the Runtime Safety Kernel enforces packaging rules.**
 
-| Packaging Stage | Owner | Description |
-|-----------------|-------|-------------|
-| Capability inference | AI Construction Engine | Code analysis determines needs |
-| Manifest generation | Runtime Safety Kernel | Enforces correct structure |
-| Certificate management | Runtime Safety Kernel | Hard enforcement of signing |
-| MSIX creation | Runtime Safety Kernel | Deterministic packaging |
-| Error recovery | AI Construction Engine | Agent decides how to adapt |
+| Packaging Stage        | Owner                  | Description                    |
+| ---------------------- | ---------------------- | ------------------------------ |
+| Capability inference   | AI Construction Engine | Code analysis determines needs |
+| Manifest generation    | Runtime Safety Kernel  | Enforces correct structure     |
+| Certificate management | Runtime Safety Kernel  | Hard enforcement of signing    |
+| MSIX creation          | Runtime Safety Kernel  | Deterministic packaging        |
+| Error recovery         | AI Construction Engine | Agent decides how to adapt     |
 
 This subsystem bridges the gap between raw binaries and deployable Windows apps. It ensures that every app built by Sync AI is:
 
@@ -60,15 +65,15 @@ It generates the XML structure enforcing:
 
 > **INVARIANT**: Version numbers are ONLY incremented when the Runtime Safety Kernel **confirms** a mutation event. AI-proposed changes that are rejected do NOT trigger version increments.
 
-| Event Source | Confirmed? | Version Increment? | Rationale |
-|--------------|------------|-------------------|-----------|
-| AI proposes code patch | ❌ Not yet | ❌ NO | Proposal only - not applied |
-| Kernel applies code patch | ✅ Confirmed | ✅ YES (Patch) | Kernel validated and applied |
-| AI proposes capability | ❌ Not yet | ❌ NO | Proposal only |
-| Kernel injects capability | ✅ Confirmed | ✅ YES (Minor) | Kernel validated and injected |
-| Schema breaking change | ✅ Confirmed | ✅ YES (Major) | Structural change applied |
-| Preview build (no mutation) | N/A | ❌ NO | No changes made |
-| Build failure (rollback) | ❌ Rejected | ❌ NO | Changes rolled back |
+| Event Source                | Confirmed?   | Version Increment? | Rationale                     |
+| --------------------------- | ------------ | ------------------ | ----------------------------- |
+| AI proposes code patch      | ❌ Not yet   | ❌ NO              | Proposal only - not applied   |
+| Kernel applies code patch   | ✅ Confirmed | ✅ YES (Patch)     | Kernel validated and applied  |
+| AI proposes capability      | ❌ Not yet   | ❌ NO              | Proposal only                 |
+| Kernel injects capability   | ✅ Confirmed | ✅ YES (Minor)     | Kernel validated and injected |
+| Schema breaking change      | ✅ Confirmed | ✅ YES (Major)     | Structural change applied     |
+| Preview build (no mutation) | N/A          | ❌ NO              | No changes made               |
+| Build failure (rollback)    | ❌ Rejected  | ❌ NO              | Changes rolled back           |
 
 ### Version Precedence Rule (INVARIANT)
 
@@ -77,6 +82,7 @@ If multiple version triggers occur in a single mutation cycle, the highest-order
 Major > Minor > Patch
 
 Example:
+
 - Code Patch + Capability Injection → Minor
 - Capability Injection + Schema Break → Major
 - Multiple Code Patches → Single Patch increment
@@ -135,6 +141,7 @@ public enum VersionIncrementType
 ```
 
 > **Why This Matters**: By requiring Kernel confirmation, we ensure:
+>
 > - Version numbers accurately reflect **actual changes** to the codebase
 > - Failed/rejected mutations don't create spurious version increments
 > - Version history is deterministic and reproducible
@@ -175,12 +182,17 @@ It triggers after Roslyn indexing:
 
 ## 4. MSIX Automation Pipeline
 
+> **Tool Paths**: All packaging tools (`signtool.exe`, `makeappx.exe`, `makepri.exe`) are invoked from
+> the bundled toolchain at `{SyncAIRoot}\toolchain\winsdk\bin\10.0.22621.0\x64\`.
+> See [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §4 for exact tool paths and versions.
+> All invocations use the isolation contract from [TOOLCHAIN_ISOLATION.md](./TOOLCHAIN_ISOLATION.md) §6.
+
 ### 4.1 Packaging Flow
 
-1.  **Prepare**: Gather build output (binaries, assets, manifest).
-2.  **MakePri**: Generate `resources.pri` (Package Resource Index).
-3.  **MakeAppx**: Bundle into `.msix`.
-4.  **Sign**: Apply certificate.
+1. **Prepare**: Gather build output (binaries, assets, manifest).
+2. **MakePri**: Generate `resources.pri` using bundled `makepri.exe` (Package Resource Index).
+3. **MakeAppx**: Bundle into `.msix` using bundled `makeappx.exe`.
+4. **Sign**: Apply certificate using bundled `signtool.exe`.
 
 ### 4.2 Certificate Policy (Mandatory)
 
@@ -243,23 +255,23 @@ It triggers after Roslyn indexing:
 
 The following operations require administrator privileges:
 
-| Operation | Reason | User Experience |
-| :--- | :--- | :--- |
-| **Certificate Installation** | Installs cert to LocalMachine\TrustedPeople | One-time prompt per project |
-| **MSIX Installation** | System-wide app installation | UAC prompt when user clicks "Install Now" |
-| **BroadFileSystemAccess** | Grants app-wide file system access | User must enable in Windows Settings |
+| Operation                    | Reason                                      | User Experience                           |
+| :--------------------------- | :------------------------------------------ | :---------------------------------------- |
+| **Certificate Installation** | Installs cert to LocalMachine\TrustedPeople | One-time prompt per project               |
+| **MSIX Installation**        | System-wide app installation                | UAC prompt when user clicks "Install Now" |
+| **BroadFileSystemAccess**    | Grants app-wide file system access          | User must enable in Windows Settings      |
 
 ### 6.2 Operations NOT Requiring Elevation
 
 The following operations run without elevation:
 
-| Operation | Reason |
-| :--- | :--- |
-| **Build & Compilation** | User-space operation, no system changes |
-| **Preview Launch** | Shadow copy runs in user context |
-| **MSIX Creation** | File creation only, no installation |
-| **Certificate Generation** | Creates PFX file in user directory |
-| **Project Deletion** | Removes files from user workspace |
+| Operation                  | Reason                                  |
+| :------------------------- | :-------------------------------------- |
+| **Build & Compilation**    | User-space operation, no system changes |
+| **Preview Launch**         | Shadow copy runs in user context        |
+| **MSIX Creation**          | File creation only, no installation     |
+| **Certificate Generation** | Creates PFX file in user directory      |
+| **Project Deletion**       | Removes files from user workspace       |
 
 ### 6.3 Elevation UX Guidelines
 
@@ -286,12 +298,12 @@ Proceed with MSIX installation or app launch
 
 ### 6.5 Packaging Failure Classification
 
-| Error | Recovery Strategy | Behavior |
-| :--- | :--- | :--- |
-| **MAKEAPPX_DISK** | Prompt user + wait + retry | Pause with user guidance - disk space/I/O issue, retry after user action |
-| **SIGNING_ERROR** | Prompt user + wait + retry | Pause with user guidance - certificate or key issue, retry after user action |
-| **CAPABILITY_MISSING** | Auto-inject + retry | Inject capability + rebuild manifest (continuous retry) |
-| **MANIFEST_INVALID** | Auto-regenerate + retry | Regenerate from template (continuous retry) |
+| Error                  | Recovery Strategy          | Behavior                                                                     |
+| :--------------------- | :------------------------- | :--------------------------------------------------------------------------- |
+| **MAKEAPPX_DISK**      | Prompt user + wait + retry | Pause with user guidance - disk space/I/O issue, retry after user action     |
+| **SIGNING_ERROR**      | Prompt user + wait + retry | Pause with user guidance - certificate or key issue, retry after user action |
+| **CAPABILITY_MISSING** | Auto-inject + retry        | Inject capability + rebuild manifest (continuous retry)                      |
+| **MANIFEST_INVALID**   | Auto-regenerate + retry    | Regenerate from template (continuous retry)                                  |
 
 **Continuous Retry Principle**: All errors trigger continuous retry until success or user cancellation. User-action-required errors (disk, certificate) pause the retry loop and show guidance. Once the user resolves the issue, retry continues automatically. The system NEVER gives up on its own - only user cancellation stops the process.
 
@@ -356,12 +368,12 @@ public class WindowsSandboxDetector
 
 ### 8.2 Sandbox Execution Decision Matrix
 
-| Sandbox Available | App Has Capabilities | Execution Mode | Rationale |
-|-------------------|---------------------|----------------|-----------|
-| ✅ Yes | ✅ Yes | **Sandboxed** | Full isolation for capability-requiring apps |
-| ✅ Yes | ❌ No | **Direct** | No sandbox needed for simple apps |
-| ❌ No | ✅ Yes | **Direct with Warning** | User warned about capability usage without isolation |
-| ❌ No | ❌ No | **Direct** | Normal execution, no sandbox needed |
+| Sandbox Available | App Has Capabilities | Execution Mode          | Rationale                                            |
+| ----------------- | -------------------- | ----------------------- | ---------------------------------------------------- |
+| ✅ Yes            | ✅ Yes               | **Sandboxed**           | Full isolation for capability-requiring apps         |
+| ✅ Yes            | ❌ No                | **Direct**              | No sandbox needed for simple apps                    |
+| ❌ No             | ✅ Yes               | **Direct with Warning** | User warned about capability usage without isolation |
+| ❌ No             | ❌ No                | **Direct**              | Normal execution, no sandbox needed                  |
 
 ### 8.3 Sandbox Failure Recovery Flow
 
@@ -512,11 +524,11 @@ public enum ExecutionFallbackMode
 
 ### 8.6 User Communication
 
-| Scenario | User Message | Severity |
-|----------|--------------|----------|
-| Sandbox unavailable, app has capabilities | "App Preview Running Without Sandbox Isolation" | Warning (Toast) |
-| Sandbox execution failed, fallback succeeded | "Preview running in standard mode" | Info (Toast) |
-| Both sandbox and direct failed | "Preview failed to start" | Error (Dialog) |
+| Scenario                                     | User Message                                    | Severity        |
+| -------------------------------------------- | ----------------------------------------------- | --------------- |
+| Sandbox unavailable, app has capabilities    | "App Preview Running Without Sandbox Isolation" | Warning (Toast) |
+| Sandbox execution failed, fallback succeeded | "Preview running in standard mode"              | Info (Toast)    |
+| Both sandbox and direct failed               | "Preview failed to start"                       | Error (Dialog)  |
 
 ### 8.7 Why This Matters
 
@@ -558,8 +570,8 @@ This removes hidden runtime dependency during release.
 
 ## Change Log
 
-| Date | Change | Author |
-|------|--------|--------|
+| Date       | Change                                                                                                                                                                     | Author            |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
 | 2026-02-25 | **Added Version Increment Trigger Source clarification** - Only Kernel-confirmed events trigger version increments, with flow diagram and VersionIncrementEvent definition | Architecture Team |
-| 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md to References | Architecture Team |
-| 2026-02-20 | Initial specification | Architecture Team |
+| 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md to References                                                                                                                        | Architecture Team |
+| 2026-02-20 | Initial specification                                                                                                                                                      | Architecture Team |

@@ -1,8 +1,8 @@
 # ORCHESTRATION ENGINE
 
-> **Sync AI is a Local AI Full-Stack Windows Native App Builder** — a sophisticated desktop application that autonomously designs, generates, compiles, validates, fixes, and packages complete production-ready Windows desktop applications from natural language descriptions by operators or users.
+> **Runtime Safety Kernel – Orchestration: State Machine, Task Lifecycle, Build System, Retry Logic & Concurrency Safety**
 >
-> _This document specifies the Runtime Safety Kernel (Orchestrator) of Sync AI._
+> **Related Core Document:** [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) — Defines the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer).
 
 ---
 
@@ -36,7 +36,7 @@ The Runtime Safety Kernel (Orchestrator) is the **enforcement layer** that valid
 
 ### Core Principles
 
-```text
+```
 ✓ No implicit transitions
 ✓ No uncontrolled parallel mutation
 ✓ One active task at a time (strict serialization for mutation execution)
@@ -173,7 +173,7 @@ public enum BuilderState
 
 ### State Diagram (Infinite Silent Retry Model)
 
-```text
+```
 IDLE
   ↓ (blueprint request arrives)
 
@@ -247,7 +247,7 @@ EXECUTION_PLAN_BUILT
 ### Terminal States
 
 | State                 | Type     | Description                            | Recovery                |
-| :-------------------- | :------- | :------------------------------------- | :---------------------- |
+| --------------------- | -------- | -------------------------------------- | ----------------------- |
 | `PACKAGING_SUCCEEDED` | Success  | Application built, packaged, and ready | None needed             |
 | `CANCELLED`           | Terminal | User explicitly cancelled              | User must restart build |
 
@@ -616,6 +616,10 @@ public class BuilderReducer
 
 ## 6. Error Classification & Intelligence
 
+> **See also**: [REPAIR_PATTERNS.md](./REPAIR_PATTERNS.md) — Canonical catalog of deterministic repair strategies for each `ErrorType`. The Fix Agent uses this catalog to select the appropriate repair approach before attempting a free-form AI fix.
+>
+> **Toolchain**: All build operations referenced in error messages use exclusively the bundled toolchain. See [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) for tool paths and [TOOLCHAIN_ISOLATION.md](./TOOLCHAIN_ISOLATION.md) for invocation contract.
+
 ### ErrorClassification Record
 
 ```csharp
@@ -686,7 +690,7 @@ public enum RetryStage
 > **INVARIANT**: Each retry stage has defined escalation behavior. The AI must adapt its strategy as retries progress.
 
 | Retry Range | Stage              | AI Strategy                                                             | Kernel Action                                                             |
-| :---------- | :----------------- | :---------------------------------------------------------------------- | :------------------------------------------------------------------------ |
+| ----------- | ------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | **1-3**     | FIX_LEVEL          | Local token repairs, syntax fixes, small adjustments                    | Log retry, allow continuation                                             |
 | **4-6**     | INTEGRATION_LEVEL  | Check DI wiring, service registration, module boundaries                | Log retry, warn if pattern persists                                       |
 | **7-9**     | ARCHITECTURE_LEVEL | Re-evaluate high-level plan, structural changes, alternative approaches | Log retry, prepare for potential reset                                    |
@@ -694,7 +698,7 @@ public enum RetryStage
 
 #### Stage Transition Behavior
 
-```text
+```
 RETRY 1-3 (FIX_LEVEL):
 ├── AI attempts local fixes (token-level, syntax)
 ├── Error context preserved
@@ -783,7 +787,7 @@ public class RetryController
 ### Retry Governance Contract
 
 | Retry Range | Owner                  | Enforcement            | Behavior                              |
-| :---------- | :--------------------- | :--------------------- | :------------------------------------ |
+| ----------- | ---------------------- | ---------------------- | ------------------------------------- |
 | 1-9         | AI Construction Engine | Strategy flexible      | AI adapts, learns, retries            |
 | 10+         | Runtime Safety Kernel  | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
 
@@ -794,7 +798,7 @@ public class RetryController
 ### Named Thread Types
 
 | Thread                    | Color  | Purpose                                      | Concurrency        |
-| :------------------------ | :----- | :------------------------------------------- | :----------------- |
+| ------------------------- | ------ | -------------------------------------------- | ------------------ |
 | 🟢 UI Thread              | Green  | Rendering, user input, never blocks          | Single (main)      |
 | 🔵 Orchestrator Thread    | Blue   | Sequential execution, state machine          | Single             |
 | 🟣 AI Worker Thread Pool  | Purple | AI code generation tasks                     | Max 2 concurrent   |
@@ -857,7 +861,7 @@ public class SequentialExecutionStrategy
 ### Concurrency Matrix
 
 | Operation               | Can Run With        | Cannot Run With      | Lock Type            |
-| :---------------------- | :------------------ | :------------------- | :------------------- |
+| ----------------------- | ------------------- | -------------------- | -------------------- |
 | **Patching (Mutation)** | Nothing             | All other operations | Exclusive Write Lock |
 | **Indexing**            | Read queries        | Mutation, Build      | Exclusive Write Lock |
 | **Building**            | Nothing             | All other operations | Exclusive Build Lock |
@@ -1024,14 +1028,14 @@ public class TransactionRecoveryService
 ### Snapshot Creation Points
 
 | Trigger             | State                  | Purpose                                    |
-| :------------------ | :--------------------- | :----------------------------------------- |
+| ------------------- | ---------------------- | ------------------------------------------ |
 | Before PATCHING     | `CREATING_SNAPSHOT`    | Enable rollback on failure or system reset |
 | Before PACKAGING    | `CREATING_SNAPSHOT`    | Enable rollback on packaging failure       |
 | Manual user request | Any non-mutation state | User-initiated checkpoint                  |
 
 ### Snapshot Lifecycle
 
-```text
+```
 1. AI_GENERATING completes
 2. State transitions to CREATING_SNAPSHOT
 3. SnapshotService.CreateSnapshotAsync() called
@@ -1463,7 +1467,7 @@ public record FallbackAction
 
 ### Recovery Procedure
 
-```text
+```
 AI_SERVICE_UNAVAILABLE State:
 ┌─────────────────────────────────────────────────────────────┐
 │ 1. Log failure with Trace ID                                │
@@ -1485,7 +1489,7 @@ AI_SERVICE_UNAVAILABLE State:
 ### 15.1 Degraded State Definition and Escalation
 
 | State                    | Trigger                                                                                                     | Behavior                                                                                                                   | Recovery                                                                                                             |
-| :----------------------- | :---------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------- |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `AI_SERVICE_DEGRADED`    | - 3 consecutive health check failures<br>- 3 consecutive request timeouts<br>- 10+ 429 rate‑limit responses | - AI operations continue with exponential backoff<br>- Blueprint generation is **blocked**<br>- UI shows yellow status dot | Auto‑recovery after 1 successful health check; fallback to `AI_SERVICE_UNAVAILABLE` if 10 consecutive failures       |
 | `AI_SERVICE_UNAVAILABLE` | - Health check timeout (5s)<br>- Process not running<br>- Any request returns 5xx error                     | - All AI‑dependent operations are blocked<br>- Orchestrator stays in this state until recovery succeeds                    | Automatic restart of mini‑service, then retry health check; after 3 failed restarts, wait 60s and retry indefinitely |
 
@@ -1788,7 +1792,7 @@ public class AIMiniServiceManager
 ## Change Log
 
 | Date       | Change                                                                                                                                                  |
-| :--------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 2026-02-26 | **Added Section 17: ai-service.exe Package Integrity** - Startup integrity check, hash verification, Authenticode signature validation                  |
 | 2026-02-26 | **Added Section 16: AI E2E Test Suite Specification** - Complete test coverage for LLM, Image Gen, Vision, Search, Error handling, Trace ID propagation |
 | 2026-02-26 | **Added Section 15: AI Service Failure Governance** - Failure detection, fallback strategy, state transitions for AI_SERVICE_UNAVAILABLE/DEGRADED       |

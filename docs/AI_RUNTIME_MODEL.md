@@ -2,7 +2,7 @@
 
 > **The Architecture of AI-Primary Construction with Deterministic Safety**
 >
-> _Defines the internal architecture of Sync AI — a Local AI Full-Stack Windows Native App Builder (sophisticated desktop application). Documents the relationship between AI Construction Engine (Primary Brain) and Runtime Safety Kernel (Enforcement Layer)._
+> _Defines the relationship between the AI Construction Engine and Runtime Safety Kernel._
 
 ---
 
@@ -21,11 +21,15 @@
 
 ## 1. Overview
 
-Sync AI is a **Local AI Full-Stack Windows Native App Builder** that autonomously designs and constructs complete applications from natural language with deterministic runtime safety guarantees.
+Sync AI is a **Local AI Full-Stack Windows Native App Builder** — a sophisticated desktop application that autonomously designs, generates, compiles, validates, fixes, and packages complete production-ready Windows desktop applications from natural language Descriptions by operators or users.
+
+Think of it as "the Lovable for desktop apps" or "an AI-powered Visual Studio that builds WinUI 3 applications from plain English descriptions."
+
+It completes this by operating as a system that autonomously designs and constructs complete applications from natural language with deterministic runtime safety guarantees.
 
 ### The Two Pillars
 
-```text
+```
 ┌─────────────────────────────────────────────────────────────┐
 │                 AI CONSTRUCTION ENGINE                       │
 │                     (Primary Brain)                          │
@@ -71,13 +75,13 @@ Sync AI is a **Local AI Full-Stack Windows Native App Builder** that autonomousl
 The system uses fundamentally different capability inference timing for Preview vs Packaging:
 
 | Phase                   | Mode      | Capability Inference Timing   | Rationale                                                               |
-| :---------------------- | :-------- | :---------------------------- | :---------------------------------------------------------------------- |
+| ----------------------- | --------- | ----------------------------- | ----------------------------------------------------------------------- |
 | **Preview (Debug)**     | Reactive  | After build (on failure only) | Fast iteration; only infer if build fails due to missing capability     |
 | **Packaging (Release)** | Proactive | Before build                  | Optimize for success; infer capabilities early to minimize retry cycles |
 
 ### Debug Preview Pipeline (Reactive Model)
 
-```text
+```
 1. PRE-BUILD FAST SCAN (Optional)
    └── Quick Roslyn scan for obvious capability-requiring namespaces
    └── If found AND missing from manifest → Inject immediately
@@ -106,7 +110,7 @@ The system uses fundamentally different capability inference timing for Preview 
 
 ### Release Packaging Pipeline (Proactive Model)
 
-```text
+```
 1. CAPABILITY_SCAN (MANDATORY first step)
    └── Full semantic analysis BEFORE any build
 
@@ -158,7 +162,7 @@ The system uses fundamentally different capability inference timing for Preview 
 
 ### AI Agent Stack
 
-```text
+```
 AI Construction Engine
     │
     ├── Architect Agent      → Designs structure
@@ -215,7 +219,7 @@ The "Hidden System Prompt" is implemented as **Constraint Documents** that the A
 
 The template is embedded in the application and copied to new project workspaces during initialization.
 
-```text
+```
 ┌─────────────────────────────────────────────────────────────┐
 │  BASE PROJECT TEMPLATE (Minimal Kernel Bootstrap)           │
 ├─────────────────────────────────────────────────────────────┤
@@ -263,11 +267,11 @@ The template is embedded in the application and copied to new project workspaces
 
 ## 3. Runtime Safety Kernel
 
-### 3.1 Role
+### Role
 
 **Enforcement Layer** — Guarantees deterministic, safe execution
 
-### 3.2 Responsibilities
+### Responsibilities
 
 | Function                    | Description                                |
 | --------------------------- | ------------------------------------------ |
@@ -280,7 +284,7 @@ The template is embedded in the application and copied to new project workspaces
 
 ### Kernel Components
 
-```text
+```
 Runtime Safety Kernel
     │
     ├── Orchestrator         → State machine enforcement
@@ -308,7 +312,7 @@ These are the differentiation moat — they never change:
 
 ### The Boundary Contract
 
-```text
+```
 AI Engine                    Runtime Kernel
     │                             │
     │  1. Propose Mutation        │
@@ -330,12 +334,12 @@ AI Engine                    Runtime Kernel
 
 ### Boundary Rules
 
-| Rule                             | Entity  | Authority | Responsibility                         |
-| :------------------------------- | :------ | :-------- | :------------------------------------- |
-| **AI proposes, Kernel disposes** | **ACE** | Proposer  | Proposing code mutations               |
-| **No direct file access**        | **RSK** | Enforcer  | Validating and executing mutations     |
-| No bypass                        | N/A     | Kernel    | Even internal agents go through Kernel |
-| Full audit trail                 | N/A     | Kernel    | Every mutation logged                  |
+| Rule                         | Enforcement                            |
+| ---------------------------- | -------------------------------------- |
+| AI proposes, Kernel disposes | All mutations pass through Kernel      |
+| No direct file access        | AI never touches filesystem directly   |
+| No bypass                    | Even internal agents go through Kernel |
+| Full audit trail             | Every mutation logged                  |
 
 ---
 
@@ -345,9 +349,9 @@ AI Engine                    Runtime Kernel
 
 The retry process is split between AI and Kernel:
 
-```text
+```
 ┌─────────────────────────────────────────────────────────────┐
-│                   RETRY OWNERSHIP                            │
+│                    RETRY OWNERSHIP                           │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
 │  Cycles 1-9: AI CONSTRUCTION ENGINE                          │
@@ -411,7 +415,7 @@ The Runtime Kernel:
 
 ### Cancellation Sequence
 
-```text
+```
 1. User clicks "Cancel" button
 2. Kernel receives UserCancelledEvent
 3. Stop all AI operations immediately
@@ -436,7 +440,7 @@ The Runtime Kernel:
 
 ### Snapshot Lifecycle
 
-```text
+```
 AI Proposes Mutation
         │
         ▼
@@ -475,7 +479,7 @@ Kernel Validates Mutation                  │
 
 ### Complete Flow (Infinite Silent Retry Model)
 
-```text
+```
 User Prompt
     │
     ▼
@@ -570,16 +574,6 @@ User Prompt
 - Deterministic, resilient, protective
 
 ### The Contract
-
-```text
-Sync-AI > deploy --isolated --sign --verify
-[SCAN] 14 capabilities detected...
-[MANIFEST] Updated Package.appxmanifest...
-[BUILD] Release build successful...
-[SIGN] Code signature applied...
-[VERIFY] Signature integrity verified.
-[SUCCESS] Application ready for distribution.
-```
 
 > AI proposes, Kernel validates.
 > AI adapts, Kernel enforces.

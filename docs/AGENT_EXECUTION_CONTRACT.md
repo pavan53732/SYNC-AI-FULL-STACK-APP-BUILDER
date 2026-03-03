@@ -22,10 +22,10 @@
 
 To prevent "autonomy drift" and ensuring deterministic system behavior, all agents operate under a **Bounded Execution Contract**.
 
-*   **No Universal Access**: An agent can only touch files relevant to its role.
-*   **No Shared Writable Memory**: Agents cannot overwrite global state.
-*   **No Infinite Loops**: Resource budgets are enforced per-execution.
-*   **AI Service Communication**: All AI capabilities come from Layer 6.6 (AI Service Layer) via user-configured providers.
+- **No Universal Access**: An agent can only touch files relevant to its role.
+- **No Shared Writable Memory**: Agents cannot overwrite global state.
+- **No Infinite Loops**: Resource budgets are enforced per-execution.
+- **AI Service Communication**: All AI capabilities come from Layer 6.6 (AI Service Layer) via user-configured providers.
 
 ---
 
@@ -39,19 +39,19 @@ public record AgentExecutionContext
     // Identity
     public AgentRole Role { get; init; }
     public string TaskId { get; init; }
-    
+
     // Constraints
     public IReadOnlyList<string> AllowedFilePatterns { get; init; } // e.g., ["**/*.cs"]
     public IReadOnlyList<string> RestrictedFiles { get; init; }     // e.g., ["Program.cs"]
     public bool ReadOnlySemanticGraph { get; init; }                // Can it trigger re-indexing?
-    
+
     // Resources
     public int MaxPatchOperations { get; init; } = 50;              // Max mutations per run
     public int TokenBudget { get; init; } = 8000;                   // Max tokens for reasoning
-    
+
     // Memory Scope
     public MemoryScope MemoryScope { get; init; }
-    
+
     // Safety Ceilings
     public int MaxFilesTouchedPerTask { get; init; } = 10;
     public int MaxNodesModifiedPerTask { get; init; } = 500;
@@ -68,28 +68,30 @@ public record AgentExecutionContext
 The TokenBudget flows from the Orchestrator to the AI Mini Service as follows:
 
 ```
+
 Orchestrator (BuilderContext)
-    │
-    ├── ActiveAgentContext.TokenBudget (default: 8000)
-    │
-    ▼
+│
+├── ActiveAgentContext.TokenBudget (default: 8000)
+│
+▼
 AI Service Client (C#)
-    │
-    ├── HTTP POST to /api/chat
-    │   {
-    │     "messages": [...],
-    │     "max_tokens": context.TokenBudget  // ← Injected here
-    │   }
-    │
-    ▼
+│
+├── HTTP POST to /api/chat
+│ {
+│ "messages": [...],
+│ "max_tokens": context.TokenBudget // ← Injected here
+│ }
+│
+▼
 AI Mini Service (TypeScript)
-    │
-    ├── Receives max_tokens in request body
-    ├── Enforces via LOCKED_PARAMS (see AI_MINI_SERVICE_IMPLEMENTATION.md)
-    ├── effectiveMaxTokens = Math.min(request.max_tokens, LOCKED_PARAMS.max_tokens)
-    │
-    ▼
+│
+├── Receives max_tokens in request body
+├── Enforces via LOCKED_PARAMS (see AI_MINI_SERVICE_IMPLEMENTATION.md)
+├── effectiveMaxTokens = Math.min(request.max_tokens, LOCKED_PARAMS.max_tokens)
+│
+▼
 OpenAI-compatible Provider
+
 ```
 
 **Key Points:**
@@ -117,19 +119,26 @@ public enum AgentRole
 
 Each agent role has a pre-defined "sandbox" of allowed file operations. Attempts to write outside this sandbox trigger a `SANDBOX_ESCAPE_ATTEMPT` error.
 
-| Agent | Allowed Write Patterns | Forbidden |
-| :--- | :--- | :--- |
-| **Architect** | `docs/**/*.md`, `README.md`, `*.sln` | `*.cs`, `*.xaml`, `Package.appxmanifest` |
-| **Planner** | **NONE (Read-Only)** | **ALL FILES** (Can only emit JSON Task Graphs) |
-| **Schema** | `Models/**/*.cs`, `Data/Migrations/**/*.cs` | `Controllers/*`, `Views/*` |
-| **Frontend** | `Views/**/*.xaml`, `ViewModels/**/*.cs` | `Services/*`, `Data/*` |
-| **Backend** | `Services/**/*.cs`, `Controllers/**/*.cs` | `Views/*`, `App.xaml` |
-| **Integration** | `Program.cs`, `App.xaml.cs` (DI wiring) | Core Models, Views |
-| **Capability Inference**| `Package.appxmanifest` ONLY | `*.cs`, `*.xaml` |
-| **Fixer** | *Target File Only* (Scoped to error source via ErrorClassification) | Anything outside error scope |
+| Agent                    | Allowed Write Patterns                                              | Forbidden                                      |
+| :----------------------- | :------------------------------------------------------------------ | :--------------------------------------------- |
+| **Architect**            | `docs/**/*.md`, `README.md`, `*.sln`                                | `*.cs`, `*.xaml`, `Package.appxmanifest`       |
+| **Planner**              | **NONE (Read-Only)**                                                | **ALL FILES** (Can only emit JSON Task Graphs) |
+| **Schema**               | `Models/**/*.cs`, `Data/Migrations/**/*.cs`                         | `Controllers/*`, `Views/*`                     |
+| **Frontend**             | `Views/**/*.xaml`, `ViewModels/**/*.cs`                             | `Services/*`, `Data/*`                         |
+| **Backend**              | `Services/**/*.cs`, `Controllers/**/*.cs`                           | `Views/*`, `App.xaml`                          |
+| **Integration**          | `Program.cs`, `App.xaml.cs` (DI wiring)                             | Core Models, Views                             |
+| **Capability Inference** | `Package.appxmanifest` ONLY                                         | `*.cs`, `*.xaml`                               |
+| **Fixer**                | _Target File Only_ (Scoped to error source via ErrorClassification) | Anything outside error scope                   |
 
 **Enforcement:**
 The `PatchEngine` validates every `write` operation against the `AllowedFilePatterns` of the active context. If the `PLANNER` agent attempts a write operation, the Kernel instantly throws a `SANDBOX_ESCAPE_ATTEMPT` error.
+
+> **Code Generation Rules by Agent Role**:
+>
+> - **Schema agent** generates EF Core + SQLite code following [DATA_LAYER_GENERATION.md](./DATA_LAYER_GENERATION.md)
+> - **Frontend agent** generates WinUI 3 XAML + ViewModels following [UI_GENERATION_RULES.md](./UI_GENERATION_RULES.md)
+> - **Architect agent** outputs a spec conforming to [STRUCTURED_SPEC_FORMAT.md](./STRUCTURED_SPEC_FORMAT.md)
+> - **All agents** use the bundled toolchain paths defined in [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md)
 
 ### 3.1 Fixer Agent Scope Rules
 
@@ -142,6 +151,7 @@ The Fixer's allowed write patterns are dynamically determined at runtime based o
 3. **Error auto-fix strategy** — May include additional related files (e.g., ViewModel when View has binding error)
 
 **Example ErrorClassification for Fixer Scoping:**
+
 ```csharp
 var classification = new ErrorClassification
 {
@@ -171,13 +181,13 @@ public enum MemoryScope
 {
     // Global Read-Only: Standard Library, Project Context
     GLOBAL_READONLY,
-    
+
     // Task Scoped: Shared only within the current Task ID
     TASK_SCOPED,
-    
+
     // Agent Scoped: Private scratchpad for the agent instance
     AGENT_SCOPED,
-    
+
     // Retry Scoped: Isolated per-retry attempt, always cleared between attempts
     RETRY_SCOPED
 }
@@ -185,14 +195,14 @@ public enum MemoryScope
 
 ### Read/Write Matrix
 
-| Scope | Architect | Planner | Schema | Frontend | Backend | Capability | Fixer |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Global** | READ | READ | READ | READ | READ | READ | READ |
-| **Task** | WRITE | WRITE | READ | READ | READ | READ | READ |
-| **Agent** | PRIVATE | PRIVATE | PRIVATE | PRIVATE | PRIVATE | PRIVATE | PRIVATE |
+| Scope      | Architect | Planner | Schema  | Frontend | Backend | Capability | Fixer   |
+| :--------- | :-------- | :------ | :------ | :------- | :------ | :--------- | :------ |
+| **Global** | READ      | READ    | READ    | READ     | READ    | READ       | READ    |
+| **Task**   | WRITE     | WRITE   | READ    | READ     | READ    | READ       | READ    |
+| **Agent**  | PRIVATE   | PRIVATE | PRIVATE | PRIVATE  | PRIVATE | PRIVATE    | PRIVATE |
 
-*   **Task Memory**: Used to pass the "Spec" or "Plan" down. Only the `Architect` and `Planner` write the plan. The execution agents (Frontend, Backend, etc.) only read it.
-*   **Agent Memory**: Used for internal reasoning ("Chain of Thought"). Discarded after execution.
+- **Task Memory**: Used to pass the "Spec" or "Plan" down. Only the `Architect` and `Planner` write the plan. The execution agents (Frontend, Backend, etc.) only read it.
+- **Agent Memory**: Used for internal reasoning ("Chain of Thought"). Discarded after execution.
 
 ### 4.1 Memory Lifecycle Enforcement
 
@@ -206,12 +216,12 @@ To prevent state leakage, memory is cleared according to the following determini
 
 > **INVARIANT**: Memory lifecycle during retries is strictly defined to prevent state leakage across retry attempts. The system uses **Infinite Silent Retry** - there is NO ABORT state, only SYSTEM_RESET which clears memory and retries with a fresh approach.
 
-| Retry Stage | AGENT_SCOPED | TASK_SCOPED | RETRY_SCOPED |
-|-------------|--------------|-------------|--------------|
-| FIX_LEVEL (1-3) | Cleared after each attempt | **Retained** | Cleared after each attempt |
-| INTEGRATION_LEVEL (4-6) | Cleared after each attempt | **Retained** | Cleared after each attempt |
+| Retry Stage              | AGENT_SCOPED               | TASK_SCOPED  | RETRY_SCOPED               |
+| ------------------------ | -------------------------- | ------------ | -------------------------- |
+| FIX_LEVEL (1-3)          | Cleared after each attempt | **Retained** | Cleared after each attempt |
+| INTEGRATION_LEVEL (4-6)  | Cleared after each attempt | **Retained** | Cleared after each attempt |
 | ARCHITECTURE_LEVEL (7-9) | Cleared after each attempt | **Retained** | Cleared after each attempt |
-| SYSTEM_RESET (10+) | Cleared | **Cleared** | Cleared (Forced Amnesia) |
+| SYSTEM_RESET (10+)       | Cleared                    | **Cleared**  | Cleared (Forced Amnesia)   |
 
 ### Memory Clearing Sequence
 
@@ -263,11 +273,11 @@ public class RetryMemoryPolicy
 
 ### Rationale
 
-| Memory Scope | Behavior During Retry | Reason |
-|--------------|----------------------|--------|
-| RETRY_SCOPED | Always cleared | Isolates each retry attempt; prevents error cascade |
-| AGENT_SCOPED | Always cleared | Agent gets fresh context each attempt; prevents reasoning contamination |
-| TASK_SCOPED | Retained until SYSTEM_RESET | Preserves task plan for adaptive retry; cleared on SYSTEM_RESET to force entirely new approach |
+| Memory Scope | Behavior During Retry       | Reason                                                                                         |
+| ------------ | --------------------------- | ---------------------------------------------------------------------------------------------- |
+| RETRY_SCOPED | Always cleared              | Isolates each retry attempt; prevents error cascade                                            |
+| AGENT_SCOPED | Always cleared              | Agent gets fresh context each attempt; prevents reasoning contamination                        |
+| TASK_SCOPED  | Retained until SYSTEM_RESET | Preserves task plan for adaptive retry; cleared on SYSTEM_RESET to force entirely new approach |
 
 ---
 
@@ -279,14 +289,14 @@ public class RetryMemoryPolicy
 
 The enforcement mechanisms follow the AI-Primary model:
 
-| Enforcement Type | Owner | Description |
-|------------------|-------|-------------|
-| File sandbox | Runtime Safety Kernel | Hard rejection if violated |
-| Mutation ceilings | Runtime Safety Kernel | Hard limits enforced before commit |
-| Token budget | Runtime Safety Kernel | Hard timeout if exceeded |
-| Retry strategy | AI Construction Engine | Agents decide how to adapt |
-| Error recovery | AI Construction Engine | Agents decide fix approach |
-| AI capabilities | AI Service Layer (Layer 6.6) | LLM, Vision, Image Gen, Search - user-configured |
+| Enforcement Type  | Owner                        | Description                                      |
+| ----------------- | ---------------------------- | ------------------------------------------------ |
+| File sandbox      | Runtime Safety Kernel        | Hard rejection if violated                       |
+| Mutation ceilings | Runtime Safety Kernel        | Hard limits enforced before commit               |
+| Token budget      | Runtime Safety Kernel        | Hard timeout if exceeded                         |
+| Retry strategy    | AI Construction Engine       | Agents decide how to adapt                       |
+| Error recovery    | AI Construction Engine       | Agents decide fix approach                       |
+| AI capabilities   | AI Service Layer (Layer 6.6) | LLM, Vision, Image Gen, Search - user-configured |
 
 ### 5.2 The Sandbox Guard
 
@@ -314,8 +324,8 @@ public class MutationGuard
 
 Agents are invoked with hard limits.
 
-*   **Token Limit**: Truncation or error if exceeded.
-*   **Time Limit**: Hard timeout (e.g., 60s) kills the agent process.
+- **Token Limit**: Truncation or error if exceeded.
+- **Time Limit**: Hard timeout (e.g., 60s) kills the agent process.
 
 ---
 
