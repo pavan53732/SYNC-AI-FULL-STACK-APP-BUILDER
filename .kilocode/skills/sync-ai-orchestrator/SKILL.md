@@ -30,10 +30,9 @@ public enum BuilderState
     RETRYING = 10,
     EXECUTING_TASK = 11,
     BUILD_SUCCEEDED = 12,
-    FAILED = 13,
+    // FAILED state removed - replaced by SYSTEM_RESET per canonical docs
     PACKAGING = 14,
     PACKAGING_SUCCEEDED = 15,
-    PACKAGING_FAILED = 16,
     CAPABILITY_CHECK = 17,
     MANIFEST_UPDATING = 18,
     REBUILD_REQUIRED = 19,
@@ -75,7 +74,9 @@ public enum TaskType
 | FIX_LEVEL | 1-3 | Fix Agent |
 | INTEGRATION_LEVEL | 4-6 | Integration Agent |
 | ARCHITECTURE_LEVEL | 7-9 | Architect Agent |
-| ABORT | 10+ | Rollback + Notify User |
+| SYSTEM_RESET | 10+ | Kernel: Rollback + Clear AI Memory + Fresh Approach |
+
+> **CANONICAL DEFINITION**: Per [SYSTEM_ARCHITECTURE.md](./docs/SYSTEM_ARCHITECTURE.md) §8, there is no FAILED state. The system retries until success or user cancellation. At cycle 10+, SYSTEM_RESET triggers rollback and forced amnesia.
 
 ### Event Types
 
@@ -125,9 +126,9 @@ public record SnapshotRollbackEvent : BuilderEvent { ... }
 ### When Implementing Retry Logic
 
 1. Classify errors BEFORE retry decision
-2. Use exponential backoff
+2. Use exponential backoff with cool-off periods per canonical retry governance
 3. Create checkpoints at ARCHITECTURE_LEVEL
-4. Rollback to LastStableSnapshotHash on ABORT
+4. Rollback to LastStableSnapshotHash on SYSTEM_RESET (cycle 10+)
 
 ### When Creating Tasks
 

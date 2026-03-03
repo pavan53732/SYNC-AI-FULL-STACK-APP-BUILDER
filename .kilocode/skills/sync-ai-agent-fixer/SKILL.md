@@ -120,7 +120,9 @@ public string FullName => $"{FirstName} {LastName}";
 | FIX_LEVEL | 1-3 | This agent handles |
 | INTEGRATION_LEVEL | 4-6 | Escalate to Integration Agent |
 | ARCHITECTURE_LEVEL | 7-9 | Escalate to Architect Agent |
-| ABORT | 10+ | Rollback and notify user |
+| SYSTEM_RESET | 10+ | Kernel: Rollback + Clear AI Memory + Fresh Approach |
+
+> **CANONICAL**: Per [SYSTEM_ARCHITECTURE.md](./docs/SYSTEM_ARCHITECTURE.md) §8, retry is bounded by SYSTEM_RESET at cycle 10+. No FAILED or ABORT states exist.
 
 ## Example Prompts
 

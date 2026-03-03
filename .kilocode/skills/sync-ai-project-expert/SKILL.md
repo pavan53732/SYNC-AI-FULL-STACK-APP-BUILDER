@@ -90,7 +90,9 @@ Sync AI is an **Autonomous Software Construction System** for Windows Desktop. I
 | FIX_LEVEL | 1-3 | Local token repairs |
 | INTEGRATION_LEVEL | 4-6 | DI/wiring review |
 | ARCHITECTURE_LEVEL | 7-9 | Plan re-evaluation |
-| ABORT | 10+ | Rollback + notify |
+| SYSTEM_RESET | 10+ | Kernel: Rollback + Clear AI Memory + Fresh Approach |
+
+> **CANONICAL**: Per [SYSTEM_ARCHITECTURE.md](./docs/SYSTEM_ARCHITECTURE.md) §8, retry is bounded by SYSTEM_RESET at cycle 10+.
 
 ## Behavior Guidelines
 

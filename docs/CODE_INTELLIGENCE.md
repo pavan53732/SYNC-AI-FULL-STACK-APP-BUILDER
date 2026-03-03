@@ -712,20 +712,49 @@ public interface IRepository<T> where T : class
     Task DeleteAsync(object id);
 }
 
-public class DapperRepository<T> : IRepository<T> where T : class
+public class EfCoreRepository<T> : IRepository<T> where T : class
 {
-    private readonly IDbConnection _connection;
+    private readonly AppDbContext _context;
 
-    public DapperRepository(IDbConnection connection) { _connection = connection; }
+    public EfCoreRepository(AppDbContext context) => _context = context;
 
     public async Task<T> GetByIdAsync(object id)
     {
-        var tableName = typeof(T).Name + "s";
-        return await _connection.QuerySingleOrDefaultAsync<T>(
-            $"SELECT * FROM {tableName} WHERE Id = @Id", new { Id = id });
+        // Use EF Core's FindAsync for primary key lookups
+        return await _context.Set<T>().FindAsync(id);
+    }
+
+    public async Task<IEnumerable<T>> GetAllAsync()
+    {
+        // Use AsNoTracking for read-only queries to improve performance
+        return await _context.Set<T>().AsNoTracking().ToListAsync();
+    }
+
+    public async Task AddAsync(T entity)
+    {
+        await _context.Set<T>().AddAsync(entity);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task UpdateAsync(T entity)
+    {
+        _context.Set<T>().Update(entity);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task DeleteAsync(object id)
+    {
+        var entity = await GetByIdAsync(id);
+        if (entity != null)
+        {
+            _context.Set<T>().Remove(entity);
+            await _context.SaveChangesAsync();
+        }
     }
 }
 ```
+
+**Note**: Dapper is not used in generated applications. All data access in Sync AI-generated applications uses EF Core with SQLite as the database provider, following the patterns defined in [DATA_LAYER_GENERATION.md](./DATA_LAYER_GENERATION.md).
 
 ---
 

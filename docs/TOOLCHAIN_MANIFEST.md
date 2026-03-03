@@ -452,7 +452,7 @@ When upgrading the toolchain (e.g., .NET 8 → .NET 9 in a future major release)
    └── SHA-256 each output binary
    └── Store in build_outputs.json
 
-5. Verify Reproducibility (Optional)
+5. Verify Reproducibility (MANDATORY for release builds)
    └── Rebuild with same inputs
    └── Compare output hashes
    └── FAIL if hashes differ

@@ -700,6 +700,27 @@ public enum RetryStage
 
 > **Operator Escalation Rule**: After 3 consecutive SYSTEM_RESET events (cycles 10, 20, 30), emit an `OperatorEscalationEvent` requiring user attention before continuing.
 
+### Retry Budget Contract (Global Hard Limits)
+
+> **INVARIANT**: Retry is BOUNDED. Infinite retries are FORBIDDEN except for approved error classes.
+
+| Error Class | Max Retries | Ceiling Behavior |
+| ----------- | ------------ | ----------------- |
+| **SYNTAX_ERROR** (CS*) | 3 | FIX_LEVEL only, then SYSTEM_RESET |
+| **BUILD_ERROR** (NETSDK*, MSB*) | 9 | Full retry 1-9, then SYSTEM_RESET |
+| **RUNTIME_ERROR** | 9 | Full retry 1-9, then SYSTEM_RESET |
+| **CAPABILITY_MISSING** | 3 | FIX_LEVEL only, then SYSTEM_RESET |
+| **MANIFEST_INVALID** | 3 | FIX_LEVEL only, then SYSTEM_RESET |
+| **AI_SERVICE_UNAVAILABLE** | Infinite | No ceiling - service availability is external |
+| **AI_SERVICE_DEGRADED** | Infinite | No ceiling - service availability is external |
+
+> **Deterministic Terminal State**: When any retry ceiling is reached, the system MUST transition to a deterministic terminal recovery:
+> - Emit `RetryCeilingReachedEvent`
+> - Trigger SYSTEM_RESET (rollback + amnesia)
+> - If 3+ consecutive SYSTEM_RESET events: emit `OperatorEscalationEvent`
+>
+> Only `AI_SERVICE_UNAVAILABLE` and `AI_SERVICE_DEGRADED` are permitted infinite retry - these depend on external service availability.
+
 #### Stage Transition Behavior
 
 ```text

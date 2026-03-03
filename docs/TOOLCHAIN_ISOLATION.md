@@ -268,19 +268,27 @@ public static async Task<BuildResult> LaunchToolProcess(
         psi.Environment[key] = value;
 
     // Job Object enforcement (from EXECUTION_ENVIRONMENT.md §4 — Process Isolation)
-    // FAIL-CLOSED: Block execution if Job Object cannot be established
+    // FAIL-CLOSED: If Job Object attachment fails after start, terminate immediately
     using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
     
+    // Step 1: Start the process
+    process.Start();
+    ProcessTracker.Add(process);
+    
+    // Step 2: Attempt Job Object attachment after startup
     if (!AttachToJobObject(process))
     {
-        // FAIL-CLOSED: Do not allow execution without proper isolation
+        // FAIL-CLOSED: Terminate immediately if attachment fails
+        if (!process.HasExited)
+        {
+            process.Kill(entireProcessTree: true);
+        }
         throw new IsolationException(
-            "Job Object attachment failed. Execution blocked for safety. " +
+            "Job Object attachment failed after process start. " +
+            "Process terminated immediately. " +
             "Capability-requiring runs MUST have Job Object isolation.");
     }
     
-    process.Start();
-    ProcessTracker.Add(process);
     var stdout = await process.StandardOutput.ReadToEndAsync();
     var stderr = await process.StandardError.ReadToEndAsync();
     await process.WaitForExitAsync();

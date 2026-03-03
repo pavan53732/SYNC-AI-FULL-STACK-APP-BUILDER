@@ -193,7 +193,8 @@ It triggers after Roslyn indexing:
 2. **MakePri**: Generate `resources.pri` using bundled `makepri.exe` (Package Resource Index).
 3. **MakeAppx Pack**: Bundle into `.msix` using bundled `makeappx.exe pack`.
 4. **MakeAppx Verify**: Validate the package integrity using bundled `makeappx.exe verify`.
-5. **Sign**: Apply certificate using bundled `signtool.exe sign`.
+5. **Artifact Hash Verification**: Compare output hashes against build_outputs.json; FAIL if any hash differs.
+6. **Sign**: Apply certificate using bundled `signtool.exe sign`.
 6. **Signature Verification**: Verify the applied signature using `signtool.exe verify /pa /v {app.msix}` to ensure trust.
 
 ### 4.2 Certificate Policy (Mandatory)
