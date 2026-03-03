@@ -55,7 +55,7 @@ Generated WinUI 3 Application
 | **Versioned**     | Each spec has a version field; mutations during retry cycles produce new versions              |
 | **Deterministic** | Same spec must always produce the same solution structure                                      |
 | **Validated**     | Spec must pass validation before being dispatched to the Planner                               |
-| **Bounded**       | Spec enforces Phase 1 platform constraints (WinUI 3, SQLite, MVVM, MSIX)                       |
+| **Bounded**       | Spec enforces platform constraints defined in targetPlatform                                |
 
 ---
 
@@ -67,6 +67,7 @@ Generated WinUI 3 Application
   "specVersion": "string (semver, e.g. 1.0.0)",
   "specId": "string (UUID v4)",
   "createdAt": "string (ISO 8601)",
+  "targetPlatform": { ... },
   "appIdentity": { ... },
   "domainModel": { ... },
   "features": [ ... ],
@@ -84,12 +85,54 @@ Generated WinUI 3 Application
 | `specVersion`     | string   | yes      | Semantic version of the spec itself                            |
 | `specId`          | UUID     | yes      | Unique ID for this spec instance; used in snapshot referencing |
 | `createdAt`       | ISO 8601 | yes      | Timestamp at which the spec was extracted                      |
+| `targetPlatform`  | object   | yes      | Target framework family and packaging configuration             |
 | `appIdentity`     | object   | yes      | App name, description, branding, icon intent                   |
 | `domainModel`     | object   | yes      | All entities, their fields, and relationships                  |
-| `features`        | array    | yes      | User-requested features decomposed into capability units       |
+| `features`        | array    | yes      | User-requested features decomposed into capability units         |
 | `navigationGraph` | object   | yes      | Pages and page transitions                                     |
-| `permissions`     | array    | yes      | Required Windows capabilities inferred from features           |
-| `constraints`     | object   | yes      | Locked Phase 1 platform constraints                            |
+| `permissions`     | array    | yes      | Required Windows capabilities inferred from features            |
+| `constraints`     | object   | yes      | Build and runtime constraints                                  |
+
+---
+
+## 2.1 Target Platform
+
+```json
+"targetPlatform": {
+  "frameworkFamily": "WinUI3 | WPF | WinForms | Console | Win32 | WinRT | Hybrid",
+  "language": "CSharp | Cpp | Mixed",
+  "packagingMode": "MSIX | MSI | Unpackaged | Portable",
+  "architectureTargets": ["x64", "ARM64", "x86"],
+  "frameworkVersion": "string (e.g., .NET 8.0, .NET Framework 4.8)"
+}
+```
+
+### Framework Family Options
+
+| Family | Description | Build Tool | Required |
+| ------ | ----------- | ---------- | -------- |
+| **WinUI3** | Modern Windows 11 native UI | MSBuild + Windows SDK | .NET 8 |
+| **WPF** | Windows Presentation Foundation | MSBuild | .NET 8 |
+| **WinForms** | Windows Forms | MSBuild | .NET 8 |
+| **Console** | Command-line application | MSBuild | .NET 8 |
+| **Win32** | Classic Desktop C++ | MSVC | N/A |
+| **WinRT** | Modern C++/WinRT | MSVC + Windows SDK | N/A |
+| **Hybrid** | C# + C++ interop | MSBuild + MSVC | .NET 8 + C++ |
+
+### Packaging Mode Options
+
+| Mode | Tool | Output |
+| ---- | ---- | ------ |
+| **MSIX** | makeappx.exe | .msix/.appx |
+| **MSI** | WiX Toolset | .msi |
+| **Unpackaged** | None | .exe (self-contained) |
+| **Portable** | Zip | .zip with .exe |
+
+### Architecture Targets
+
+- `x64` - 64-bit Windows (default)
+- `ARM64` - ARM64 Windows devices
+- `x86` - 32-bit Windows (legacy)
 
 ---
 
@@ -205,18 +248,22 @@ The following names are reserved by the platform and may not be used as entity n
 | `Search`       | Search box in existing list + full-text EF Core query             |
 | `FileAccess`   | FilePicker integration + `broadFileSystemAccess` capability       |
 
-### Phase 1 Feature Constraints
+### Framework-Specific Feature Constraints
 
-> **CRITICAL**: In Phase 1, the following features are **NOT supported** and must be rejected or simplified at spec extraction time:
+> **NOTE**: Feature support varies by target framework. The Project Archetype Resolver determines which features are supported based on targetPlatform.
 
-| Unsupported Category     | Fallback                              |
-| ------------------------ | ------------------------------------- |
-| Network / REST API calls | Convert to local data only            |
-| Real-time sync           | Convert to manual refresh             |
-| Web browser embedding    | Omit                                  |
-| Third-party OAuth        | Omit; use local credentials if needed |
-| Camera capture           | Use file picker fallback              |
-| Map rendering            | Omit; store address as plain text     |
+| Framework | Network | Real-time | OAuth | Camera | Maps |
+| --------- | ------- | --------- | ----- | ------ | ---- |
+| WinUI3 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| WPF | ✅ | ✅ | ✅ | ✅ | ✅ |
+| WinForms | ✅ | ✅ | ✅ | ⚠️ Limited | ⚠️ Limited |
+| Win32 | ⚠️ Manual | ❌ | ❌ | ❌ | ❌ |
+| WinRT | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Hybrid | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+> If a feature is requested that is not supported by the target framework, the AI should either:
+> 1. Fall back to a simpler alternative supported by the framework
+> 2. Recommend changing to a different framework that supports the required feature
 
 ---
 

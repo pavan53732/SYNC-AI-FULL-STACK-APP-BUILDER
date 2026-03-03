@@ -65,18 +65,44 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 
 | Attribute             | Value                                                              |
 | --------------------- | ------------------------------------------------------------------ |
-| **Framework**         | WinUI 3 (.NET 8)                                                   |
 | **Target OS**         | Windows 10 Build 22621+ (Windows 11 standard)                      |
-| **Deployment**        | MSIX packaging                                                     |
 | **AI Reasoning**      | **Local AI Mini Service (openai SDK) — User-configured providers** |
 | **Build & Execution** | Local-only (no cloud dependency)                                   |
 
+### Supported Framework Families
+
+Sync AI generates applications across multiple Windows frameworks:
+
+#### Managed (.NET)
+
+| Framework | Description | Packaging |
+| --------- | ----------- | --------- |
+| **WinUI 3** | Modern Windows 11 native UI | MSIX |
+| **WPF** | Windows Presentation Foundation | MSIX / MSI / EXE |
+| **WinForms** | Windows Forms | MSI / EXE |
+| **Console** | Command-line application | EXE |
+
+#### Native (C++)
+
+| Framework | Description | Packaging |
+| --------- | ----------- | --------- |
+| **Win32** | Classic Desktop C++ | EXE / MSIX |
+| **WinRT** | Modern C++/WinRT | MSIX |
+| **Hybrid** | C# + C++ interop | MSIX / EXE |
+
+#### Optional Components
+
+| Type | Framework Support |
+| ---- | ----------------- |
+| **Windows Service** | WinUI3 / WPF / Console / Native |
+| **UWP (legacy)** | WinUI 3 migration target |
+
 ### Core Capabilities
 
-1. **Frontend (Native UI)**: WinUI 3, XAML, MVVM, Theming, Navigation
+1. **Frontend (Native UI)**: WinUI 3, WPF, WinForms, Win32, XAML, MVVM, Theming, Navigation
 2. **Application Layer**: Services, Dependency Injection, Validation
 3. **Data Layer**: SQLite, Repository Pattern, Schema Migrations
-4. **Build System**: Hidden MSBuild, NuGet Restore, XAML Compilation
+4. **Build System**: MSBuild, NuGet Restore, XAML Compilation, MSVC Compilation
 5. **Runtime**: Live Preview, Hot Reload, Full Compiled Launch
 6. **Packaging & Permissions**: Automatic AppxManifest, Capability Inference, MSIX Bundle, Certificate Signing
 7. **AI Capabilities**: LLM, Vision, Image Generation, Web Search — via user-configured OpenAI-compatible providers
@@ -206,6 +232,7 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 | **Layer 6**   | Runtime Safety Kernel - enforcement, abort authority                              | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md)                                                 |
 | **Layer 6.5** | AI Construction Engine - intelligence, generation                                 | [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md)                                             |
 | **Layer 6.6** | **AI Service Layer - openai SDK, user-configured providers**                      | [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md)                                                         |
+| **Layer 6.7** | **Project Archetype Resolver** - framework selection, compatibility matrix       | [PROJECT_ARCHETYPE_RESOLUTION.md](./PROJECT_ARCHETYPE_RESOLUTION.md)                                  |
 | **Layer 7**   | WinUI 3 shell, user interaction                                                   | [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md)                                                       |
 
 ### System Ownership Matrix
@@ -231,6 +258,8 @@ See [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) for the complete AI/Kernel rela
 | **Certificate Signing**  | Runtime Safety Kernel   | ❌          | ✅              | [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) |
 | **Snapshot Management**  | Runtime Safety Kernel   | ❌          | ✅              | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md)                                               |
 | **State Transitions**    | Runtime Safety Kernel   | ❌          | ✅              | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md)                                               |
+| **Framework Selection** | Project Archetype Resolver | ✅      | ❌              | [PROJECT_ARCHETYPE_RESOLUTION.md](./PROJECT_ARCHETYPE_RESOLUTION.md)                                |
+| **Toolchain Profile**  | Build Execution Sandbox | ❌          | ✅              | [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md)                                                   |
 | **Retry Strategy (1-9)** | AI Construction Engine  | ✅          | ❌              | [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md)                                                       |
 | **System Reset (10+)**   | Runtime Safety Kernel   | ❌          | ✅              | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md)                                               |
 | **Preview Rendering**    | Preview System          | ❌          | ✅              | [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md)                                                           |
@@ -1052,6 +1081,7 @@ AI patches cannot touch:
 | ------------------------ | ---------------------------------------------- | ------- |
 | **AI Service Layer**     | AI_SERVICE_LAYER.md                            | All     |
 | **AI Mini Service Code** | AI_MINI_SERVICE_IMPLEMENTATION.md              | All     |
+| **Framework Resolution**  | PROJECT_ARCHETYPE_RESOLUTION.md                | All     |
 | State Machine            | ORCHESTRATION_ENGINE.md                        | §3      |
 | Task Schema              | ORCHESTRATION_ENGINE.md                        | §2      |
 | Retry Logic              | ORCHESTRATION_ENGINE.md                        | §7      |
