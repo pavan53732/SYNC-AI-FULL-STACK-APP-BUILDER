@@ -8,8 +8,8 @@
 >
 > - [STRUCTURED_SPEC_FORMAT.md](./STRUCTURED_SPEC_FORMAT.md) — Canonical JSON schema for the spec output of the Architect Agent
 > - [DATA_LAYER_GENERATION.md](./DATA_LAYER_GENERATION.md) — EF Core + SQLite code generation rules (Schema Agent)
-> - [UI_GENERATION_RULES.md](./UI_GENERATION_RULES.md) — WinUI 3 XAML + ViewModel generation rules (Frontend Agent)
-> - [TARGET_APP_ARCHITECTURE.md](./TARGET_APP_ARCHITECTURE.md) — Standard WinUI 3 solution structure being built
+> - [UI_GENERATION_RULES.md](./UI_GENERATION_RULES.md) — UI generation rules (framework-specific: WinUI/WPF/WinForms/WinRT)
+> - [TARGET_APP_ARCHITECTURE.md](./TARGET_APP_ARCHITECTURE.md) — Multi-framework solution structure being built
 >
 > _The AI Construction Engine is the PRIMARY BRAIN. It designs adaptive blueprints, learns from errors, and owns the entire construction strategy. The Runtime Safety Kernel enforces hard boundaries silently._
 

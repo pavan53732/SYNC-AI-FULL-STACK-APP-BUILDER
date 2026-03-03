@@ -29,7 +29,21 @@
 
 ## 1. Overview
 
-The **Structured Spec** is the canonical internal representation of a user's natural language description after AI parsing and intent extraction. It is the **single source of truth** that all downstream agents (Architect, Planner, Schema, Frontend, Backend, Integration, Fix) consume to generate a complete WinUI 3 application.
+The **Structured Spec** is the canonical internal representation of a user's natural language description after AI parsing and intent extraction. It is the **single source of truth** that all downstream agents (Architect, Planner, Schema, Frontend, Backend, Integration, Fix) consume to generate a complete Windows native application (WinUI3/WPF/WinForms/Console/Win32/WinRT/Hybrid) determined by `targetPlatform.frameworkFamily`.
+
+### Framework Neutrality Invariant
+
+> **CRITICAL**: The Structured Spec MUST NOT assume WinUI 3.
+> All generation paths are determined by `targetPlatform.frameworkFamily`.
+>
+> This enables the system to support multiple frameworks without bias:
+> - WinUI 3 → XAML generation
+> - WPF → XAML generation  
+> - WinForms → C# WinForms designer code
+> - Console → Pure C# console application
+> - Win32 → Native C++ with Win32 API
+> - WinRT → C++/WinRT projection code
+> - Hybrid → Mixed managed/native interop
 
 ### Flow
 

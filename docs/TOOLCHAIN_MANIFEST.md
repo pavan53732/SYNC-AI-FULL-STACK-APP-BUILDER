@@ -676,6 +676,51 @@ When upgrading the toolchain (e.g., .NET 8 → .NET 9 in a future major release)
 
 ---
 
+## 8.5 Native Deterministic Build Policy
+
+**INVARIANT**: All C++ builds MUST use deterministic compiler and linker flags to ensure reproducible binaries across machines and time.
+
+### Mandatory Compiler Flags (cl.exe)
+
+```bash
+cl.exe /Z7 /Gy /Gw /FC /Brepro [sources...]
+```
+
+| Flag | Purpose | Rationale |
+|------|---------|-----------|
+| `/Z7` | Store debug info in object files | Enables deterministic PDB generation |
+| `/Gy` | Function-level linking | Removes unused functions |
+| `/Gw` | Whole-program function linking | Cross-TU optimization |
+| `/FC` | Full path in error messages | Reproducible error output |
+| `/Brepro` | Produce reproducible binary | **MANDATORY** - timestamp-neutral, hash-based build |
+
+### Mandatory Linker Flags (link.exe)
+
+```bash
+link.exe /INCREMENTAL:NO /OPT:REF /OPT:ICF /Brepro [objects...]
+```
+
+| Flag | Purpose | Rationale |
+|------|---------|-----------|
+| `/INCREMENTAL:NO` | Disable incremental linking | Clean, reproducible builds |
+| `/OPT:REF` | Remove unused functions/data | Link-time optimization |
+| `/OPT:ICF` | COMDAT folding | Identical function merging |
+| `/Brepro` | Reproducible binary | **MANDATORY** - timestamp-neutral output |
+
+### Resource Compiler (rc.exe)
+
+```bash
+rc.exe /nologo [resources.rc]
+```
+
+| Flag | Purpose |
+|------|---------|  
+| `/nologo` | Suppress copyright message | Clean output |
+
+> **ENFORCEMENT**: The Build Executor MUST inject these flags for all native compilations. Projects that omit `/Brepro` will fail validation.
+
+---
+
 ## 9. Artifact Reproducibility
 
 > **INVARIANT**: All build artifacts MUST be reproducible from identical inputs using locked toolchain versions.
