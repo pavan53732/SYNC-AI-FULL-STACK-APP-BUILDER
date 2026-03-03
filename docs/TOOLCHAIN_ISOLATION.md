@@ -77,10 +77,16 @@ var isolatedEnv = new Dictionary<string, string>
     ["NUGET_PLUGINS_CACHE_PATH"] = @"{workspace}\{projectId}\.nuget\plugins-cache",
     ["NUGET_FALLBACK_PACKAGES"] = @"{SyncAIRoot}\toolchain\nuget-cache",
 
-    // ── Workspace Isolation ───────────────────────────────────────────────
+    // ── Workspace Isolation ───────────────────────────────────────
     ["TEMP"]                 = @"{workspace}\{projectId}\tmp",
     ["TMP"]                  = @"{workspace}\{projectId}\tmp",
     ["LOCALAPPDATA"]         = @"{workspace}\{projectId}\.localappdata",
+    // ── AppData/ProgramData Isolation ─────────────────────────────
+    // Prevents MSBuild and .NET tooling from reading/writing the user's real AppData.
+    // Without these overrides, NuGet plugin caches, MSBuild extension paths, and
+    // dotnet tool manifests from the host can leak into the isolated build environment.
+    ["APPDATA"]              = @"{workspace}\{projectId}\.appdata",
+    ["PROGRAMDATA"]          = @"{workspace}\{projectId}\.programdata",
 
     // ── PATH Isolation (see Section 3) ────────────────────────────────────
     ["PATH"]                 = BuildIsolatedPath(),
@@ -270,11 +276,11 @@ public static async Task<BuildResult> LaunchToolProcess(
     // Job Object enforcement (from EXECUTION_ENVIRONMENT.md §4 — Process Isolation)
     // FAIL-CLOSED: If Job Object attachment fails after start, terminate immediately
     using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-    
+
     // Step 1: Start the process
     process.Start();
     ProcessTracker.Add(process);
-    
+
     // Step 2: Attempt Job Object attachment after startup
     if (!AttachToJobObject(process))
     {
@@ -288,7 +294,7 @@ public static async Task<BuildResult> LaunchToolProcess(
             "Process terminated immediately. " +
             "Capability-requiring runs MUST have Job Object isolation.");
     }
-    
+
     var stdout = await process.StandardOutput.ReadToEndAsync();
     var stderr = await process.StandardError.ReadToEndAsync();
     await process.WaitForExitAsync();

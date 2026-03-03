@@ -300,7 +300,8 @@ These are the differentiation moat — they never change:
 
 1. **AST-Only Mutation** — No raw file writes
 2. **Snapshot Rollback** — Every mutation is reversible
-3. **Continuous Resilience** — System resets context and rolls back on stuck loops, but never stops until user cancels
+3. **Continuous Resilience** — On stuck loops the Kernel rolls back to the pre-mutation snapshot and resets AI context; the build pipeline is always resumed with a fresh approach.
+   > **Note**: The only way to stop execution is explicit user cancellation. See [§6 Cancellation Authority](#6-cancellation-authority).
 4. **Manifest Pre-Build Inference** — Capabilities known before release build
 5. **Sandbox Enforcement** — No escape from workspace
 6. **Certificate Validation** — All packages signed

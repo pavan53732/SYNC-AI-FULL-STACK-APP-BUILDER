@@ -42,11 +42,13 @@
 ### What This Means
 
 The invariant **"No Raw File Writes"** specifically prohibits:
+
 - Direct string replacement (`string.Replace()`)
 - Regex-based code modification (`Regex.Replace()` on C# source)
 - Direct file overwrite with LLM-generated code
 
 The invariant **PERMITS**:
+
 - Roslyn AST transformation followed by `Formatter.Format()` → `File.WriteAllTextAsync()`
 - XML parsing of XAML followed by `XDocument.Save()` or `File.WriteAllTextAsync()`
 
@@ -542,11 +544,11 @@ public class XamlBindingIndexer
             foreach (var binding in xmlBindings)
             {
                 // XML results are authoritative - mark as such
-                extractedBindings[binding.Path] = new XamlBindingSource 
-                { 
-                    Path = binding.Path, 
+                extractedBindings[binding.Path] = new XamlBindingSource
+                {
+                    Path = binding.Path,
                     Source = "XML",
-                    IsAuthoritative = true 
+                    IsAuthoritative = true
                 };
             }
         }
@@ -560,7 +562,7 @@ public class XamlBindingIndexer
         foreach (Match match in regexBindings)
         {
             var path = match.Groups["path"].Value;
-            
+
             // Deduplicate: If XML already found this binding, skip regex result
             if (extractedBindings.ContainsKey(path))
                 continue;
@@ -619,6 +621,33 @@ public class MutationGuard
     }
 }
 ```
+
+#### `AgentExecutionContext` Schema
+
+`AgentExecutionContext` is injected into `BuilderContext` before task execution and carries the per-task safety ceilings enforced by `MutationGuard`. Its C# definition:
+
+```csharp
+/// <summary>
+/// Ceiling contract injected into BuilderContext before each task.
+/// All limits are enforced by MutationGuard before any AST patch is applied.
+/// </summary>
+public record AgentExecutionContext
+{
+    /// <summary>Maximum AST nodes that may be modified in a single task. Default: 100.</summary>
+    public int MaxNodesModifiedPerTask { get; init; } = 100;
+
+    /// <summary>Maximum distinct files that a single task may touch. Default: 5.</summary>
+    public int MaxFilesTouchedPerTask { get; init; } = 5;
+
+    /// <summary>
+    /// Maximum symbols (methods, classes, properties) whose call-sites may be affected
+    /// by a single patch (impact-analysis ceiling). Default: 50.
+    /// </summary>
+    public int MaxAffectedSymbols { get; init; } = 50;
+}
+```
+
+> **Source of truth**: `BuilderContext` exposes `MaxFilesTouchedPerTask` and `MaxNodesModifiedPerTask` as computed properties delegating to `ActiveAgentContext` (see [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §4). `MaxAffectedSymbols` is enforced during the INDEXING stage impact analysis.
 
 ---
 

@@ -787,7 +787,7 @@ The system monitors for environment conditions that require user intervention. A
 >
 > **Retry Distinction**:
 >
-> - **Mutation Retry Ceiling**: Code mutation cycles are bounded (max 10 retries per task) with staged escalation through Fix → Integration → Architecture levels before abort.
+> - **Mutation Retry Ceiling**: Code mutation cycles follow staged escalation — Fix (1–3) → Integration (4–6) → Architecture (7–9) — and at cycle 10+ the Kernel triggers a **SYSTEM RESET** (rollback to snapshot + forced AI memory wipe + fresh attempt). The system never hard-aborts on its own. See [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §8 for the authoritative retry governance model.
 > - **Environment Recovery Loops**: Unbounded — disk space recovery, SDK installation, NuGet cache repair continue until resolved or user cancels.
 > - This distinction ensures deterministic code safety while maintaining resilience for environmental issues.
 
