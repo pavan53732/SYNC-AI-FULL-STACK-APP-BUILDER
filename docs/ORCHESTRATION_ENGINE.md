@@ -235,6 +235,18 @@ EXECUTION_PLAN_BUILT
   ↓ (execute next task)
 
   ╔═══════════════════════════════════════════════════════════════╗
+  ║  CONDITIONAL PATH: New App vs Refinement                     ║
+  ╠═══════════════════════════════════════════════════════════════╣
+  ║                                                               ║
+  ║  IF IsNewAppCreation = true:                                 ║
+  ║    REQUIREMENT_EVALUATION → BRANDING_INFERENCE →             ║
+  ║    ASSET_GENERATING → ASSETS_READY                           ║
+  ║                                                              ║
+  ╚═══════════════════════════════════════════════════════════════╝
+         │
+         ↓ (assets ready OR if refinement)
+
+  ╔═══════════════════════════════════════════════════════════════╗
   ║  TASK EXECUTION PIPELINE (STRICT ORDER)                      ║
   ╠═══════════════════════════════════════════════════════════════╣
   ║                                                               ║
@@ -517,7 +529,11 @@ public class BuilderReducer
 
             // === AI GENERATION ===
             (BuilderState.EXECUTION_PLAN_BUILT, TaskStartedEvent e) =>
-                UpdateTaskAndTransition(context, e.TaskId, BuilderState.AI_GENERATING, @event),
+                // CONDITIONAL: For NEW APPS, go through asset generation first
+                // For REFINEMENTS, skip to AI_GENERATING
+                context.IsNewAppCreation
+                    ? context with { State = BuilderState.REQUIREMENT_EVALUATION, EventLog = [..context.EventLog, @event] }
+                    : UpdateTaskAndTransition(context, e.TaskId, BuilderState.AI_GENERATING, @event),
 
             (BuilderState.AI_GENERATING, AIGenerationCompletedEvent e) =>
                 context with { State = BuilderState.CREATING_SNAPSHOT, EventLog = [..context.EventLog, @event] },
