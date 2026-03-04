@@ -179,9 +179,17 @@ init-project → setup-database → define-models → setup-auth → db-migratio
 >
 > **CRITICAL: The Frontend Agent uses Branding Inference Heuristics to derive visual identity.**
 >
-> **NO TEMPLATES FOR VISUAL ASSETS - All icons, logos, and splash screens are generated from first principles using:**
+> **NO TEMPLATES FOR VISUAL ASSETS** - All icons, logos, and splash screens are generated from first principles using:
 >
 > - [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) — Zero-template approach for visual assets
+>
+> **MINIMAL SCAFFOLD TEMPLATE USED** - Empty project structure provides valid .NET 8 / WinUI 3 shell:
+> - `.csproj` (SDK references only)
+> - `App.xaml` / `App.xaml.cs` (empty bootstrap)
+> - `MainWindow.xaml` (empty shell)
+> - `Package.appxmanifest` (skeleton)
+>
+> **All functionality is 100% AI-generated from user intent.**
 > - [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) — Intelligent brand derivation from user intent
 >
 > **NOTE: Base Project Template (Minimal Kernel Bootstrap) IS USED for project structure:**
