@@ -196,16 +196,15 @@ public enum BuilderState
     MSI_BUILD_FAILED = 36,
 
     // === PLATFORM REQUIREMENTS & ASSET GENERATION ===
-    REQUIREMENT_EVALUATION = 37, // Evaluate platform requirements (NO TEMPLATES)
-    BRANDING_INFERENCE = 38,     // Derive brand identity from intent
-    ASSET_GENERATION = 39,       // Generate icons, logos, splash screens
+    REQUIREMENT_EVALUATION = 26, // Evaluate platform requirements (NO TEMPLATES)
+    BRANDING_INFERENCE = 27,     // Derive brand identity from intent
+    ASSET_GENERATING = 28,       // Generate icons, logos, splash screens via AI
+    ASSETS_READY = 29,           // All assets generated successfully
+    ASSET_GENERATION_FAILED = 30,// Asset generation failed (triggers retry)
     
     // === DETERMINISM VALIDATION ===
     HASH_COMPUTE = 40,                    // Compute SHA-256 for all artifacts
     DETERMINISM_VALIDATION = 41,          // Verify reproducibility across builds
-    ASSET_GENERATING = 28,       // Generate icons, logos, splash screens via AI
-    ASSETS_READY = 29,           // All assets generated successfully
-    ASSET_GENERATION_FAILED = 30,// Asset generation failed (triggers retry)
 
     // === AI SERVICE FAILURE STATES (NEW) ===
     AI_SERVICE_UNAVAILABLE = 31, // AI mini-service not responding

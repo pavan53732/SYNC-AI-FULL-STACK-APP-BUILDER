@@ -136,6 +136,7 @@ SYNC-AI-FULL-STACK-APP-BUILDER/
 | **Layer 6**   | Runtime Safety Kernel       | State machine, retry logic, enforcement                                        | `Services/🔴 Runtime Safety Kernel/`                                               |
 | **Layer 6.5** | AI Construction Engine      | Primary brain, code generation                                                 | `Services/🟣 AI Construction Engine/`                                              |
 | **Layer 6.6** | **AI Service Layer**        | **openai SDK - user-configured providers**                                     | `Assets/ai-service.exe`                                                            |
+| **Layer 6.7** | **Project Archetype Resolver** | Framework selection, compatibility matrix                                  | `Services/🟦 Project Archetype Resolver/` — See `PROJECT_ARCHETYPE_RESOLUTION.md`  |
 | **Layer 7**   | User Interface              | WinUI 3 shell                                                                  | `UI/`                                                                              |
 
 > **Layer 6.6 (AI Service Layer)**: Provides AI capabilities via user-configured OpenAI-compatible providers.
