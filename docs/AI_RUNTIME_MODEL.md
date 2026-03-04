@@ -281,6 +281,8 @@ The template is embedded in the application and copied to new project workspaces
 | **System Resets**           | Rollbacks with forced amnesia at cycle 10+ |
 | **Resource Enforcement**    | Memory, disk, time limits                  |
 | **Security Enforcement**    | Sandbox boundaries, path validation        |
+| **Environment Snapshot**    | Captures `build_env.json` for forensics    |
+| **Decision Trace Logging**  | Records AI decisions for Developer Mode    |
 
 ### Kernel Components
 
@@ -291,8 +293,20 @@ Runtime Safety Kernel
     ├── Patch Engine         → AST validation & application
     ├── Sandbox Manager      → Filesystem isolation
     ├── Snapshot System      → Version control & rollback
-    └── Build Validator      → Compilation verification
+    ├── Build Validator      → Compilation verification
+    ├── Environment Capture  → build_env.json generation
+    └── Decision Recorder    → DecisionTrace event emission
 ```
+
+### Enhanced Features (NEW)
+
+The Runtime Safety Kernel now provides additional transparency and learning capabilities:
+
+| Feature | Purpose | Implementation |
+|---------|---------|----------------|
+| **AI Decision Trace** | Record all non-trivial AI decisions for explainability | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §12.1 |
+| **Cross-Session Learning** | Store successful repairs in `learned_repairs` database | [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) §2.8 |
+| **Environment Forensics** | Capture complete build context for debugging | [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §9.1 |
 
 ### Invariants (Non-Negotiable)
 

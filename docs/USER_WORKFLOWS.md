@@ -461,6 +461,30 @@ Green / Yellow / Red status indicators for:
 - **NuGet Status**: Cache health + connectivity
 - **Antivirus Interference**: Detection of AV blocking operations
 
+#### Tab 7: AI Decision Trace (NEW)
+
+**Purpose:** Expose structured trace of AI decisions made during the current session to increase trust and debuggability.
+
+**Features:**
+- **Timeline View**: Chronological list of all AI decisions
+- **Decision Details**:
+  - **Time**: When the decision was made
+  - **Agent**: Which AI agent made the decision (ArchitectAgent, FixAgent, etc.)
+  - **Decision Type**: What kind of decision (SpecVersionBump, FrameworkSelection, RetryEscalation, etc.)
+  - **Rationale**: Natural language explanation of why
+  - **Context**: Expandable JSON with full parameters
+- **Export Functionality**: "Export Trace" button to copy full timeline to clipboard
+- **Filter Controls**: Filter by agent, decision type, time range
+- **Search**: Text search across decision rationales
+
+**Example Use Cases:**
+- Debugging why AI chose a specific architecture pattern
+- Understanding retry escalation decisions
+- Auditing AI behavior for compliance
+- Learning how AI interprets user requirements
+
+**Implementation:** [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) §10.5, [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §12.1
+
 ### Manual Code Overrides
 
 Users can manually edit files in the **Code View**.

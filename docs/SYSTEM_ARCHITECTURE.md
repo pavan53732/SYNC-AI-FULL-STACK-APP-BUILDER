@@ -335,6 +335,29 @@ Sync AI generates applications across multiple Windows frameworks:
 
 | Requirement | Implementation |
 |------------|----------------|
+| **Deterministic Build** | Framework-specific compiler/linker flags enforced (see [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §8.5 for native, §9 for .NET) |
+| **Structured Mutation** | Roslyn AST for C#, Clang AST for C++ (see [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) §4.2) |
+| **Toolchain Isolation** | Complete environment isolation (see [TOOLCHAIN_ISOLATION.md](./TOOLCHAIN_ISOLATION.md)) |
+| **Packaging Determinism** | MSIX/MSI/EXE with deterministic GUIDs (see [WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md](./WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md) §5) |
+| **Legal Redistribution** | EULA compliance for all bundled components (see [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §9) |
+
+### 3.7 Explainability & Learning Invariants (NEW)
+
+| Invariant | Description | Implementation |
+|-----------|-------------|----------------|
+| **AI Decision Trace** | Every non-trivial AI decision recorded for Developer Mode | `DecisionTrace` records in [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §12.1 |
+| **Cross-Session Learning** | Successful repairs stored deterministically | `learned_repairs` table in [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) §2.8 |
+| **Environment Snapshot** | Complete build environment captured for every build | `build_env.json` in [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §9.1 |
+| **Developer Mode Transparency** | Advanced users can view AI decision timeline, repair history, and environment forensics | [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) §10.5, [USER_WORKFLOWS.md](./USER_WORKFLOWS.md) §6.3 |
+
+### 3.6 Framework Parity Invariant
+
+> **CRITICAL**: All supported frameworks MUST satisfy identical quality guarantees.
+>
+> No framework receives preferential treatment. Every framework MUST provide:
+
+| Requirement | Implementation |
+|------------|----------------|
 | **Deterministic Build** | Framework-specific compiler/linker flags enforced (see [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §8.5 for native, §6 for .NET) |
 | **Structured Mutation Enforcement** | C# → Roslyn AST; C++ → Clang AST (no raw file writes) |
 | **Toolchain Isolation** | Complete environment isolation with `DOTNET_MULTILEVEL_LOOKUP=0` and `Environment.Clear()` |
@@ -974,6 +997,27 @@ The Runtime Safety Kernel initiates a SYSTEM RESET:
 - Forces AI to attempt an entirely new architecture path
 
 ### 8.5 Stopping Conditions
+
+> **INVARIANT**: There is NO terminal FAILED state for user-initiated builds. The system retries continuously until success or user cancellation.
+
+| Trigger | Authority | Action |
+|---------|-----------|--------|
+| **User clicks cancel** | User | Immediate cancellation, transition to CANCELLED |
+| **Hard loop detected (10+)** | Kernel | System Reset (Rollback + Wipe Memory + Retry) |
+| **Safety violation** | Kernel | System Reset (Rollback + Try new approach) |
+| **AI_SERVICE_UNAVAILABLE** | Kernel | Infinite retry allowed (external dependency) |
+| **AI_SERVICE_DEGRADED** | Kernel | Infinite retry allowed (external dependency) |
+
+### 8.6 Explainability & Learning Integration (NEW)
+
+The retry system now integrates with cross-session learning and explainability features:
+
+| Feature | Integration Point | Detailed Spec |
+|---------|------------------|---------------|
+| **Learned Repairs** | Fix Agent queries `learned_repairs` table before attempting new repairs | [REPAIR_PATTERNS.md](./REPAIR_PATTERNS.md) §9, [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) §2.8 |
+| **AI Decision Trace** | All retry decisions recorded as `DecisionTrace` events for Developer Mode | [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §12.1 |
+| **Environment Forensics** | Build environment captured in `build_env.json` for debugging retry triggers | [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §9.1 |
+| **Framework Switching** | At ARCHITECTURE_LEVEL (7-9), may re-evaluate framework selection if current framework proves unworkable | [PROJECT_ARCHETYPE_RESOLUTION.md](./PROJECT_ARCHETYPE_RESOLUTION.md) §10 |
 
 The system stops when:
 

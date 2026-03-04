@@ -197,6 +197,17 @@ Layer 1 (Filesystem) ←────────── Layer 6 (Orchestrator)
 | **Third-party Libraries** | Charts, PDF, Image processing, etc.                |
 | **Custom UI Designs**     | Any layout, theme, animation                       |
 
+### Platform & Runtime Enhancements (NEW)
+
+The system now includes advanced features for transparency, learning, and forensic debugging:
+
+| Enhancement | Purpose | Implementation |
+|-------------|---------|----------------|
+| **AI Decision Trace** | Explain every AI decision made during construction | Developer Mode feature - see [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) §10.5 |
+| **Cross-Session Learning** | Remember successful repairs across sessions | `learned_repairs` database - see [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) §2.8 |
+| **Environment Snapshot** | Capture complete build environment for forensics | `build_env.json` - see [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md) §9.1 |
+| **Framework Parity** | All frameworks receive identical quality guarantees | [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §3.6 |
+
 ### Platform & Runtime
 
 | Component        | Technology                | Version      |
