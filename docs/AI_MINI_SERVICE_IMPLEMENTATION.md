@@ -1111,9 +1111,11 @@ export const logger = {
 # Install dependencies
 bun install
 
-# Run in development mode (hot reload)
+# Run in development mode (with auto-reload on file changes)
 bun run dev
 ```
+
+**Note**: This is Bun's development mode with file watching, NOT the builder's Hot Reload feature. Hot Reload / Edit and Continue for generated WinUI 3 apps is a **future enhancement** (see [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) §11 - Future Enhancements).
 
 ### 6.2 Production Build
 
@@ -1246,6 +1248,7 @@ curl -X POST http://localhost:3001/api/vision \
 
 | Date | Change |
 |------|--------|
+| 2026-03-03 | **Clarified Hot Reload distinction** - Bun dev mode has file watching, but WinUI 3 Hot Reload / Edit and Continue is a future enhancement (not yet implemented) |
 | 2026-02-23 | **BREAKING: Complete rewrite** — replaced z-ai-web-dev-sdk with openai SDK |
 | 2026-02-23 | **Added /api/config endpoint** — receives AI settings from desktop app |
 | 2026-02-23 | **Triple-client pattern** — primaryClient, visionClient, imageClient |
