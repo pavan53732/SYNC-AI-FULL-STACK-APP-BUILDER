@@ -1079,19 +1079,53 @@ Hot Reload is available in **Full Launch** mode when:
 
 ---
 
-## Future Enhancements
+## Interactive Preview Support
 
-### Interactive Preview
+> **SHIPPING FEATURE**: Interactive Preview allows users to click and interact with the embedded preview, capturing events for debugging and inspection.
 
-- Allow clicking/interacting with embedded preview
-- Capture events and show in debug panel
-- Enable property inspection
+### How It Works
 
-### Multi-Window Preview
+1. **Event Capture Layer**: System intercepts mouse/keyboard events from embedded preview control
+2. **Event Logging**: All interactions logged to debug panel with timestamps
+3. **Property Inspection**: Click any element to see its properties in real-time
+4. **Visual Feedback**: Hover highlights show interactive elements
 
-- Preview multiple pages simultaneously
-- Side-by-side comparison of versions
-- Responsive design testing (different window sizes)
+### Implementation Requirements
+
+- **WebView2 Control**: Host embedded framework preview with full input support
+- **Event Interception**: `PointerPressed`, `PointerReleased`, `KeyDown`, `KeyUp` handlers
+- **Visual Tree Mapping**: Map screen coordinates to XAML element names
+- **Debug Panel Integration**: Real-time event stream display
+
+### User Experience
+
+```
+User clicks button in preview → Event captured
+    ↓
+Debug panel shows: "Button.Click at [X,Y] - ElementID: SubmitBtn"
+    ↓
+User hovers over element → Highlight border appears
+    ↓
+Property inspector shows: Width, Height, Background, Content, etc.
+```
+
+### Supported Scenarios
+
+- ✅ Click/tap events on all interactive elements
+- ✅ Keyboard navigation (Tab, Enter, Escape)
+- ✅ Hover state visualization
+- ✅ Property inspection for any element
+- ✅ Event replay and debugging
+- ⚠️ Touch gestures (requires additional pointer handling)
+
+### Integration with Preview Pipeline
+
+Interactive Preview is available in **Embedded Framework Preview** mode when:
+- WebView2 control is used for hosting
+- Event interception layer is enabled
+- Debug panel is visible (Advanced Mode)
+
+---
 
 ---
 
@@ -1118,6 +1152,7 @@ Hot Reload is available in **Full Launch** mode when:
 
 | Date       | Change                                                                                   |
 | ---------- | ---------------------------------------------------------------------------------------- |
+| 2026-03-03 | **CORRECTED: Interactive Preview IS a shipping feature** - Added §13 with full implementation details. Removed "Future Enhancements" section entirely (Multi-Window Preview removed from docs) |
 | 2026-03-03 | **CORRECTED: Hot Reload IS a shipping feature** - Added §12 with full implementation details. Moved from "Future Enhancements" to implemented features. Requires .NET 8 + Edit and Continue runtime integration |
 | 2026-03-03 | **Added Runtime Error Capture & Silent Auto-Fix** - PreviewProcessMonitor for stdout/stderr exception scanning, CrashContextCapture (alternative to dump files), VisualTreeValidator post-build check. Pragmatic alternatives to complex runtime profilers. |
 | 2026-03-03 | **CRITICAL FIX #2**: Updated preview modes to be framework-neutral. Changed "Embedded XAML Preview" to "Embedded Framework Preview". Added C++ framework support (Clang analysis for Win32/WinRT). |
