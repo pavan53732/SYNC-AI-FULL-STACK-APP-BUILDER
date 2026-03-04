@@ -26,6 +26,7 @@
 11. [Accessibility Rules](#11-accessibility-rules)
 12. [Banned XAML Patterns](#12-banned-xaml-patterns)
 13. [Common Generation Examples](#13-common-generation-examples)
+14. [Performance & Memory Safety Rules](#14-performance--memory-safety-rules)
 
 ---
 
@@ -700,6 +701,7 @@ public partial class ExpensesPageViewModel : ObservableObject
 
 | Date       | Change                                                    |
 | ---------- | --------------------------------------------------------- |
+| 2026-03-03 | **Added §14: Performance & Memory Safety Rules** - Generation-time constraints for memory leak prevention and startup optimization. Replaces need for runtime profilers with static analysis rules. |
 | 2026-03-03 | Initial creation — complete WinUI 3 XAML generation rules |
 
 ---
@@ -712,3 +714,303 @@ public partial class ExpensesPageViewModel : ObservableObject
 - [REPAIR_PATTERNS.md](./REPAIR_PATTERNS.md) — WinUI 3 XAML + MVVM build error repair strategies
 - [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) — Asset file requirements
 - [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) — Icon and color derivation
+
+---
+
+## 14. Performance & Memory Safety Rules
+
+> **CRITICAL**: These rules prevent memory leaks and ensure fast startup by construction — no runtime profiling needed.
+
+### 14.1 Memory Safety Rules (Generation-Time Enforcement)
+
+#### Rule M1: ObservableCollection Placement
+
+**❌ FORBIDDEN** — Creating collections in loops:
+```csharp
+for (int i = 0; i < count; i++)
+{
+    Items.Add(new Item()); // Memory leak pattern - creates individual objects
+}
+```
+
+**✅ REQUIRED** — Bulk initialization:
+```csharp
+Items = new ObservableCollection<Item>(sourceCollection.Select(s => new Item(s)));
+// OR
+Items = new ObservableCollection<Item>();
+foreach (var source in sourceCollection)
+{
+    Items.Add(new Item(source)); // Acceptable if transformation needed
+}
+```
+
+**Why**: Bulk initialization allows .NET to optimize memory allocation. Individual adds in loops create unnecessary GC pressure.
+
+---
+
+#### Rule M2: Event Handler Lifecycle
+
+**❌ FORBIDDEN** — Static event handlers without unsubscribe:
+```csharp
+public sealed class MainPage : Page
+{
+    public MainPage()
+    {
+        InitializeComponent();
+        Messenger.Default.Register<NotificationMessage>(this, OnMessage); // No unsubscribe
+    }
+}
+```
+
+**✅ REQUIRED** — Always unsubscribe in Dispose or Unloaded:
+```csharp
+public sealed class MainPage : Page, IDisposable
+{
+    private bool _disposed = false;
+    
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            Messenger.Default.Unregister<NotificationMessage>(this);
+            _disposed = true;
+        }
+    }
+    
+    ~MainPage() => Dispose(); // Finalizer as safety net
+}
+```
+
+**Alternative for Weak References** (preferred):
+```csharp
+// Use WeakReferenceMessenger to avoid manual unregister
+WeakReferenceMessenger.Default.Register<NotificationMessage>(
+    this, 
+    (recipient, message) => recipient.OnMessage(message)
+);
+```
+
+---
+
+#### Rule M3: Disposable Resource Management
+
+**❌ FORBIDDEN** — IDisposable without using:
+```csharp
+var bitmap = new BitmapImage(new Uri(path)); // Never disposed
+var stream = new FileStream(path, FileMode.Open); // Leak
+var client = new HttpClient(); // Socket exhaustion risk
+```
+
+**✅ REQUIRED** — Always use `using` or `await using`:
+```csharp
+using var stream = new FileStream(path, FileMode.Open);
+var bitmap = new BitmapImage();
+await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
+
+// OR for async disposal
+await using var client = new HttpClient();
+```
+
+**For Class-Level Resources**:
+```csharp
+public sealed class ImageService : IDisposable
+{
+    private readonly HttpClient _client = new();
+    private bool _disposed;
+    
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _client.Dispose();
+            _disposed = true;
+        }
+    }
+}
+```
+
+---
+
+#### Rule M4: Virtualization for Large Lists
+
+**❌ FORBIDDEN** — Non-virtualized ItemsControl with many items:
+```xml
+<ListBox ItemsSource="{LargeCollection}" /> <!-- Renders ALL items -->
+```
+
+**✅ REQUIRED** — Enable UI virtualization:
+```xml
+<ListBox ItemsSource="{LargeCollection}"
+         VirtualizingStackPanel.IsVirtualizing="True"
+         VirtualizingStackPanel.VirtualizationMode="Recycling" />
+```
+
+**Why**: Without virtualization, a list with 1000 items creates 1000 UI elements. With virtualization, only visible items (~20) are rendered.
+
+---
+
+### 14.2 Startup Optimization Rules
+
+#### Rule S1: Lazy Service Registration
+
+**❌ FORBIDDEN** — Eager instantiation in DI container:
+```csharp
+services.AddSingleton<HeavyService>(new HeavyService()); // Created at app startup
+services.AddSingleton<DatabaseContext>(new DatabaseContext()); // Blocks startup
+```
+
+**✅ REQUIRED** — Lazy registration:
+```csharp
+services.AddSingleton<HeavyService>(); // Created on first request
+services.AddSingleton<DatabaseContext>(); // Deferred until first use
+
+// OR explicit lazy wrapper
+services.AddSingleton<Lazy<HeavyService>>();
+```
+
+**For Very Heavy Services**:
+```csharp
+services.AddSingleton<IHeavyService>(sp =>
+{
+    // Defer creation to background thread
+    return new Lazy<HeavyService>(() => new HeavyService());
+});
+```
+
+---
+
+#### Rule S2: Constructor Discipline
+
+**❌ FORBIDDEN** — Blocking calls in constructors:
+```csharp
+public sealed class MainPageViewModel
+{
+    public MainPageViewModel(IDataService dataService)
+    {
+        Data = dataService.LoadData(); // BLOCKING - freezes UI during startup
+    }
+}
+```
+
+**✅ REQUIRED** — Defer to Loaded event or async initialization:
+```csharp
+public sealed class MainPage : Page
+{
+    public MainPage()
+    {
+        InitializeComponent();
+        this.Loaded += async (s, e) => await ViewModel.InitializeAsync();
+    }
+}
+
+public sealed class MainPageViewModel
+{
+    public async Task InitializeAsync()
+    {
+        Data = await _dataService.LoadDataAsync(); // Non-blocking
+    }
+}
+```
+
+**Pattern for Critical Data** (preload in background):
+```csharp
+public sealed class App : Application
+{
+    protected override async void OnLaunched(LaunchActivatedEventArgs args)
+    {
+        // Start loading critical data immediately
+        var dataTask = GetDataService().LoadDataAsync();
+        
+        // Show splash screen while loading
+        var window = new MainWindow();
+        window.Activate();
+        
+        // Wait for data in background
+        var data = await dataTask;
+    }
+}
+```
+
+---
+
+#### Rule S3: Deferred Page Loading
+
+**❌ FORBIDDEN** — Immediate navigation load:
+```csharp
+private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+{
+    var selectedItem = (NavigationViewItem)args.SelectedItem;
+    ContentFrame.Navigate(typeof(HeavyPage)); // Blocks UI thread immediately
+}
+```
+
+**✅ REQUIRED** — Defer to next render cycle:
+```csharp
+private async void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+{
+    var selectedItem = (NavigationViewItem)args.SelectedItem;
+    await Task.Delay(100); // Defer to next frame render
+    ContentFrame.Navigate(typeof(HeavyPage));
+}
+```
+
+**For Very Heavy Pages** (deferred content loading):
+```csharp
+public sealed class HeavyPage : Page
+{
+    private bool _contentLoaded = false;
+    
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        
+        // Defer heavy content loading
+        _ = LoadContentAsync(); // Fire and forget
+    }
+    
+    private async Task LoadContentAsync()
+    {
+        await Task.Delay(50); // Let page render skeleton first
+        // Load heavy content here
+        _contentLoaded = true;
+    }
+}
+```
+
+---
+
+#### Rule S4: Avoid Blocking in Startup Path
+
+**❌ FORBIDDEN** — Synchronous waits:
+```csharp
+protected override void OnLaunched(...)
+{
+    var data = LoadData().GetAwaiter().GetResult(); // DEADLOCK RISK
+    Task.Run(() => Initialize()).Wait(); // Thread pool starvation
+}
+```
+
+**✅ REQUIRED** — Async all the way:
+```csharp
+protected override async void OnLaunched(...)
+{
+    var data = await LoadDataAsync(); // Non-blocking
+    await InitializeAsync(); // Proper async flow
+}
+```
+
+---
+
+### 14.3 Performance Validation Checklist
+
+Before marking code generation as complete, verify:
+
+- [ ] **No blocking calls in constructors** (all heavy work in `InitializeAsync()`)
+- [ ] **All IDisposable resources wrapped in `using`** (check Roslyn analysis)
+- [ ] **Event handlers have unsubscribe pattern** (or use weak references)
+- [ ] **Lists with >100 items enable virtualization** (`VirtualizingStackPanel.IsVirtualizing="True"`)
+- [ ] **Services registered as lazy** (no eager instantiation in DI)
+- [ ] **Navigation deferred** (`await Task.Delay(100)` before heavy page loads)
+- [ ] **No synchronous waits** (`async/await` throughout startup path)
+
+**Automated Check**: Add Roslyn analyzer rules to flag violations during code generation.

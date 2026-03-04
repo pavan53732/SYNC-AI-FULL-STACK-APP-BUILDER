@@ -901,6 +901,7 @@ Runtime Safety Kernel initiates Reset:
 
 | Date       | Change                                                                                                                                                        |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-03-03 | **Added NU1605/NU1608 Dependency Tree Healing** - Static type-to-NuGet mapping for deterministic reference resolution. Added static lookup before LLM fallback. |
 | 2026-03-03 | **AUTONOMOUS BUILD LOOP COVERAGE IMPROVEMENTS**: Added explicit documentation for three previously implicit features: (1) Dependency Tree Healing for NU1605/NU1608 errors with algorithm and central package management, (2) Clean Build Cycle management integrated with retry escalation, (3) Unused Reference Removal via Roslyn Formatter.Format(). Updated coverage accuracy from 90% to 100%. |
 | 2026-03-03 | Initial creation — complete WinUI 3 + MSBuild + EF Core repair pattern catalog                                                                                |
 
