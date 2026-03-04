@@ -470,6 +470,30 @@ CREATE TABLE file_embeddings (
     FOREIGN KEY(file_id) REFERENCES files(id)
 );
 CREATE INDEX idx_file_embeddings_file ON file_embeddings(file_id);
+
+-- Learned Repair Patterns (Cross-Session Learning)
+CREATE TABLE learned_repairs (
+    id INTEGER PRIMARY KEY,
+    error_hash TEXT NOT NULL,       -- SHA256 of normalized error context
+    error_tier TEXT NOT NULL,       -- T1 (syntax), T2 (semantic), T3 (architecture)
+    error_code TEXT,                -- Compiler error code (e.g., CS0103)
+    error_message_normalized TEXT,  -- Stripped of line numbers, paths
+    repair_action TEXT NOT NULL,    -- JSON patch or fix strategy
+    repair_type TEXT NOT NULL,      -- 'AST_PATCH', 'REGISTRATION_FIX', 'IMPORT_ADDITION', etc.
+    success_count INTEGER DEFAULT 1,
+    failure_count INTEGER DEFAULT 0,
+    first_seen_utc TEXT NOT NULL,
+    last_success_utc TEXT NOT NULL,
+    project_id TEXT,                -- Optional: for attribution
+    toolchain_version TEXT,         -- Version when fix was learned
+    framework_family TEXT,          -- WinUI3/WPF/WinForms/Win32/etc.
+    confidence_score REAL DEFAULT 0.5  -- success_count / (success_count + failure_count)
+);
+
+CREATE INDEX idx_learned_repairs_hash ON learned_repairs(error_hash);
+CREATE INDEX idx_learned_repairs_confidence ON learned_repairs(confidence_score DESC);
+CREATE INDEX idx_learned_repairs_tier ON learned_repairs(error_tier);
+```
 ```
 
 ### Generated Assets Table (Cross-Reference)
@@ -499,6 +523,60 @@ CREATE TABLE generated_assets (
     hash TEXT NOT NULL
 );
 ```
+
+---
+
+## 4.1 Native Code Intelligence (C++)
+
+> **CRITICAL**: For C++ code, all source transformations MUST operate on Clang AST (libclang).
+> 
+> - Regex or string replacement on .cpp/.h files is **FORBIDDEN**.
+> - Patch engine must support structured C++ AST transformations.
+> - Direct file writes with LLM-generated C++ code are **PROHIBITED**.
+>
+> This ensures C++ mutation safety parity with Roslyn-enforced C# mutations.
+
+### Clang LibTooling Integration
+
+```csharp
+public class ClangAstService
+{
+    private readonly string _clangPath;
+    
+    public async Task<ClangTranslationUnit> ParseAsync(string cppFilePath, CancellationToken ct)
+    {
+        // Use bundled Clang from toolchain
+        var args = new[]
+        {
+            "-fsyntax-only",
+            "-Xclang", "-ast-dump",
+            "-std:c++20",
+            cppFilePath
+        };
+        
+        return await ExecuteClangToolAsync(_clangPath, args, ct);
+    }
+    
+    public async Task<string> TransformAsync(ClangTranslationUnit unit, Func<ClangNode, ClangNode> transformer)
+    {
+        // Apply AST transformation
+        var transformed = transformer(unit.Root);
+        
+        // Re-emit with clang-format (deterministic config)
+        return await EmitFormattedAsync(transformed);
+    }
+}
+```
+
+### C++ Mutation Contract
+
+All C++ modifications MUST:
+1. Parse using bundled Clang (version pinned in [TOOLCHAIN_MANIFEST.md](./TOOLCHAIN_MANIFEST.md))
+2. Apply transformations via LibTooling AST operations
+3. Re-emit formatted source via clang-format (deterministic config)
+4. Prohibit raw text rewrite or regex-based replacement
+
+See [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) §3.5 for native compilation contract.
 
 ### Snapshot Storage (Git-Based)
 

@@ -593,6 +593,157 @@ var pageType = tag switch
 
 ## 9. Fix Agent Decision Flow
 
+### Error Detection and Repair Pipeline
+
+```text
+Build/Runtime Error Detected
+          ↓
+1. Parse error output → Extract error code + message + file + line
+          ↓
+2. Normalize error context → Strip line numbers, variable names, paths
+          ↓
+3. Compute error_hash = SHA256(normalized_error_context)
+          ↓
+4. Query learned_repairs table by error_hash
+          ↓
+   ├── Found → Apply stored repair → Rebuild → Check success
+   │           ├─ Success → RecordSuccessfulRepair(error_hash) → Increment success_count
+   │           └─ Failure → Continue to pattern matching
+   │
+   └── Not Found → Continue with existing pattern matching below
+          ↓
+5. Match error to known repair pattern in this document (Sections 3-8)
+          ↓
+6. Apply deterministic repair action from matched pattern
+          ↓
+7. Rebuild and validate
+          ↓
+8. If repair succeeds → Store in learned_repairs for future use
+   
+   If repair fails → Retry with escalated strategy (up to 9 attempts)
+          ↓
+9. After 9 failed attempts → SYSTEM_RESET (Retry 10+)
+```
+
+### Deterministic Error Hashing
+
+The `error_hash` MUST be computed from a **normalized** representation to ensure same logical errors produce identical hashes across sessions:
+
+```csharp
+public static string ComputeErrorHash(ErrorClassification error)
+{
+    // Normalize: strip line numbers, variable names, full paths
+    var normalized = new
+    {
+        errorCode = error.Code,           // e.g., "CS0246"
+        errorTier = error.Tier,           // e.g., "T2"
+        fileName = Path.GetFileName(error.FilePath),  // Strip path
+        messageType = error.Type.ToString(),  // e.g., "BUILD_ERROR"
+        // Strip line numbers and specific identifiers
+        surroundingContext = NormalizeCodeSnippet(error.Context)
+    };
+    
+    using var sha256 = SHA256.Create();
+    var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(normalized)));
+    return BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
+}
+
+private static string NormalizeCodeSnippet(string snippet)
+{
+    // Remove line numbers
+    snippet = Regex.Replace(snippet, @"^\s*\d+\s*[→:]?\s*", "", RegexOptions.Multiline);
+    // Replace variable names with placeholders
+    snippet = Regex.Replace(snippet, @"\b[a-z][a-z0-9]*\b", "VAR", RegexOptions.IgnoreCase);
+    // Normalize whitespace
+    return string.Join("\n", snippet.Split('\n').Select(l => l.Trim()).Where(l => !string.IsNullOrEmpty(l)));
+}
+```
+
+---
+
+## 11. Learned Repair Storage
+
+### Cross-Session Learning Invariant
+
+> **INVARIANT**: Successful repairs are persisted across sessions to enable deterministic learning.
+> The same error context MUST always produce the same repair action.
+
+### Storage Schema
+
+As defined in [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) §4:
+
+```sql
+CREATE TABLE learned_repairs (
+    id INTEGER PRIMARY KEY,
+    error_hash TEXT NOT NULL,       -- SHA256 of normalized error context
+    error_tier TEXT NOT NULL,       -- T1/T2/T3/T4
+    error_code TEXT,                -- Compiler error code
+    error_message_normalized TEXT,  -- Stripped of line numbers, paths
+    repair_action TEXT NOT NULL,    -- JSON patch or fix strategy
+    repair_type TEXT NOT NULL,      -- 'AST_PATCH', 'REGISTRATION_FIX', etc.
+    success_count INTEGER DEFAULT 1,
+    failure_count INTEGER DEFAULT 0,
+    first_seen_utc TEXT NOT NULL,
+    last_success_utc TEXT NOT NULL,
+    project_id TEXT,                -- Optional attribution
+    toolchain_version TEXT,         -- Version when fix was learned
+    framework_family TEXT,          -- WinUI3/WPF/WinForms/Win32/etc.
+    confidence_score REAL DEFAULT 0.5  -- success_count / (success_count + failure_count)
+);
+```
+
+### Learning Repository Interface
+
+```csharp
+public interface ILearningRepository
+{
+    /// <summary>
+    /// Find a learned repair by error hash
+    /// </summary>
+    Task<LearnedRepair?> FindRepairAsync(string errorHash);
+    
+    /// <summary>
+    /// Record a successful repair for future learning
+    /// </summary>
+    Task RecordSuccessfulRepairAsync(string errorHash, string repairAction, string errorTier);
+    
+    /// <summary>
+    /// Increment success count after applying learned repair
+    /// </summary>
+    Task IncrementSuccessCountAsync(string errorHash);
+    
+    /// <summary>
+    /// Record failure of a previously learned repair
+    /// </summary>
+    Task RecordFailureAsync(string errorHash);
+}
+```
+
+### Confidence Scoring
+
+Repairs are ranked by confidence score for selection when multiple repairs match similar contexts:
+
+```
+confidence_score = success_count / (success_count + failure_count)
+```
+
+| Confidence Range | Interpretation | Usage |
+|-----------------|----------------|-------|
+| **≥ 0.9** | Highly reliable | Auto-apply without validation |
+| **0.7 - 0.9** | Reliable | Apply with quick validation |
+| **0.5 - 0.7** | Uncertain | Apply with full rebuild validation |
+| **< 0.5** | Unreliable | Do not auto-apply; flag for human review |
+
+### Determinism Guarantee
+
+> **INVARIANT**: Learning MUST NOT introduce non-determinism.
+> 
+> - Same error hash → Same repair action (deterministic lookup)
+> - Different machines with same learned database → Identical repairs
+> - Learning is append-only; deletions only via explicit user action
+
+See [CODE_INTELLIGENCE.md](./CODE_INTELLIGENCE.md) §4 for complete schema definition.
+
 ```text
 Build/Runtime Error Detected
           ↓

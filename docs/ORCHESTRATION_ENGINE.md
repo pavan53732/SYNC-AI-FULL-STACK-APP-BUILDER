@@ -1406,6 +1406,112 @@ public record ConstructionTransaction
 public record AIOperationRecord
 {
     public string OperationId { get; init; }
+    public string OperationType { get; init; }  // "CODE_GENERATION", "BLUEPRINT_DESIGN", etc.
+    public DateTime Timestamp { get; init; }
+    public TimeSpan Duration { get; init; }
+    public int TokenUsage { get; init; }        // Input + output tokens
+    public string? Error { get; init; }
+}
+```
+
+---
+
+## 12.1 AI Decision Trace (Developer Mode)
+
+> **INVARIANT**: Every non-trivial AI decision MUST be recorded in a structured trace for explainability and debugging in Developer Mode.
+
+### DecisionTrace Record
+
+```csharp
+public record DecisionTrace
+{
+    public string Id { get; init; }                    // Unique trace ID
+    public string TransactionId { get; init; }         // Parent transaction
+    public string AgentName { get; init; }             // e.g., "ArchitectAgent", "FixAgent"
+    public string DecisionType { get; init; }          // e.g., "SpecVersionBump", "FrameworkSelection"
+    public string Rationale { get; init; }             // Natural language reason
+    public DateTime Timestamp { get; init; }
+    public Dictionary<string, object> Context { get; init; } // Relevant parameters
+    
+    // For framework changes
+    public string? PreviousFramework { get; init; }    // If applicable
+    public string? NewFramework { get; init; }         // If applicable
+    
+    // For retry decisions
+    public int? RetryCount { get; init; }              // If applicable
+    public RetryStage? Stage { get; init; }            // If applicable
+}
+```
+
+### Decision Recording Event
+
+```csharp
+public record AIDecisionRecordedEvent : BuilderEvent
+{
+    public string TaskId { get; init; }
+    public DecisionTrace Decision { get; init; }
+}
+```
+
+### When to Emit Decision Events
+
+The Orchestrator MUST emit `AIDecisionRecordedEvent` for these non-trivial decisions:
+
+| Decision Type | Trigger Condition | Example |
+|--------------|-------------------|---------|
+| **FrameworkSelection** | Architect selects target framework | "Selected WPF due to missing WinUI 3 runtime" |
+| **SpecVersionBump** | AppSpec version incremented | "Bumped to v2 to add new entity" |
+| **RetryStageEscalation** | Moving from FIX_LEVEL to INTEGRATION_LEVEL | "Escalated to integration check after 3 failed syntax fixes" |
+| **SystemResetTrigger** | Attempt 10+ reached | "Initiating SYSTEM_RESET after 9 failed attempts" |
+| **ArchitecturePatternChange** | Different MVVM pattern selected | "Switching from Repository to Mediator pattern" |
+| **DependencyVersionChange** | NuGet package version changed | "Upgraded EF Core from 8.0.10 to 8.0.11" |
+
+### Implementation Pattern
+
+```csharp
+public class ArchitectAgent
+{
+    private readonly IEventBus _eventBus;
+    
+    public async Task<AppSpec> DesignBlueprintAsync(UserIntent intent)
+    {
+        var spec = await GenerateSpecAsync(intent);
+        
+        // Record framework selection decision
+        if (spec.TargetPlatform.FrameworkFamily != FrameworkFamily.WinUI3)
+        {
+            var decision = new DecisionTrace
+            {
+                Id = Guid.NewGuid().ToString(),
+                TransactionId = _activeTransaction.Id,
+                AgentName = "ArchitectAgent",
+                DecisionType = "FrameworkSelection",
+                Rationale = DetermineFrameworkRationale(spec),
+                Timestamp = DateTime.UtcNow,
+                Context = new Dictionary<string, object>
+                {
+                    ["intent"] = intent.Description,
+                    ["constraints"] = intent.NonFunctionalRequirements
+                },
+                PreviousFramework = null,  // First selection
+                NewFramework = spec.TargetPlatform.FrameworkFamily.ToString()
+            };
+            
+            _eventBus.Publish(new AIDecisionRecordedEvent
+            {
+                TaskId = _currentTaskId,
+                Decision = decision
+            });
+        }
+        
+        return spec;
+    }
+}
+```
+
+### Developer Mode UI Integration
+
+See [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) §5.7 for Advanced Panel Tab 7: AI Decision Trace implementation.
     public string OperationType { get; init; }  // "LLM", "IMAGE_GEN", "VLM", "SEARCH"
     public string ModelUsed { get; init; }       // Which model slot handled this operation
     public DateTime Timestamp { get; init; }

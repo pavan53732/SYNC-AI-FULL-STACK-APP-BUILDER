@@ -805,7 +805,183 @@ msiexec /i SyncAI.msi /quiet ACCEPT_EULA=1
 | **Input Hash** | Capture hash of all inputs (spec, assets, templates) | Store in `build_inputs.json` |
 | **Toolchain Lock** | Use pinned tool versions from `toolchain.lock.json` | Mandatory for all builds |
 | **Output Hash** | Generate SHA-256 for each output artifact | Store in `build_outputs.json` |
+| **Environment Snapshot** | Capture build environment state | Store in `build_env.json` |
 | **Provenance Metadata** | Track lineage from input to output | Include in MSIX manifest |
+
+---
+
+## 10. Environment Snapshot Generation
+
+> **INVARIANT**: Every build MUST generate a complete environment snapshot for forensic reproducibility analysis.
+
+### build_env.json Schema
+
+Captures the complete build environment state before invoking the toolchain:
+
+```json
+{
+  "schemaVersion": "1.0",
+  "buildId": "uuid (matches build_inputs.json)",
+  "timestamp": "ISO8601",
+  
+  "osInfo": {
+    "version": "10.0.22621",
+    "build": "22621",
+    "architecture": "x64",
+    "edition": "Professional"
+  },
+  
+  "machineName": "hashed-with-session-salt",  // Privacy-preserving correlation
+  
+  "environment": {
+    "DOTNET_ROOT": "C:\\...",
+    "DOTNET_MULTILEVEL_LOOKUP": "0",
+    "PATH": "C:\\...",  // Isolated PATH from BuildIsolatedPath()
+    "INCLUDE": "...",   // VC++ include paths
+    "LIB": "..."        // VC++ library paths
+  },
+  
+  "toolchainLockHash": "sha256 of toolchain.lock.json",
+  
+  "compilerFlags": {
+    "cl.exe": [
+      "/Brepro",
+      "/Z7",
+      "/Gy",
+      "/Gw",
+      "/FC",
+      "/std:c++20"
+    ],
+    "link.exe": [
+      "/INCREMENTAL:NO",
+      "/OPT:REF",
+      "/OPT:ICF",
+      "/Brepro",
+      "/DYNAMICBASE"
+    ],
+    "dotnet": [
+      "/p:RestoreLockedMode=true",
+      "/p:Configuration=Release"
+    ]
+  },
+  
+  "hardware": {
+    "memoryMB": 16384,
+    "cpuCount": 8,
+    "cpuModel": "AMD Ryzen 7 5800X",
+    "diskFreeGB": 100
+  },
+  
+  "buildMode": "DEBUG|RELEASE",
+  "frameworkFamily": "WinUI3|WPF|WinForms|Win32|etc.",
+  
+  "reproducibilityValidation": {
+    "previousBuildHash": "sha256 or null",
+    "currentAggregateHash": "sha256",
+    "isDeterministic": true|false,
+    "validationAttempts": 1
+  }
+}
+```
+
+### Content Rules
+
+| Rule | Description |
+|------|-------------|
+| **Sensitive Data Exclusion** | API keys, user-specific paths, and credentials are **NEVER** captured |
+| **Explicit Variables Only** | Only environment variables explicitly set by `ConstructIsolatedEnvironment()` are recorded |
+| **Machine Name Hashing** | Machine name is hashed with per-session salt for privacy while allowing correlation |
+| **Compiler Flag Accuracy** | Flags captured from actual command lines used, not from configuration |
+| **Timestamp Neutralization** | Timestamps are recorded but NOT used in hash computation (for determinism validation) |
+
+### Generation Timing
+
+```text
+Build Pipeline Flow:
+1. SNAPSHOT_CREATED (pre-mutation snapshot)
+2. MUTATION_GUARD → PATCHING → INDEXING
+3. CAPABILITY_SCAN (if RELEASE mode)
+4. BUILDING (MSBuild / cl.exe invocation)
+   ↓
+   BEFORE TOOLCHAIN INVOCATION:
+   ├── Collect environment metadata
+   ├── Capture compiler/linker flags
+   ├── Write build_env.json
+   └── Continue with build
+5. VALIDATING
+6. HASH_COMPUTE (state 40)
+7. DETERMINISM_VALIDATION (state 41)
+   ↓
+   Compare current build_env.json with previous build
+   If environment differs → Log warning but continue
+   If hashes differ → Trigger SYSTEM_RESET
+```
+
+### Implementation Contract
+
+```csharp
+public class EnvironmentSnapshotService
+{
+    public async Task<EnvironmentSnapshot> CaptureAsync(string buildId, CancellationToken ct)
+    {
+        var snapshot = new EnvironmentSnapshot
+        {
+            BuildId = buildId,
+            Timestamp = DateTime.UtcNow,
+            OsVersion = Environment.OSVersion.VersionString,
+            MachineName = HashWithSessionSalt(Environment.MachineName),
+            Environment = CaptureIsolatedEnvironment(),
+            ToolchainLockHash = await ComputeToolchainHashAsync(ct),
+            CompilerFlags = CaptureActualCompilerFlags(),
+            Hardware = CaptureHardwareInfo()
+        };
+        
+        // Write to workspace root
+        var path = Path.Combine(_workspaceRoot, "build_env.json");
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(snapshot, JsonOptions), ct);
+        
+        return snapshot;
+    }
+    
+    private string HashWithSessionSalt(string value)
+    {
+        using var sha256 = SHA256.Create();
+        var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(_sessionSalt + value));
+        return BitConverter.ToString(bytes).Replace("-", "").Substring(0, 16);
+    }
+}
+```
+
+### Usage Scenarios
+
+#### Forensic Debugging
+
+When a build fails reproducibility validation:
+
+1. Compare `build_env.json` from failed build vs successful build
+2. Identify environment variable differences
+3. Identify compiler flag differences
+4. Determine root cause (e.g., different SDK version, missing flag)
+
+#### Cross-Machine Verification
+
+To verify determinism across machines:
+
+1. Build same spec on Machine A → capture `build_env_A.json`
+2. Build same spec on Machine B → capture `build_env_B.json`
+3. Compare `artifactHashes` from both builds
+4. If hashes match despite environment differences → **Determinism confirmed**
+5. If hashes differ → Investigate environment differences
+
+#### Audit Trail
+
+For enterprise compliance:
+
+- All builds generate immutable `build_env.json`
+- Stored alongside build artifacts indefinitely
+- Enables reconstruction of exact build conditions years later
+
+See [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §8 Phase 4 for determinism validation pipeline.
 
 ### Build Reproducibility Pipeline
 

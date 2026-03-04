@@ -1400,6 +1400,14 @@ public class MainViewModel : ObservableObject
                 Icon    = new SymbolIcon(Symbol.RepeatAll),
                 Tag     = "build"
             });
+            
+            // Insert AI Decision Trace tab after Build Monitor
+            navItems.Insert(4, new NavigationViewItem
+            {
+                Content = "AI Decisions",
+                Icon    = new SymbolIcon(Symbol.Document),
+                Tag     = "ai_decisions"
+            });
         }
 
         NavView.MenuItems.Clear();
@@ -1715,7 +1723,153 @@ private void UpdateNavigationItems()
 
 ---
 
-## 10. Onboarding & First Launch
+## 10.5 Advanced Mode & Power Features - Tab 7: AI Decision Trace (NEW)
+
+### Tab 7: AI Decision Trace
+
+**Purpose:** Expose structured trace of AI decisions made during the current session to increase trust and debuggability (Developer Mode only).
+
+```xml
+<TabItem Header="AI Decision Trace" Visibility="{x:Bind ViewModel.IsDeveloperMode, Mode=OneWay}">
+    <Grid Padding="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header with Export Button -->
+        <Grid Grid.Row="0" Margin="0,0,0,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            
+            <TextBlock Grid.Column="0" 
+                       Text="AI Decision Timeline"
+                       Style="{StaticResource SubtitleTextBlockStyle}"/>
+            
+            <Button Grid.Column="1" 
+                    Content="Export Trace"
+                    Click="{x:Bind ViewModel.ExportDecisionTrace}"
+                    IsEnabled="{x:Bind ViewModel.HasDecisionTraces, Mode=OneWay}">
+                <Button.Icon>
+                    <FontIcon Glyph="&#xEDE1;"/>
+                </Button.Icon>
+            </Button>
+        </Grid>
+
+        <!-- Decision Timeline -->
+        <ListView Grid.Row="1"
+                  ItemsSource="{x:Bind ViewModel.DecisionTraces, Mode=OneWay}"
+                  SelectionMode="Single">
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="models:DecisionTraceViewModel">
+                    <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="12"
+                            Margin="0,0,0,8">
+                        <Grid RowSpacing="8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Header: Time + Agent + Decision Type -->
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12">
+                                    <TextBlock Text="{x:Bind Timestamp, Converter={StaticResource DateTimeConverter}}"
+                                               FontWeight="SemiBold"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                    <Badge Content="{x:Bind AgentName}"
+                                           Background="{ThemeResource SystemAccentColorLight2}"/>
+                                    <Badge Content="{x:Bind DecisionType}"
+                                           Background="{ThemeResource SystemAccentColorLight3}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Rationale -->
+                            <TextBlock Grid.Row="1"
+                                       Text="{x:Bind Rationale}"
+                                       TextWrapping="WrapWholeWords"/>
+
+                            <!-- Expandable Details (JSON Context) -->
+                            <Expander Grid.Row="2" Header="View Context (JSON)">
+                                <TextBox Text="{x:Bind ContextJson}"
+                                         IsReadOnly="True"
+                                         FontFamily="Consolas"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         MaxHeight="200"/>
+                            </Expander>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </Grid>
+</TabItem>
+```
+
+**Features:**
+- **Structured Log**: Shows a timeline of AI decisions made during the current session
+- **Columns**: Time, Agent, Decision Type, Rationale
+- **Expandable Details**: Click to see full context (JSON)
+- **Copy to Clipboard**: Export trace for debugging
+- **Filter by Agent**: Dropdown to filter decisions by specific agent
+- **Search**: Text search across decision rationales
+
+**BuildMonitorViewModel Updates:**
+
+```csharp
+public class BuildMonitorViewModel : ObservableObject
+{
+    // Existing properties...
+    
+    // NEW: Decision Trace Collection
+    public ObservableCollection<DecisionTraceViewModel> DecisionTraces { get; } = new();
+    
+    public bool HasDecisionTraces => DecisionTraces.Count > 0;
+    
+    // Subscribe to AIDecisionRecordedEvent
+    private void OnBuilderEvent(BuilderEvent evt)
+    {
+        if (evt is AIDecisionRecordedEvent decisionEvt)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                DecisionTraces.Add(new DecisionTraceViewModel
+                {
+                    Timestamp = decisionEvt.Decision.Timestamp,
+                    AgentName = decisionEvt.Decision.AgentName,
+                    DecisionType = decisionEvt.Decision.DecisionType,
+                    Rationale = decisionEvt.Decision.Rationale,
+                    ContextJson = JsonSerializer.Serialize(decisionEvt.Decision.Context, new JsonSerializerOptions { WriteIndented = true })
+                });
+                
+                OnPropertyChanged(nameof(HasDecisionTraces));
+            });
+        }
+    }
+    
+    // Export trace to clipboard
+    public void ExportDecisionTrace()
+    {
+        var traceJson = JsonSerializer.Serialize(DecisionTraces, new JsonSerializerOptions { WriteIndented = true });
+        Clipboard.SetText(traceJson);
+    }
+}
+```
+
+---
+
+## 11. Onboarding & First Launch
 
 ### Empty State
 
