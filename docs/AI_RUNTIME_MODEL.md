@@ -137,7 +137,7 @@ The system uses fundamentally different capability inference timing for Preview 
 
 ### Cross-Document References
 
-- **PREVIEW_SYSTEM.md** — Implements Debug Preview Pipeline
+- **PREVIEW_SYSTEM.md** — Implements Debug Preview Pipeline with Hot Reload and Interactive Preview support
 - **ORCHESTRATION_ENGINE.md** — State machine references CAPABILITY_CHECK state
 - **WINDOWS_PACKAGING_AND_PERMISSION_AUTOMATION.md** — Implements Release Packaging Pipeline
 

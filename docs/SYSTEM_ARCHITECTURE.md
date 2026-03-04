@@ -103,7 +103,7 @@ Sync AI generates applications across multiple Windows frameworks:
 2. **Application Layer**: Services, Dependency Injection, Validation
 3. **Data Layer**: SQLite, Repository Pattern, Schema Migrations
 4. **Build System**: MSBuild, NuGet Restore, XAML Compilation, MSVC Compilation
-5. **Runtime**: Live Preview, Hot Reload, Full Compiled Launch
+5. **Runtime**: Live Preview, Hot Reload, Interactive Preview, Full Compiled Launch
 6. **Packaging & Permissions**: Automatic AppxManifest, Capability Inference, MSIX Bundle, Certificate Signing
 7. **AI Capabilities**: LLM, Vision, Image Generation, Web Search — via user-configured OpenAI-compatible providers
 

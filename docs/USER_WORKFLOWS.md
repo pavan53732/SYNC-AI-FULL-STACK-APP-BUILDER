@@ -55,7 +55,8 @@ It is not just a UI prototyping tool; it is a full-cycle software construction e
 | :-------------------------------- | :---------------------------------------------------------------- | :-------------------------------------------------- |
 | **Natural Language Construction** | Build full apps by describing them in plain English.              | Semantic Intent Parsing → Multi-Agent Orchestration |
 | **Silent Auto-Fix Loop**          | Compiler errors are detected and fixed without user intervention. | MSBuild Log Parsing + Roslyn Code Fix Providers     |
-| **Live Native Preview**           | See changes reflected quickly via framework-specific preview (XAML/Code/Full Launch). | Shadow Copy Launch / Window Hosting (see [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md)) |
+| **Live Native Preview**           | See changes reflected quickly via framework-specific preview (XAML/Code/Full Launch). Includes **Interactive Preview** with event debugging and property inspection. | Shadow Copy Launch / Window Hosting (see [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md)) |
+| **Hot Reload / Edit and Continue** | Real-time code updates to running preview without rebuild or restart. Changes apply in 1-2 seconds while preserving app state. | .NET 8 + Edit and Continue runtime integration (see [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) §12) |
 | **Project Time Travel**           | Undo/redo entire generations or specific refinement steps.        | Snapshot System (Git-based under the hood)          |
 | **Installer Generation**          | Every successful build produces a signed MSIX/MSI/EXE bundle.             | Windows App SDK Build Tools + WiX Toolset           |
 | **Permission Automation**         | APIs like Location/Camera are auto-detected and declared.         | Roslyn AST Scanning → Capability Injection          |
