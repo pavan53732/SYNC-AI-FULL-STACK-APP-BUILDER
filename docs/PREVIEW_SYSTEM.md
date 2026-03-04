@@ -1035,13 +1035,51 @@ public class PreviewServiceTests
 
 ---
 
+## Hot Reload Support (Edit and Continue)
+
+> **SHIPPING FEATURE**: Hot Reload allows real-time code updates to the running preview without full rebuild or app restart.
+
+### How It Works
+
+1. **File Change Detection**: System monitors generated source files for modifications
+2. **Incremental Compilation**: Only changed files are recompiled (not full project rebuild)
+3. **IL Delta Application**: .NET Edit and Continue runtime applies binary deltas to running process
+4. **UI State Preservation**: App state maintained during update (unlike full restart)
+
+### Implementation Requirements
+
+- **.NET 8 Runtime**: Requires `Microsoft.VisualStudio.Debugger.Runtime.NetCoreApp` package
+- **Edit and Continue Host**: Manages IL delta generation and application
+- **State Serialization**: Preserves ViewModel state across hot reload cycles
+- **Change Limitations**: Some changes require full restart (e.g., type structure changes)
+
+### User Experience
+
+```
+User edits generated code → Save (Ctrl+S) → System detects change
+    ↓
+Incremental compile (1-2s) → Apply to running preview → UI updates instantly
+    ↓
+Preview shows: "Updated" badge (no full rebuild needed)
+```
+
+### Supported Scenarios
+
+- ✅ XAML property changes (colors, sizes, layout)
+- ✅ C# logic changes (event handlers, business logic)
+- ✅ Resource dictionary updates (styles, templates)
+- ⚠️ Type structure changes (requires restart - shown to user)
+
+### Integration with Preview Pipeline
+
+Hot Reload is available in **Full Launch** mode when:
+- Running in Debug configuration
+- Target framework is .NET 8+
+- Process launched with debugger attachment enabled
+
+---
+
 ## Future Enhancements
-
-### Hot Reload
-
-- Detect code changes and auto-refresh preview
-- Update running app without full rebuild
-- Preserve app state during reload
 
 ### Interactive Preview
 
@@ -1080,6 +1118,7 @@ public class PreviewServiceTests
 
 | Date       | Change                                                                                   |
 | ---------- | ---------------------------------------------------------------------------------------- |
+| 2026-03-03 | **CORRECTED: Hot Reload IS a shipping feature** - Added §12 with full implementation details. Moved from "Future Enhancements" to implemented features. Requires .NET 8 + Edit and Continue runtime integration |
 | 2026-03-03 | **Added Runtime Error Capture & Silent Auto-Fix** - PreviewProcessMonitor for stdout/stderr exception scanning, CrashContextCapture (alternative to dump files), VisualTreeValidator post-build check. Pragmatic alternatives to complex runtime profilers. |
 | 2026-03-03 | **CRITICAL FIX #2**: Updated preview modes to be framework-neutral. Changed "Embedded XAML Preview" to "Embedded Framework Preview". Added C++ framework support (Clang analysis for Win32/WinRT). |
 | 2026-02-23 | Added Asset Generation Check step (step 3) to Preview Pipeline                           |

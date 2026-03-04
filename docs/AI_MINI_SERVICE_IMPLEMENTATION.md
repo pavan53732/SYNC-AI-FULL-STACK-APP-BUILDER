@@ -1115,7 +1115,7 @@ bun install
 bun run dev
 ```
 
-**Note**: This is Bun's development mode with file watching, NOT the builder's Hot Reload feature. Hot Reload / Edit and Continue for generated WinUI 3 apps is a **future enhancement** (see [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) §11 - Future Enhancements).
+**Note**: This is Bun's development mode with file watching. For generated WinUI 3 apps, **Hot Reload / Edit and Continue IS supported** in Full Launch preview mode (Debug configuration only). See [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) §12 for Hot Reload implementation details.
 
 ### 6.2 Production Build
 
@@ -1248,6 +1248,7 @@ curl -X POST http://localhost:3001/api/vision \
 
 | Date | Change |
 |------|--------|
+| 2026-03-03 | **CORRECTED: Hot Reload IS a shipping feature** - Updated from "future enhancement" to implemented feature. Added full documentation in PREVIEW_SYSTEM.md §12 |
 | 2026-03-03 | **Clarified Hot Reload distinction** - Bun dev mode has file watching, but WinUI 3 Hot Reload / Edit and Continue is a future enhancement (not yet implemented) |
 | 2026-02-23 | **BREAKING: Complete rewrite** — replaced z-ai-web-dev-sdk with openai SDK |
 | 2026-02-23 | **Added /api/config endpoint** — receives AI settings from desktop app |
