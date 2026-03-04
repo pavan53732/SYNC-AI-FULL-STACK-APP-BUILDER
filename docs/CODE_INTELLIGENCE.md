@@ -580,7 +580,17 @@ See [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) §3.5 for native comp
 
 ### Snapshot Storage (Git-Based)
 
-> **NOTE**: Snapshots are managed via Git. See [EXECUTION_ENVIRONMENT.md](./EXECUTION_ENVIRONMENT.md) §2.5 for the complete Git-based snapshot mechanism.
+> **NOTE**: Snapshots are managed via Git. See §7 below for the complete Git-based snapshot mechanism.
+
+### 2.9 Version Control Integration
+
+The system uses a hidden Git repository for snapshot management:
+
+- **Location**: `{ProjectRoot}/.sync_git/` (hidden from user)
+- **Purpose**: Lightweight versioning, time travel, rollback
+- **User Access**: Via Timeline UI in [USER_WORKFLOWS.md](./USER_WORKFLOWS.md) §4
+
+See §7 for complete Git implementation details.
 
 Snapshots use the project's `.git/` repository for version history:
 
@@ -665,7 +675,112 @@ public class PatchEngine : IPatchEngine
 
 ---
 
-## 7. Conflict Detection
+## 7. Git-Based Snapshot System
+
+The system uses a hidden Git repository for deterministic snapshot management and time travel.
+
+### 7.1 Snapshot Storage Location
+
+```
+{ProjectRoot}/
+├── .sync_git/              # Hidden Git repository (managed by system)
+│   ├── objects/            # Git objects
+│   ├── refs/               # Branch/tag references
+│   └── HEAD                # Current snapshot reference
+├── src/                    # User-visible source code
+├── assets/                 # Generated assets
+└── ProjectMetadata.db      # Maps snapshots to user prompts
+```
+
+**Key Invariant**: The `.sync_git/` folder is **hidden from users** to prevent manual interference.
+
+### 7.2 Snapshot Creation Triggers
+
+| Trigger | Snapshot Message Format | Retention |
+|---------|------------------------|-----------|
+| **Pre-Generation** | `"Pre-generation snapshot: {timestamp}"` | Keep last 5 |
+| **Post-Patch** | `"Applied patch: {patch_id}"` | Keep last 20 |
+| **User Prompt** | `"User request: {prompt_preview}"` | Keep all (timeline) |
+| **Build Success** | `"Build succeeded: {version}"` | Keep last 10 |
+| **System Reset** | `"SYSTEM_RESET at cycle {cycle_number}"` | Keep all (audit trail) |
+
+### 7.3 Time Travel UI Integration
+
+Per [USER_WORKFLOWS.md](./USER_WORKFLOWS.md) §4, users interact with snapshots via:
+
+- **Timeline View**: Vertical list of generations and refinements
+- **Preview Hover**: Screenshot of app state at that snapshot
+- **Restore Button**: Reverts filesystem + database to exact state
+- **Safety Net**: Current work stashed before restore
+
+### 7.4 Snapshot Pruning Strategy
+
+To prevent unbounded growth:
+
+```csharp
+public class SnapshotManager
+{
+    private const int MaxSnapshots = 50;
+    private const int MaxSizeGB = 5;
+    
+    public void PruneOldSnapshots()
+    {
+        // Keep most recent N snapshots
+        var snapshots = GetSnapshots().OrderByDescending(s => s.Timestamp).ToList();
+        
+        if (snapshots.Count > MaxSnapshots)
+        {
+            foreach (var snapshot in snapshots.Skip(MaxSnapshots))
+            {
+                ArchiveSnapshot(snapshot); // Move to cold storage
+            }
+        }
+        
+        // Size-based pruning if exceeds threshold
+        if (GetTotalSize() > MaxSizeGB)
+        {
+            PruneByAge(); // Remove oldest first
+        }
+    }
+}
+```
+
+**User Notification**: When pruning occurs, gentle message: _"Old versions automatically archived to save space."_
+
+### 7.5 Restore Operation
+
+```csharp
+public async Task RestoreSnapshotAsync(string snapshotId)
+{
+    // 1. Stash current work
+    await StashCurrentChangesAsync();
+    
+    // 2. Checkout snapshot
+    await gitRepository.CheckoutAsync(snapshotId);
+    
+    // 3. Restore database state
+    await RestoreDatabaseStateAsync(snapshotId);
+    
+    // 4. Silent rebuild
+    await orchestrator.RebuildCurrentProjectAsync();
+    
+    // 5. Refresh preview
+    await RefreshPreviewAsync();
+}
+```
+
+**User sees**: Simple "Restoring..." spinner, then working app
+**User does NOT see**: Git operations, file moves, build process
+
+### 7.6 Snapshot Integrity
+
+- **SHA-256 Hashing**: Every commit verified
+- **Atomic Commits**: All-or-nothing snapshot creation
+- **Rollback Safety**: Failed rollbacks leave system in stable state
+
+---
+
+## 8. Patch Engine
 
 ### Patch Failure Scenarios
 
@@ -1104,7 +1219,8 @@ public interface IPatchEngine
 
 ## Change Log
 
-| Date       | Change                                               |
-| ---------- | ---------------------------------------------------- |
+| Date       | Change                                                                                                    |
+| ---------- | --------------------------------------------------------------------------------------------------------- |
+| 2026-03-03 | **MEDIUM PRIORITY #6**: Consolidated Git-based snapshot documentation into new §7. Moved from EXECUTION_ENVIRONMENT.md to create single authoritative source. Added snapshot triggers, pruning strategy, restore operations, and integrity guarantees. |
 | 2026-02-23 | Added Generated Assets Table cross-reference section |
 | 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md to References  |

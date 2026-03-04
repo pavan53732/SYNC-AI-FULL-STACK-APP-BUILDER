@@ -293,7 +293,13 @@ EXECUTION_PLAN_BUILT
 | `PACKAGING_SUCCEEDED` | Success  | Application built, packaged, and ready | None needed             |
 | `CANCELLED`           | Terminal | User explicitly cancelled              | User must restart build |
 
-**NOTE**: There is NO `FAILED` state. The system never stops on its own - only user cancellation stops the build.
+**NOTE**: There is NO `FAILED` state for **user-initiated builds**. The system employs two distinct retry strategies:
+
+1. **Code Mutation Retries (Bounded)**: Follow staged escalation — Fix Agent (1–3) → Integration Agent (4–6) → Architect Agent (7–9) — with SYSTEM_RESET at cycle 10+. This prevents infinite loops in code generation.
+2. **Environment Recovery Loops (Unbounded)**: Continue until resolved or user cancellation — includes disk space recovery, SDK installation/repair, NuGet cache clearing, certificate renewal, and admin privilege elevation.
+3. **AI Service Unavailable (Unbounded)**: If the AI Mini Service cannot reach configured providers, retry continues indefinitely as this depends on external service availability.
+
+Only **user cancellation** transitions the system to the `CANCELLED` terminal state. See [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §8 for the authoritative retry governance model.
 
 ---
 
@@ -2200,7 +2206,8 @@ public class AIMiniServiceManager
 ## Change Log
 
 | Date          | Change                                                                                                                                                  |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-03-03    | **CRITICAL FIX**: Clarified "NO FAILED state" note to explicitly distinguish bounded code mutation retries (1-9 + SYSTEM_RESET at 10+) from unbounded environment recovery loops. Aligned with SYSTEM_ARCHITECTURE.md §8. |
 | 2026-02-26    | **Added Section 17: ai-service.exe Package Integrity** - Startup integrity check, hash verification, Authenticode signature validation                  |
 | 2026-02-26    | **Added Section 16: AI E2E Test Suite Specification** - Complete test coverage for LLM, Image Gen, Vision, Search, Error handling, Trace ID propagation |
 | 2026-02-26    | **Added Section 15: AI Service Failure Governance** - Failure detection, fallback strategy, state transitions for AI_SERVICE_UNAVAILABLE/DEGRADED       |

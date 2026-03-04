@@ -352,6 +352,34 @@ public class AssetGenerationService
 }
 ```
 
+### Asset Generation Timing Matrix
+
+| Build Phase | When Assets Generated | Why |
+|-------------|----------------------|-----|
+| **New App Creation** | After blueprint design, before code generation | AI needs brand context for UI generation |
+| **Refinement** | Before AI_GENERATING if branding changed | Only regenerate if brand identity modified |
+| **Packaging** | After build success (verification only) | Assets already exist, just validate presence |
+| **Asset Regeneration Request** | On-demand via user request | User explicitly requests new assets |
+
+**State Machine Integration** (see [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §5):
+- `REQUIREMENT_EVALUATION` (State 26) → Evaluate what assets needed
+- `BRANDING_INFERENCE` (State 27) → Derive brand identity
+- `ASSET_GENERATING` (State 28) → Generate actual images
+- `ASSETS_READY` (State 29) → Assets available for code generation
+- `ASSET_GENERATION_FAILED` (State 30) → Retry or fallback
+
+### Integration with Preview Pipeline
+
+Per [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) §1.2, asset generation check occurs at Step 3:
+
+```
+3. ASSET GENERATION CHECK
+   ├── Check if all required assets exist
+   ├── If missing → Run Asset Generation Pipeline
+   ├── User sees: "Generating visual assets..."
+   └── On failure → Apply fallbacks (see BRANDING_INFERENCE_HEURISTICS.md §10)
+```
+
 **Branding Heuristics Rules**:
 
 | Rule | Deterministic Behavior |
@@ -987,3 +1015,6 @@ CREATE INDEX idx_generated_assets_requirement ON generated_assets(requirement_id
 - [AI_AGENTS_AND_PLANNING.md](./AI_AGENTS_AND_PLANNING.md) — Multi-agent coordination
 - [AI_SERVICE_LAYER.md](./AI_SERVICE_LAYER.md) — AI capabilities via user-configured providers
 - [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) — 8-layer architecture
+- [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) — State machine and retry governance
+- [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) — Complete asset generation pipeline
+- [PREVIEW_SYSTEM.md](./PREVIEW_SYSTEM.md) — Asset generation check integration

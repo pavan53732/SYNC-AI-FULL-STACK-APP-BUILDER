@@ -30,7 +30,8 @@ Sync AI is a **Local AI Full-Stack Windows Native App Builder** — a sophistica
 Think of it as "the Lovable for desktop apps" or "an AI-powered Visual Studio that builds Windows native apps (WinUI3/WPF/WinForms/Console/Win32) from plain English descriptions."
 
 1.  **AI-Primary Construction**: The AI Construction Engine is the Primary Brain. Operators or users describe intent, AI designs and builds.
-2.  **No IDE Required**: Zero exposure to Visual Studio, `.csproj` files, or terminals.
+2.  **No IDE Required for Basic Usage**: Zero exposure to Visual Studio, `.csproj` files, or terminals during normal construction workflow.
+3.  **Optional IDE Integration**: Export to Visual Studio available for advanced users who want to continue development in IDE.
 3.  **Local-First & Private**: All code, data, and builds stay on the user's machine.
 4.  **End-to-End Responsibility**: The AI owns the stack from **Schema → UI → Tests → Packaging**.
 
@@ -41,7 +42,7 @@ It constructs **complete, runnable, production-ready Windows-native applications
 
 From database schema to MSIX installer, the entire lifecycle is owned by the system.
 
-- **Full Stack**: Generates database schemas (SQLite), backend logic (C#), and native UI (WinUI 3/XAML).
+- **Full Stack**: Generates database schemas (SQLite), backend logic (C#/C++), and native UI (framework-specific: WinUI 3 XAML, WPF XAML, WinForms controls, Console I/O, Win32 API, WinRT components).
 - **End-to-End Lifecycle**: Handles everything from initial scaffolding to final `.msix` packaging.
 - **Live Iteration**: Real-time preview via shadow copy launch (app restarts in <2s for changes).
 - **Data Persistence**: Built-in specialized repositories and reliable database management.
@@ -58,6 +59,38 @@ It is not just a UI prototyping tool; it is a full-cycle software construction e
 | **Project Time Travel**           | Undo/redo entire generations or specific refinement steps.        | Snapshot System (Git-based under the hood)          |
 | **Installer Generation**          | Every successful build produces a signed MSIX/MSI/EXE bundle.             | Windows App SDK Build Tools + WiX Toolset           |
 | **Permission Automation**         | APIs like Location/Camera are auto-detected and declared.         | Roslyn AST Scanning → Capability Injection          |
+
+### Permission Automation Boundaries
+
+The system employs intelligent permission inference with clear boundaries between automation and manual control:
+
+#### Auto-Detected Permissions (No User Action Required)
+
+| Permission Category | Detection Method | Example APIs | User Sees |
+|--------------------|------------------|--------------|-----------|
+| **File System** | Roslyn scan for `Windows.Storage` | `StorageFile`, `FolderPicker` | "Adding file access capability..." |
+| **Location** | Roslyn scan for `Geolocator` | `Geolocator`, `MapControl` | "Adding location capability..." |
+| **Camera/Microphone** | Roslyn scan for `MediaCapture` | `CameraCaptureUI`, `Microphone` | "Adding camera capability..." |
+| **Network** | Roslyn scan for `HttpClient` | `HttpClient`, `WebSocket` | "Adding internet capability..." |
+| **Bluetooth** | Roslyn scan for `BluetoothLEDevice` | `GattSession`, `BluetoothAdvertisement` | "Adding Bluetooth capability..." |
+| **Notifications** | Roslyn scan for `ToastNotification` | `ToastNotificationManager` | "Adding notification capability..." |
+
+#### Manual Override Scenarios (User Confirmation Required)
+
+| Scenario | System Behavior | User Action Required |
+|----------|----------------|---------------------|
+| **Capability Removed by User** | Respects removal, warns if API used | "This feature requires location. Enable anyway?" |
+| **Enterprise Policy Restrictions** | Detects policy blocks, suggests alternatives | "Bluetooth restricted by policy. Use USB instead?" |
+| **Store Submission Requirements** | Flags capabilities that need Store justification | "Location capability requires Store justification. Proceed?" |
+| **Over-Permissioning Detected** | Warns if capability declared but no API usage | "Internet capability declared but not used. Remove?" |
+
+#### Permission Inference Timing
+
+Per [AI_RUNTIME_MODEL.md](./AI_RUNTIME_MODEL.md) §1.1:
+- **Preview/Debug Builds**: Reactive inference (after build failure only)
+- **Packaging/Release Builds**: Proactive inference (before build starts)
+
+**User Control**: All auto-detected permissions can be manually removed or overridden in Advanced Mode > Packaging Settings.
 | **Real Code Ownership**           | You own the C#/C++ code. It's not a closed platform.              | Standard .csproj/.vcxproj format, no proprietary lock-in     |
 | **Image Generation**              | Generate app icons and visual assets.                             | openai SDK Image Gen - user-configured              |
 
@@ -69,15 +102,49 @@ It is not just a UI prototyping tool; it is a full-cycle software construction e
 >
 > | Framework | Preview Mode | Packaging Options | User Experience |
 >|-----------|--------------|-------------------|----------------|
-> | **WinUI 3** | Embedded XAML + Code + Full Launch | MSIX | Modern Windows 11 UX |
-> | **WPF** | XAML Preview (WPF parser) + Code + Full Launch | MSI/MSIX/EXE | Classic .NET desktop |
+> | **WinUI 3** | Embedded Framework Preview (XAML) + Code + Full Launch | MSIX | Modern Windows 11 UX |
+> | **WPF** | Framework Preview (XAML) + Code + Full Launch | MSI/MSIX/EXE | Classic .NET desktop |
 > | **WinForms** | Code View + Full Launch only | MSI/EXE | Imperative UI |
 > | **Console** | Stdout capture + Code View + Full Launch | EXE | Terminal-based |
 > | **Win32** | Code View + Full Launch only | EXE | Native C++ desktop |
-> | **WinRT** | XAML Preview + Code + Full Launch | MSIX | Modern C++/WinRT |
-> | **Hybrid** | XAML (managed) + Code (C#/C++) + Full Launch | MSIX/EXE | Interop scenarios |
+> | **WinRT** | Framework Preview (XAML) + Code + Full Launch | MSIX | Modern C++/WinRT |
+> | **Hybrid** | Mixed Preview (XAML managed + Code native) + Full Launch | MSIX/EXE | Interop scenarios |
 
 The system adapts its UX to the selected framework — there is no privileged "default" framework.
+
+### Framework-Specific Examples
+
+To ensure balanced representation across all frameworks:
+
+**WinUI 3 Example:**
+- User prompt: "Create a modern task manager with Fluent Design"
+- System generates: WinUI 3 XAML with Acrylic materials, NavigationView, modern controls
+- Preview: Embedded XAML preview with live rendering
+
+**WPF Example:**
+- User prompt: "Build a data dashboard that works on Windows 7+"
+- System generates: WPF with classic XAML, DataGrids, MVVM pattern
+- Preview: XAML preview with WPF parser
+
+**WinForms Example:**
+- User prompt: "Create a simple point-of-sale interface"
+- System generates: WinForms with imperative C# code, Windows Forms controls
+- Preview: Code view only (no visual designer)
+
+**Console Example:**
+- User prompt: "Build a file batch processor utility"
+- System generates: Console app with command-line parsing, async I/O
+- Preview: Stdout capture showing sample output
+
+**Win32 Example:**
+- User prompt: "Create a high-performance image viewer in C++"
+- System generates: Native C++ with Win32 API, GDI+ rendering
+- Preview: Code view only (no visual designer)
+
+**WinRT Example:**
+- User prompt: "Build a modern media player with C++/WinRT"
+- System generates: WinRT components with XAML front-end
+- Preview: XAML preview with WinRT backend
 
 ### The "No-Code" Illusion
 
@@ -128,7 +195,7 @@ The system does not allow blueprint generation without validated AI configuratio
 1.  **Empty State**: "What would you like to build today?"
 2.  **Scaffolding**: "Setting up your workspace..." (File creation)
 3.  **Architecting**: "Designing database and UI..." (Agent planning)
-4.  **Coding**: "Writing C# and XAML..." (Code generation)
+4.  **Coding**: "Writing {framework} code..." (Code generation - C#/C++ based on framework)
 5.  **Generating Assets**: "Creating app icons and branding..." (Asset generation via AI)
 6.  **Verifying**: "Checking for errors..." (Build & Auto-fix)
 7.  **Packaging**: "Signing and bundling..." (Manifest generation)
@@ -139,6 +206,8 @@ The system does not allow blueprint generation without validated AI configuratio
 > **Related**: [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md) — Zero-template approach
 >
 > **Related**: [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) — Intelligent brand derivation
+>
+> **Related**: [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) — State machine transitions (States 26-30)
 
 The system automatically generates visual assets without templates:
 
@@ -152,6 +221,25 @@ The system automatically generates visual assets without templates:
 **User sees**: Simple progress indicator with current asset being generated.
 **User NEVER sees**: Image generation prompts, AI model details, fallback retries.
 
+### Asset Generation Failure Handling
+
+If asset generation fails, the system employs intelligent fallbacks:
+
+| Failure Scenario | User Sees | System Behavior |
+|-----------------|-----------|----------------|
+| **AI Service Unavailable** | "Preparing visual assets..." (extended) | Continuous retry until AI service available (unbounded retry per §8) |
+| **Image Generation Timeout** | "Optimizing asset generation..." | Retry with reduced resolution, then fallback to placeholder icons |
+| **Brand Inference Fails** | No visible message | Use default Windows blue theme (#0078D4) and geometric icons |
+| **All Fallbacks Exhausted** | "Using placeholder assets..." | Generate simple geometric placeholders, allow post-build regeneration |
+
+**Fallback Strategy** (from [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) §10):
+1. Attempt full branding inference
+2. On partial failure → Apply targeted fallbacks (default name, domain, colors)
+3. On complete failure → Use `DefaultBranding.CreateDefault()` (Windows blue theme)
+4. On image generation failure → Use cached assets or geometric placeholders
+
+**Deterministic Regeneration**: Same app intent always produces identical assets via IntentHash caching ([BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) §11).
+
 ### Observable System Behaviors
 
 Based on evidence-driven analysis:
@@ -164,7 +252,7 @@ Based on evidence-driven analysis:
 
 4. **Code Quality Is Consistent**: Generated apps deploy and run successfully. Every output goes through build validation before showing to user.
 
-5. **Real Code Ownership**: Users can download and run code locally. Code works in IDE (Visual Studio, VS Code). Output is actual C# + XAML, not proprietary format.
+5. **Real Code Ownership**: Users can download and run code locally. Code works in IDE (Visual Studio, VS Code). Output is actual C#/C++ + framework-specific UI code (XAML, WinForms, Console, Win32), not proprietary format.
 
 6. **Error-Free User Experience**: Users never see compilation errors. Errors are fixed silently before preview shown.
 
@@ -465,6 +553,8 @@ Green / Yellow / Red status indicators for:
 
 **Purpose:** Expose structured trace of AI decisions made during the current session to increase trust and debuggability.
 
+**Implementation Status:** ✅ **IMPLEMENTED** - See [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) §10.5, [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §12.1
+
 **Features:**
 - **Timeline View**: Chronological list of all AI decisions
 - **Decision Details**:
@@ -483,7 +573,7 @@ Green / Yellow / Red status indicators for:
 - Auditing AI behavior for compliance
 - Learning how AI interprets user requirements
 
-**Implementation:** [UI_IMPLEMENTATION.md](./UI_IMPLEMENTATION.md) §10.5, [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §12.1
+**Event Integration**: Subscribes to `AIDecisionRecordedEvent` from [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §12.1
 
 ### Manual Code Overrides
 
@@ -777,7 +867,7 @@ The system handles 5 categories of errors internally:
 - **Safety**: Preserve work (auto-save)
 - **Bounded retry**: Per Retry Budget Contract - see [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md)
 
-> **Note**: Code mutation retry is bounded per [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §8. SYSTEM_RESET triggers at retry ceiling. Only environment recovery loops are unbounded.
+> **Note**: Code mutation retry follows staged escalation — Fix (1–3) → Integration (4–6) → Architecture (7–9) — with SYSTEM_RESET at cycle 10+ (rollback + AI memory wipe + fresh attempt). Only environment recovery loops (SDK install, disk space, NuGet cache repair) continue until resolved or user cancellation. See [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §8 for the authoritative retry governance model.
 
 ### Automatic Error Detection & Fixing
 
@@ -798,7 +888,7 @@ The system handles 5 categories of errors internally:
 - Fix method signatures
 - Add missing properties
 
-**Retry Logic**: Bounded retry per [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) Retry Budget Contract — staged escalation with SYSTEM_RESET at ceiling.
+**Retry Logic**: Bounded retry per [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §8 Retry Budget Contract — staged escalation (Fix 1-3 → Integration 4-6 → Architecture 7-9) with SYSTEM_RESET at cycle 10+.
 
 **Fix Success Tracking**: Remember solutions for future errors
 
@@ -829,13 +919,15 @@ The system monitors for environment conditions that require user intervention. A
 | **CERTIFICATE_EXPIRED** | Date > Expiry                    | Regenerate & Re-sign, retry              | "Certificate expired. Renewing security credentials..."  |
 | **NUGET_CACHE_CORRUPT** | Restore fails repeatedly         | `dotnet nuget locals all --clear`, retry | "Clearing corrupted package cache..."                    |
 
-> **Key Principle**: The system NEVER gives up on its own. All environment states trigger retry loops that continue until success or explicit user cancellation. The system prompts for user intervention when needed, then continues retrying automatically.
+> **Key Principle**: The system NEVER gives up on its own for **environment recovery loops** (disk space, SDK installation, NuGet cache repair) — these continue until resolved or user cancellation. However, **code mutation retries** follow a bounded staged escalation model with SYSTEM_RESET at cycle 10+. The system prompts for user intervention when needed.
 >
 > **Retry Distinction**:
 >
-> - **Mutation Retry Ceiling**: Code mutation cycles follow staged escalation — Fix (1–3) → Integration (4–6) → Architecture (7–9) — and at cycle 10+ the Kernel triggers a **SYSTEM RESET** (rollback to snapshot + forced AI memory wipe + fresh attempt). The system never hard-aborts on its own. See [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §8 for the authoritative retry governance model.
-> - **Environment Recovery Loops**: Unbounded — disk space recovery, SDK installation, NuGet cache repair continue until resolved or user cancels.
-> - This distinction ensures deterministic code safety while maintaining resilience for environmental issues.
+> - **Code Mutation Retries (Bounded)**: Follow staged escalation — Fix Agent (1–3) → Integration Agent (4–6) → Architect Agent (7–9) — and at cycle 10+ the Runtime Safety Kernel triggers a **SYSTEM RESET** (rollback to snapshot + forced AI memory wipe + fresh architectural approach). This ensures deterministic code safety and prevents infinite loops.
+> - **Environment Recovery Loops (Unbounded)**: Continue indefinitely until resolved or user cancels — includes disk space recovery, SDK installation/repair, NuGet cache clearing, certificate renewal, and admin privilege elevation.
+> - **AI Service Unavailable (Unbounded)**: If the AI Mini Service cannot reach configured providers, retry continues indefinitely as this depends on external service availability.
+>
+> This distinction ensures code mutation safety while maintaining resilience for environmental issues and external dependencies. See [SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md) §8 for the authoritative retry governance model.
 
 ---
 
@@ -843,6 +935,10 @@ The system monitors for environment conditions that require user intervention. A
 
 | Date       | Change                                                                                                                    |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 2026-03-03 | **MEDIUM PRIORITY #4-7**: Resolved 4 medium priority cleanup tasks: (1) Added permission automation boundaries with auto-detected vs manual scenarios, (2) Verified AI Decision Trace implementation status as COMPLETE, (3) Consolidated snapshot documentation into CODE_INTELLIGENCE.md §7, (4) Clarified "No IDE Required" to "No IDE Required for Basic Usage". |
+| 2026-03-03 | **HIGH PRIORITY #3**: Added asset generation failure handling with fallback strategies. Integrated timing matrix and state machine references. Cross-referenced ORCHESTRATION_ENGINE.md, BRANDING_INFERENCE_HEURISTICS.md, and PLATFORM_REQUIREMENTS_ENGINE.md. |
+| 2026-03-03 | **CRITICAL FIX #2**: Eliminated XAML/WinUI-centric language bias. Added framework-specific examples for all 7 frameworks (WinUI 3, WPF, WinForms, Console, Win32, WinRT, Hybrid). Updated terminology to be framework-neutral throughout. |
+| 2026-03-03 | **CRITICAL FIX #1**: Clarified retry logic distinction between bounded code mutation retries (1-9 cycles + SYSTEM_RESET at 10+) and unbounded environment recovery loops. Updated §8 to align with SYSTEM_ARCHITECTURE.md §8. |
 | 2026-02-23 | Added "Generating Assets" workflow state (step 5)                                                                         |
 | 2026-02-23 | Added Asset Generation Phase section with PLATFORM_REQUIREMENTS_ENGINE.md and BRANDING_INFERENCE_HEURISTICS.md references |
 | 2026-02-23 | Added asset generation user messaging table                                                                               |

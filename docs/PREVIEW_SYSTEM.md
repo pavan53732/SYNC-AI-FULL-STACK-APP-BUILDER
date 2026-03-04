@@ -4,11 +4,11 @@
 
 The Preview System provides **three modes** for users to visualize generated applications across multiple frameworks (WinUI 3, WPF, WinForms, Console, Win32, WinRT, Hybrid):
 
-1. **Embedded XAML Preview** - Real-time rendering inside the builder (XAML-based frameworks only)
+1. **Embedded Framework Preview** - Real-time rendering inside the builder (XAML-based frameworks: WinUI 3, WPF, WinRT)
 2. **Code View** - Syntax-highlighted source code inspection (all frameworks)
 3. **Full Launch** - Compiled application execution in separate window (all frameworks)
 
-> **Crucial Distinction**: Unlike web-based prototyping tools, the "Full Launch" renders a **real, compiled .NET 8 binary** running natively on Windows. It is not a simulation; it is the actual production application.
+> **Crucial Distinction**: Unlike web-based prototyping tools, the "Full Launch" renders a **real, compiled binary** (.NET 8 for managed frameworks, native executable for C++ frameworks) running natively on Windows. It is not a simulation; it is the actual production application.
 
 ---
 
@@ -20,8 +20,8 @@ The Preview System provides **three modes** for users to visualize generated app
 
 ### Preview Pipeline (Debug Configuration)
 
-1. **Pre-Build Capability Scan (Fast Check)**: Quick Roslyn scan for obvious capability-requiring namespaces. If found and missing from manifest → Inject immediately.
-2. **Build (Debug)**: Generate binaries.
+1. **Pre-Build Capability Scan (Fast Check)**: Quick Roslyn scan for obvious capability-requiring namespaces (managed frameworks only). For C++ frameworks, uses Clang-based analysis. If found and missing from manifest → Inject immediately.
+2. **Build (Debug)**: Generate binaries (dotnet build for .NET frameworks, msbuild /vcxproj for C++ frameworks).
 3. **Asset Generation Check** (NEW):
    - Check if all required assets exist (icons, logos, splash screen)
    - If missing → Run **Asset Generation Pipeline** (see [PLATFORM_REQUIREMENTS_ENGINE.md](./PLATFORM_REQUIREMENTS_ENGINE.md))
@@ -912,5 +912,6 @@ public class PreviewServiceTests
 
 | Date       | Change                                                                                   |
 | ---------- | ---------------------------------------------------------------------------------------- |
+| 2026-03-03 | **CRITICAL FIX #2**: Updated preview modes to be framework-neutral. Changed "Embedded XAML Preview" to "Embedded Framework Preview". Added C++ framework support (Clang analysis for Win32/WinRT). |
 | 2026-02-23 | Added Asset Generation Check step (step 3) to Preview Pipeline                           |
 | 2026-02-23 | Added PLATFORM_REQUIREMENTS_ENGINE.md and BRANDING_INFERENCE_HEURISTICS.md to References |

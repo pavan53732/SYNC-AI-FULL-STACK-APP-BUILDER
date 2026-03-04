@@ -155,7 +155,7 @@ The system uses fundamentally different capability inference timing for Preview 
 | ------------------------ | ------------------------------------------------------- |
 | **Intent Understanding** | Parses natural language and extracts requirements       |
 | **Architecture Design**  | Creates adaptive execution plans                        |
-| **Code Generation**      | Produces C#, XAML, SQL through multi-agent coordination |
+| **Code Generation**      | Produces C#/C++, framework-specific UI (XAML/WinForms/Console/Win32), SQL through multi-agent coordination |
 | **Strategy Selection**   | Chooses approach based on context                       |
 | **Retry Strategy**       | Owns retry decisions (cycles 1-9)                       |
 | **Adaptation**           | Learns from errors and adjusts                          |
@@ -177,7 +177,7 @@ AI Construction Engine
 
 The AI Construction Engine has full creative freedom within these constraints:
 
-- Target platform: WinUI 3 / .NET 8
+- Target platform: Framework-specific (.NET 8 for WinUI 3/WPF/WinForms/Console, Native C++ for Win32/WinRT)
 - Database: SQLite
 - Architecture: MVVM pattern
 - All mutations must pass Kernel validation
@@ -190,7 +190,7 @@ The "Hidden System Prompt" is implemented as **Constraint Documents** that the A
 
 | Constraint Document                              | What It Defines                                       |
 | ------------------------------------------------ | ----------------------------------------------------- |
-| `SYSTEM_ARCHITECTURE.md`                         | Base Tech Stack (WinUI 3, .NET 8, SQLite, MVVM, MSIX) |
+| `SYSTEM_ARCHITECTURE.md`                         | Base Tech Stack (Framework-specific: WinUI 3/.NET 8, WPF/.NET 8, WinForms/.NET 8, Console/.NET 8, Win32/C++, WinRT/C++) |
 | `ORCHESTRATION_ENGINE.md`                        | State machine rules, retry behavior                   |
 | `AI_AGENTS_AND_PLANNING.md`                      | Agent output contracts, task types                    |
 | `CODE_INTELLIGENCE.md`                           | Patch operations whitelist                            |
@@ -198,7 +198,7 @@ The "Hidden System Prompt" is implemented as **Constraint Documents** that the A
 
 **What the Hidden System Prompt defines (FRAMEWORK RULES):**
 
-- ✅ Always use WinUI 3 (not WPF, not ASP.NET)
+- ✅ Always use appropriate framework for target platform (WinUI 3 for modern Windows 11, WPF for cross-version .NET desktop, Console for CLI tools, etc.)
 - ✅ Always use MVVM pattern
 - ✅ Always use SQLite for local database
 - ✅ Always generate valid MSIX packages
@@ -616,6 +616,7 @@ User Prompt
 
 | Date       | Change                                                                                                      |
 | ---------- | ----------------------------------------------------------------------------------------------------------- |
+| 2026-03-03 | **CRITICAL FIX #2**: Eliminated WinUI-centric language. Updated code generation description to include C++/framework-specific UI. Changed framework constraints to be neutral across all 7 supported frameworks. |
 | 2026-02-24 | **Added "Hidden System Prompt (Constraint Documents)" section** - Explains framework rules vs user's idea   |
 | 2026-02-24 | **Added "Base Project Template (Minimal Kernel Bootstrap)" section** - Explains empty structure scaffolding |
 | 2026-02-23 | **BREAKING: Replaced z-ai-web-dev-sdk with openai SDK** - user-configured providers                         |
