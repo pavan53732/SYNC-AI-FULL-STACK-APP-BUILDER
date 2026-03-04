@@ -45,6 +45,8 @@ The AI Service Layer bridges the gap between the **Windows Desktop Application**
 
 The `openai` npm SDK is a **Node.js/TypeScript library**, which cannot be used directly in a C#/.NET application. Therefore, we need a **local HTTP service** that wraps the SDK and exposes AI capabilities via REST API.
 
+> **NOTE**: The Node.js runtime (Bun.sh) is bundled inside `{SyncAIRoot}\toolchain\nodejs\`. No system-wide Node.js installation is required. The entire AI service layer is self-contained within the Sync AI installation.
+
 ---
 
 ## 2. Architecture Position

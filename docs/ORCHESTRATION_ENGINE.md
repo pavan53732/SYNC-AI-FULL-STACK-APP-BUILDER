@@ -890,6 +890,38 @@ public class RetryController
 | 1-9         | AI Construction Engine | Strategy flexible      | AI adapts, learns, retries            |
 | 10+         | Runtime Safety Kernel  | System Reset + Amnesia | Rollback, wipe memory, fresh approach |
 
+### Retry Governance Clarification
+
+> **IMPORTANT**: The terms "infinite refinement" and "continuous retry" refer to the **overall pipeline lifecycle**, not per-task attempts.
+
+**Distinction**:
+
+| Scope | Limit | Rationale |
+|-------|-------|-----------|
+| **Per-Task Retries** | Maximum 9 attempts | Each individual task gets up to 9 retry attempts with escalating strategies (architecture-level changes allowed) |
+| **Pipeline Cycles** | Effectively infinite | After SYSTEM_RESET at attempt 10+, the entire pipeline restarts with a fresh approach, allowing indefinite overall cycles |
+| **User Cancellation** | Always honored | User can cancel at any time, overriding all retry logic |
+
+**Example Flow**:
+
+```
+Task: ADD_VIEW fails 9 times
+    ↓
+Attempt 10: SYSTEM_RESET (clears memory, rolls back state)
+    ↓
+Fresh approach: Different architecture pattern
+    ↓
+If succeeds → Pipeline continues
+If fails again → Another SYSTEM_RESET
+    ↓
+Continues until user cancels or success achieved
+```
+
+This design balances:
+- **Persistence**: The system never gives up (infinite overall cycles)
+- **Sanity Checks**: Bounded per-task attempts prevent infinite loops on broken approaches
+- **User Control**: Manual cancellation always available
+
 ---
 
 ## 8. Execution Lifecycle

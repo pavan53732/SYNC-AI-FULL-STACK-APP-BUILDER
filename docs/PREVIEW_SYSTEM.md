@@ -1,12 +1,12 @@
-# Preview System Specification - Hybrid Approach
+# Preview System Specification - Multi-Framework
 
 ## Overview
 
-The Preview System provides **three modes** for users to visualize generated WinUI 3 applications:
+The Preview System provides **three modes** for users to visualize generated applications across multiple frameworks (WinUI 3, WPF, WinForms, Console, Win32, WinRT, Hybrid):
 
-1. **Embedded XAML Preview** - Real-time rendering inside the builder
-2. **Code View** - Syntax-highlighted source code inspection
-3. **Full Launch** - Compiled application execution in separate window
+1. **Embedded XAML Preview** - Real-time rendering inside the builder (XAML-based frameworks only)
+2. **Code View** - Syntax-highlighted source code inspection (all frameworks)
+3. **Full Launch** - Compiled application execution in separate window (all frameworks)
 
 > **Crucial Distinction**: Unlike web-based prototyping tools, the "Full Launch" renders a **real, compiled .NET 8 binary** running natively on Windows. It is not a simulation; it is the actual production application.
 

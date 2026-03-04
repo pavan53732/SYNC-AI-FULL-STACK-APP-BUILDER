@@ -326,6 +326,62 @@ User Prompt: "Build a finance tracker with charts"
 
 ## 3. Asset Generation Pipeline (Delegated Implementation)
 
+### Asset Generation Determinism
+
+> **INVARIANT**: All asset generation MUST be deterministic - same spec must always produce identical assets.
+
+**Deterministic Seeding Requirement**:
+
+```csharp
+public class AssetGenerationService
+{
+    public async Task GenerateAssetsAsync(AppIntent intent, string outputPath)
+    {
+        // CRITICAL: Use spec hash as deterministic seed for all randomized operations
+        var specHash = SHA256.HashData(Encoding.UTF8.GetBytes(intent.SpecId));
+        var seed = BitConverter.ToInt32(specHash, 0);
+        
+        // Initialize random with fixed seed - ensures same spec produces same assets
+        using var rng = new Random(seed);
+        
+        // All AI image generation calls use the same seed
+        await GenerateAppIconAsync(intent.BrandName, rng, outputPath);
+        await GenerateSplashScreenAsync(intent.BrandName, rng, outputPath);
+        await GenerateStoreLogoAsync(intent.BrandName, rng, outputPath);
+    }
+}
+```
+
+**Branding Heuristics Rules**:
+
+| Rule | Deterministic Behavior |
+|------|------------------------|
+| **Color Selection** | Derived from SHA256(specId) - first 3 bytes map to HSL hue |
+| **Icon Style** | Determined by app category in spec (productivity → clean geometric, game → dynamic shapes) |
+| **Font Choice** | Mapped from brand name hash to predefined font palette |
+| **Layout Variations** | Generated from seeded random, not arbitrary choice |
+
+**Prohibited Operations**:
+
+```csharp
+// ❌ FORBIDDEN - Non-deterministic
+var randomColor = random.Next(); // No seed = different every time
+
+// ✅ REQUIRED - Deterministic
+var seededRandom = new Random(SHA256(specId));
+var color = seededRandom.Next(); // Same spec = same color
+```
+
+**Verification Step**:
+
+After asset generation, the system MUST:
+1. Compute SHA256 of all generated assets
+2. Store hashes in `build_outputs.json`
+3. On regeneration, compare hashes to verify determinism
+4. If hashes differ without spec change → trigger SYSTEM_RESET
+
+See [ORCHESTRATION_ENGINE.md](./ORCHESTRATION_ENGINE.md) §8 Phase 4 for determinism validation pipeline.
+
 This document defines required assets only. Generation logic is defined in BRANDING_INFERENCE_HEURISTICS.md.
 
 > **Asset Generation**: See [BRANDING_INFERENCE_HEURISTICS.md](./BRANDING_INFERENCE_HEURISTICS.md) for the complete asset generation pipeline, including AI-based icon generation, splash screen creation, and fallback strategies.
